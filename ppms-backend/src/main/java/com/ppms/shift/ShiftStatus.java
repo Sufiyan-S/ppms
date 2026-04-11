@@ -1,0 +1,10 @@
+package com.ppms.shift;
+
+public enum ShiftStatus {
+    OPEN,
+    OPEN_OVERDUE,
+    AUTO_CLOSED_OVERDUE,
+    CLOSED_BALANCED,
+    CLOSED_DISCREPANCY_PENDING,
+    CLOSED_DISCREPANCY_RESOLVED
+}

@@ -1,0 +1,3 @@
+ALTER TABLE users
+    ADD COLUMN gender VARCHAR(16),
+    ADD COLUMN night_shift_consent BOOLEAN NOT NULL DEFAULT FALSE;

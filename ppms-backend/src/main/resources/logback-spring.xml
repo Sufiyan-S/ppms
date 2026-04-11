@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+        PPMS logback configuration.
+
+        Pattern includes:
+          %X{traceId}  — correlation ID injected by CorrelationIdFilter.
+                         Allows grep-ing logs for a single request across all log lines.
+
+        Example log line:
+          2026-04-03 12:00:00.123  INFO [main] [3a1b2c4d] c.p.shift.ShiftService - Shift opened: id=42
+
+        Production: consider switching to JSON encoder (logstash-logback-encoder)
+        for structured logging ingestion via ELK or Datadog.
+    -->
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="ppms"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS}  %-5level [%thread] [%X{traceId:-no-trace}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Reduce noise from Spring internals -->
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="com.ppms" level="INFO"/>
+
+</configuration>

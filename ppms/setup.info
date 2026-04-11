@@ -1,0 +1,137 @@
+PPMS Oracle Cloud Free Tier VM Setup
+====================================
+
+Target path on VM:
+/home/ubuntu/ppms
+
+Expected structure:
+/home/ubuntu/ppms/
+├── docker-compose.yml
+├── .env
+├── backend.Dockerfile
+├── nginx/
+│   └── nginx.conf
+├── scripts/
+│   ├── backup.sh
+│   └── duckdns.sh
+├── backups/
+├── logs/
+│   ├── backend/
+│   └── nginx/
+├── ppms-backend/
+└── ppms-frontend/
+
+1. Install Docker + Docker Compose
+----------------------------------
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg cron snapd
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo systemctl enable --now cron
+
+2. Install Certbot
+------------------
+sudo snap install core
+sudo snap refresh core
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
+
+3. Create folders
+-----------------
+sudo mkdir -p /home/ubuntu/ppms
+sudo mkdir -p /home/ubuntu/postgres-data
+sudo mkdir -p /home/ubuntu/backups
+sudo mkdir -p /home/ubuntu/ppms/backups
+sudo mkdir -p /home/ubuntu/ppms/logs/backend
+sudo mkdir -p /home/ubuntu/ppms/logs/nginx
+sudo chown -R ubuntu:ubuntu /home/ubuntu/ppms /home/ubuntu/postgres-data /home/ubuntu/backups
+
+4. Copy project and infra files
+-------------------------------
+cp -r ppms/* /home/ubuntu/ppms/
+cp -r ppms-backend /home/ubuntu/ppms/
+cp -r ppms-frontend /home/ubuntu/ppms/
+chmod +x /home/ubuntu/ppms/scripts/backup.sh
+chmod +x /home/ubuntu/ppms/scripts/duckdns.sh
+
+5. Edit environment file
+------------------------
+nano /home/ubuntu/ppms/.env
+
+Minimum values:
+POSTGRES_DB=ppms
+POSTGRES_USER=ppms_user
+POSTGRES_PASSWORD=strong-password
+DOMAIN_NAME=your-subdomain.duckdns.org
+CERTBOT_EMAIL=you@example.com
+DUCKDNS_DOMAIN=your-subdomain
+DUCKDNS_TOKEN=your-duckdns-token
+BACKUP_DIR=/home/ubuntu/backups
+
+6. Create DuckDNS subdomain
+---------------------------
+Open:
+https://www.duckdns.org
+
+Then create your subdomain and put the token into /home/ubuntu/ppms/.env
+
+7. Update DuckDNS and verify DNS
+--------------------------------
+cd /home/ubuntu/ppms
+./scripts/duckdns.sh
+getent hosts your-subdomain.duckdns.org
+
+8. Build frontend
+-----------------
+sudo docker run --rm -v /home/ubuntu/ppms/ppms-frontend:/workspace -w /workspace node:22-alpine sh -lc "npm ci && npm run build"
+
+9. Build backend jar
+--------------------
+sudo docker run --rm -v /home/ubuntu/ppms/ppms-backend:/workspace -w /workspace maven:3.9.11-eclipse-temurin-21 mvn clean package -DskipTests
+
+10. Start postgres and backend
+------------------------------
+cd /home/ubuntu/ppms
+sudo docker compose up -d postgres backend
+
+11. Generate SSL certificate
+----------------------------
+sudo certbot certonly --standalone -d your-subdomain.duckdns.org --agree-tos -m you@example.com --non-interactive
+
+12. Start nginx
+---------------
+cd /home/ubuntu/ppms
+sudo docker compose up -d nginx
+
+13. Verify HTTPS
+----------------
+sudo docker compose ps
+curl -I https://your-subdomain.duckdns.org
+curl -I http://your-subdomain.duckdns.org
+
+Cron jobs
+---------
+( sudo crontab -l 2>/dev/null; \
+  echo "0 2 * * * /home/ubuntu/ppms/scripts/backup.sh >> /home/ubuntu/ppms/logs/backup-cron.log 2>&1"; \
+  echo "*/5 * * * * /home/ubuntu/ppms/scripts/duckdns.sh >> /home/ubuntu/ppms/logs/duckdns-cron.log 2>&1"; \
+  echo "15 4 * * * certbot renew --quiet && docker restart ppms-nginx >> /home/ubuntu/ppms/logs/certbot-renew.log 2>&1" \
+) | sudo crontab -
+
+Troubleshooting
+---------------
+cd /home/ubuntu/ppms
+sudo docker compose logs -f postgres
+sudo docker compose logs -f backend
+sudo docker compose logs -f nginx
+sudo docker compose ps
+sudo docker exec -it ppms-postgres pg_isready -U ppms_user -d ppms
+sudo docker exec -it ppms-backend curl -fsS http://127.0.0.1:8080/actuator/health
+
+Reminder
+--------
+Open Oracle Cloud ingress/security rules for TCP ports 80 and 443.

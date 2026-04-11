@@ -1,0 +1,99 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ppms}
+    username: ${DB_USER:ppms_user}
+    password: ${DB_PASS:ppms_pass}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema — JPA only validates
+    show-sql: false
+    time-zone: Asia/Kolkata
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: Asia/Kolkata
+
+  jackson:
+    time-zone: Asia/Kolkata
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB      # Bank statement CSVs are typically small; 10 MB is generous
+      max-request-size: 10MB
+
+  # Email / SMTP — used for password reset link delivery.
+  # Set MAIL_HOST, MAIL_PORT, MAIL_USER, MAIL_PASS as environment variables in production.
+  # For local dev, these default to a non-functional placeholder — password reset emails will not send
+  # but the application will still start. Configure a real SMTP server (e.g. Gmail SMTP, AWS SES)
+  # before enabling password reset in a live environment.
+  mail:
+    host: ${MAIL_HOST:smtp.example.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:noreply@example.com}
+    password: ${MAIL_PASS:changeme}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+ppms:
+  time-zone: ${PPMS_TIME_ZONE:Asia/Kolkata}
+  jwt:
+    secret: ${JWT_SECRET:ppms-local-dev-secret-key-change-in-production-must-be-at-least-256-bits}
+    expiration-ms: ${JWT_EXPIRY_MS:86400000}   # 24 hours
+
+  security:
+    # IPs that are allowed to set X-Forwarded-For headers.
+
+cors:
+  # Comma-separated list of origins allowed to call the API.
+  # Override with the CORS_ALLOWED_ORIGINS environment variable in production.
+  # Example: CORS_ALLOWED_ORIGINS=https://app.yourpump.com
+  allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:8080}"
+  # Only reverse proxies (nginx, load balancer) should appear here.
+  # Requests from any other IP have their X-Forwarded-For header ignored
+  # to prevent IP spoofing in the login rate-limiter.
+  # In production, set TRUSTED_PROXY_IPS env var to your load balancer's IP(s).
+  trusted-proxy-ips: "${TRUSTED_PROXY_IPS:127.0.0.1,::1}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Expose health (for K8s probes) and prometheus (for Grafana scraping).
+        # Never expose env, beans, mappings, or heapdump in production without auth.
+        include: health,prometheus,info
+  endpoint:
+    health:
+      # Show full health details only to authenticated/internal requests.
+      # Liveness probe: GET /actuator/health/liveness
+      # Readiness probe: GET /actuator/health/readiness
+      show-details: when-authorized
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+logging:
+  level:
+    com.ppms: INFO
+    org.springframework.security: WARN
