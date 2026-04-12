@@ -9,7 +9,7 @@ import java.util.List;
 @Repository
 public interface NozzleReadingAdjustmentRepository extends JpaRepository<NozzleReadingAdjustment, Long> {
 
-    List<NozzleReadingAdjustment> findByOutletIdOrderByCreatedAtDesc(Long outletId);
+    List<NozzleReadingAdjustment> findByNozzleIdOrderByCreatedAtDesc(Long nozzleId);
 
     /** Used by balance sheet generation to surface amendments within a report period. */
     List<NozzleReadingAdjustment> findByPumpIdAndCreatedAtBetweenOrderByCreatedAtAsc(

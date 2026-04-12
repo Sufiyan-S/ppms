@@ -19,24 +19,24 @@ public class NozzleAdjustmentController {
 
     // ── Meter reading adjustments ─────────────────────────────────────────────
 
-    @PostMapping("/{pumpId}/outlets/{outletId}/reading-adjustments")
+    @PostMapping("/{pumpId}/nozzles/{nozzleId}/reading-adjustments")
     @ResponseStatus(HttpStatus.CREATED)
     public NozzleReadingAdjustment recordAdjustment(
             @PathVariable Long pumpId,
-            @PathVariable Long outletId,
+            @PathVariable Long nozzleId,
             @Valid @RequestBody RecordAdjustmentRequest req,
             @AuthenticationPrincipal User currentUser) {
         requireOwnerOrAdmin(currentUser);
-        return adjustmentService.recordReadingAdjustment(pumpId, outletId, req, currentUser);
+        return adjustmentService.recordReadingAdjustment(pumpId, nozzleId, req, currentUser);
     }
 
-    @GetMapping("/{pumpId}/outlets/{outletId}/reading-adjustments")
+    @GetMapping("/{pumpId}/nozzles/{nozzleId}/reading-adjustments")
     public List<NozzleReadingAdjustment> getAdjustments(
             @PathVariable Long pumpId,
-            @PathVariable Long outletId,
+            @PathVariable Long nozzleId,
             @AuthenticationPrincipal User currentUser) {
         requireOwnerOrAdmin(currentUser);
-        return adjustmentService.getAdjustments(outletId);
+        return adjustmentService.getAdjustments(nozzleId);
     }
 
     // ── Fuel dip entries ──────────────────────────────────────────────────────

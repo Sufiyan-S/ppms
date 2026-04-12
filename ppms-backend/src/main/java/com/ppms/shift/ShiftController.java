@@ -78,7 +78,7 @@ public class ShiftController {
         ShiftResponse response = shiftService.openShift(request, currentUser);
         auditService.log(response.getPumpId(), AuditAction.SHIFT_OPENED,
                 "Shift", response.getId().toString(),
-                "Shift opened on nozzle #" + response.getNozzleNumber() + " by operator " + response.getOperatorName(),
+                "Shift opened on DU #" + response.getDuNumber() + " by operator " + response.getOperatorName(),
                 currentUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

@@ -41,8 +41,8 @@ public class FuelTransaction {
     @Column(name = "pump_id", nullable = false)
     private Long pumpId;
 
-    @Column(name = "nozzle_outlet_id", nullable = false)
-    private Long nozzleOutletId;
+    @Column(name = "nozzle_id", nullable = false)
+    private Long nozzleId;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)

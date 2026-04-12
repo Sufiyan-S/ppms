@@ -15,8 +15,8 @@ import java.util.List;
 public class CloseShiftRequest {
 
     /**
-     * End meter reading for each outlet on the nozzle.
-     * Backend validates that every outlet that was opened has an end reading provided.
+     * End meter reading for each nozzle in the shift.
+     * Backend validates that every nozzle that was opened has an end reading provided.
      */
     @NotEmpty(message = "At least one fuel reading is required")
     @Valid
@@ -52,7 +52,7 @@ public class CloseShiftRequest {
     // ── Inner records ────────────────────────────────────────────────────────
 
     public record OutletEndReadingRequest(
-            @NotNull(message = "Outlet ID is required") Long outletId,
+            @NotNull(message = "Nozzle ID is required") Long nozzleId,
             @NotNull(message = "End reading is required") BigDecimal endReading
     ) {}
 

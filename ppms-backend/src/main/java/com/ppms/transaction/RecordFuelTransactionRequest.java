@@ -13,8 +13,8 @@ public class RecordFuelTransactionRequest {
     @NotNull(message = "Shift ID is required")
     private Long shiftId;
 
-    @NotNull(message = "Nozzle outlet ID is required")
-    private Long nozzleOutletId;
+    @NotNull(message = "Nozzle ID is required")
+    private Long nozzleId;
 
     @NotNull(message = "Fuel type is required")
     private FuelType fuelType;

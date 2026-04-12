@@ -25,11 +25,11 @@ public class ShiftFuelReading {
     private Long shiftId;
 
     /**
-     * The nozzle outlet this reading belongs to.
-     * One outlet = one fuel type on one nozzle.
+     * The nozzle this reading belongs to.
+     * One nozzle = one fuel type = one meter counter.
      */
-    @Column(name = "outlet_id", nullable = false)
-    private Long outletId;
+    @Column(name = "nozzle_id", nullable = false)
+    private Long nozzleId;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -49,14 +49,14 @@ public class ShiftFuelReading {
     private BigDecimal priceSnapshot;
 
     /**
-     * The underground tank this outlet was drawing from at shift-open time.
-     * Frozen at open — does not change if the outlet-to-tank mapping is later
-     * updated. Null for shifts created before V9 migration.
+     * The underground tank this nozzle was drawing from at shift-open time.
+     * Frozen at open so FIFO lot attribution stays accurate even if the tank
+     * mapping is later changed.
      */
     @Column(name = "tank_id")
     private Long tankId;
 
-    /** Computed at shift close: end_reading - start_reading (handles rollover). */
+    /** Computed at shift close: handles meter rollover (end < start). */
     @Column(name = "units_sold")
     private BigDecimal unitsSold;
 }

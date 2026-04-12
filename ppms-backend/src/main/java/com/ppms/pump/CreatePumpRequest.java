@@ -1,5 +1,6 @@
 package com.ppms.pump;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -14,7 +15,8 @@ public class CreatePumpRequest {
     @NotBlank(message = "Address is required")
     private String address;
 
-    @NotNull(message = "Max nozzle count is required")
-    @Min(value = 1, message = "Must have at least 1 nozzle")
-    private Integer maxNozzleCount;
+    @NotNull(message = "Max DU count is required")
+    @Min(value = 1, message = "Must have at least 1 DU")
+    @Max(value = 20, message = "Cannot exceed 20 DUs")
+    private Integer maxDuCount;
 }

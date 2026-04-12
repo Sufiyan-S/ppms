@@ -1,5 +1,5 @@
 import client from './client'
-import type { Shift, NozzleOption, OpenShiftRequest, CloseShiftRequest, CreditEntryInput } from '../types/shift'
+import type { DUOption, Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput } from '../types/shift'
 
 export type { CreditEntryInput }
 
@@ -28,8 +28,8 @@ export const shiftApi = {
   closeShift: (pumpId: number, shiftId: number, request: CloseShiftRequest) =>
     client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/close`, request).then((r) => r.data),
 
-  getNozzles: (pumpId: number) =>
-    client.get<NozzleOption[]>(`/pumps/${pumpId}/nozzles`).then((r) => r.data),
+  getDUs: (pumpId: number) =>
+    client.get<DUOption[]>(`/pumps/${pumpId}/dus`).then((r) => r.data),
 
   resolveDiscrepancy: (pumpId: number, shiftId: number, req: ResolveDiscrepancyRequest) =>
     client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/discrepancy-resolution`, req).then((r) => r.data),

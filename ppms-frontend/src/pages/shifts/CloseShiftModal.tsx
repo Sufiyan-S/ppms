@@ -41,9 +41,9 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   const queryClient = useQueryClient()
   const [serverError, setServerError] = useState<string | null>(null)
 
-  /** Per-outlet end readings: outletId → raw string input */
+  /** Per-nozzle end readings: nozzleId → raw string input */
   const [endReadings, setEndReadings] = useState<Record<number, string>>(() =>
-    Object.fromEntries(shift.fuelReadings.map((r) => [r.outletId, '']))
+    Object.fromEntries(shift.fuelReadings.map((r) => [r.nozzleId, '']))
   )
   const [cash,              setCash]              = useState('')
   const [upi,               setUpi]               = useState('')
@@ -75,11 +75,16 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   // Fuel types dispensed on this nozzle (for credit entry dropdown)
   const availableFuelTypes = shift.fuelReadings.map((r) => r.fuelType)
 
+  // nozzleId → nozzleNumber — used to label each meter reading field
+  const nozzleNumberById: Record<number, number> = Object.fromEntries(
+    shift.nozzles.map((n) => [n.id, n.nozzleNumber])
+  )
+
   // ── Live calculations ───────────────────────────────────────────────────────
 
   const perFuelSales: Array<{ reading: FuelReading; sold: number; value: number }> =
     shift.fuelReadings.map((r) => {
-      const endRaw = endReadings[r.outletId] ?? ''
+      const endRaw = endReadings[r.nozzleId] ?? ''
       const sold = endRaw !== '' ? Math.max(0, Number(endRaw) - r.startReading) : 0
       const value = sold * r.priceSnapshot
       return { reading: r, sold, value }
@@ -92,9 +97,9 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   const totalCollected = emptyNum(cash) + emptyNum(upi) + emptyNum(card) + emptyNum(fleetCard) + creditTotal
   const diff           = totalCollected - totalDue
 
-  const readingsComplete = shift.fuelReadings.every((r) => (endReadings[r.outletId] ?? '') !== '')
+  const readingsComplete = shift.fuelReadings.every((r) => (endReadings[r.nozzleId] ?? '') !== '')
   const readingsBelowStart = shift.fuelReadings.some((r) => {
-    const v = endReadings[r.outletId] ?? ''
+    const v = endReadings[r.nozzleId] ?? ''
     return v !== '' && Number(v) < r.startReading
   })
   // Consider "touched" if any payment field has a value, OR if pre-recorded credit exists
@@ -230,8 +235,8 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
 
     const req: CloseShiftRequest = {
       fuelReadings: shift.fuelReadings.map((r) => ({
-        outletId:   r.outletId,
-        endReading: Number(endReadings[r.outletId]),
+        nozzleId:   r.nozzleId,
+        endReading: Number(endReadings[r.nozzleId]),
       })),
       cashCollected:      emptyNum(cash),
       upiCollected:       emptyNum(upi),
@@ -262,7 +267,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
           <div className="ui-modal-heading pr-10">
             <h2 className="ui-modal-title">Close Shift</h2>
             <p className="ui-modal-subtitle">
-              Nozzle #{shift.nozzleNumber} · {shift.operatorName} · {shift.shiftWindow}
+              Nozzle {shift.nozzles.map((n) => `#${n.nozzleNumber}`).join(', ')} · {shift.operatorName} · {shift.shiftWindow}
             </p>
           </div>
           <button type="button" onClick={onClose}
@@ -273,7 +278,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
           {/* Locked price pills */}
           <div className="flex flex-wrap gap-2 mt-3">
             {shift.fuelReadings.map((r) => (
-              <span key={r.outletId}
+              <span key={r.nozzleId}
                 className="bg-white/20 text-white text-xs px-2.5 py-1 rounded-full">
                 {FUEL_LABELS[r.fuelType] ?? r.fuelType} ₹{r.priceSnapshot}/{FUEL_UNIT[r.fuelType] ?? 'L'}
               </span>
@@ -288,17 +293,17 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
             <Section label="1" title="End Meter Readings">
               <div className={`grid gap-3 ${shift.fuelReadings.length > 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {perFuelSales.map(({ reading, sold }) => {
-                  const endVal = endReadings[reading.outletId] ?? ''
+                  const endVal = endReadings[reading.nozzleId] ?? ''
                   const isInvalid = endVal !== '' && Number(endVal) < reading.startReading
                   return (
                     <ReadingField
-                      key={reading.outletId}
-                      label={`${FUEL_LABELS[reading.fuelType] ?? reading.fuelType} end (${FUEL_UNIT[reading.fuelType] ?? 'L'})`}
+                      key={reading.nozzleId}
+                      label={`Nozzle #${nozzleNumberById[reading.nozzleId] ?? '?'} · ${FUEL_LABELS[reading.fuelType] ?? reading.fuelType} end (${FUEL_UNIT[reading.fuelType] ?? 'L'})`}
                       startValue={reading.startReading}
                       soldUnits={sold}
                       pricePerUnit={reading.priceSnapshot}
                       value={endVal}
-                      onChange={(v) => setEndReadings((prev) => ({ ...prev, [reading.outletId]: v }))}
+                      onChange={(v) => setEndReadings((prev) => ({ ...prev, [reading.nozzleId]: v }))}
                       unitLabel={FUEL_UNIT[reading.fuelType] ?? 'L'}
                       isInvalid={isInvalid}
                     />
@@ -748,6 +753,28 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                     placeholder="e.g. given to driver"
                                     className="ui-input-compact focus:outline-none focus:ring-1 focus:ring-orange-400" />
                                 </div>
+                              </div>
+
+                              {/* Add / Cancel actions */}
+                              <div className="flex items-center justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => removeCreditRow(row.id)}
+                                  className="ui-btn ui-btn-ghost text-xs px-3 py-1.5 min-h-0"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!row.clientId || emptyNum(row.amount) <= 0) return
+                                    setExpandedRowId(null)
+                                  }}
+                                  disabled={!row.clientId || emptyNum(row.amount) <= 0}
+                                  className="ui-btn ui-btn-warning text-xs px-3 py-1.5 min-h-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  Add
+                                </button>
                               </div>
                             </div>
                           )}

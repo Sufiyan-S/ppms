@@ -1,5 +1,7 @@
 package com.ppms.shift;
 
+import com.ppms.pump.DispensaryUnit;
+import com.ppms.pump.DispensaryUnitRepository;
 import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleRepository;
 import com.ppms.user.User;
@@ -14,31 +16,41 @@ import java.util.List;
 public class ShiftReadModelService {
 
     private final NozzleRepository nozzleRepository;
+    private final DispensaryUnitRepository duRepository;
     private final UserRepository userRepository;
     private final ShiftFuelReadingRepository fuelReadingRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
+    private final ShiftNozzleRepository shiftNozzleRepository;
 
     public ShiftResponse toResponseWithLookups(Shift shift) {
-        Nozzle nozzle = nozzleRepository.findById(shift.getNozzleId()).orElse(null);
+        List<Long> nozzleIds = shiftNozzleRepository.findNozzleIdsByShiftId(shift.getId());
+        List<Nozzle> nozzles = nozzleRepository.findAllById(nozzleIds);
+        DispensaryUnit du = duRepository.findById(shift.getDuId()).orElse(null);
         User operator = userRepository.findById(shift.getOperatorId()).orElse(null);
         String openedByName = userRepository.findById(shift.getOpenedByUserId())
                 .map(User::getFullName)
                 .orElse(null);
         List<ShiftFuelReading> readings = fuelReadingRepository.findByShiftId(shift.getId());
         List<ShiftCreditEntry> entries = creditEntryRepository.findByShiftId(shift.getId());
-        return toResponse(shift, nozzle, operator, openedByName, readings, entries);
+        return toResponse(shift, du, nozzles, operator, openedByName, readings, entries);
     }
 
-    public ShiftResponse toResponse(Shift shift, Nozzle nozzle, User operator, String openedByName,
+    public ShiftResponse toResponse(Shift shift, DispensaryUnit du, List<Nozzle> nozzles,
+                                    User operator, String openedByName,
                                     List<ShiftFuelReading> readings, List<ShiftCreditEntry> entries) {
+
+        List<ShiftResponse.NozzleSummary> nozzleSummaries = nozzles.stream()
+                .map(n -> new ShiftResponse.NozzleSummary(n.getId(), n.getNozzleNumber(), n.getFuelType().name()))
+                .toList();
+
         List<ShiftResponse.FuelReadingResponse> fuelReadingResponses = readings.stream()
-                .map(reading -> new ShiftResponse.FuelReadingResponse(
-                        reading.getOutletId(),
-                        reading.getFuelType(),
-                        reading.getStartReading(),
-                        reading.getEndReading(),
-                        reading.getPriceSnapshot(),
-                        reading.getUnitsSold()))
+                .map(r -> new ShiftResponse.FuelReadingResponse(
+                        r.getNozzleId(),
+                        r.getFuelType(),
+                        r.getStartReading(),
+                        r.getEndReading(),
+                        r.getPriceSnapshot(),
+                        r.getUnitsSold()))
                 .toList();
 
         List<ShiftResponse.CreditEntryResponse> creditEntryResponses = entries.stream()
@@ -58,8 +70,10 @@ public class ShiftReadModelService {
         return ShiftResponse.builder()
                 .id(shift.getId())
                 .pumpId(shift.getPumpId())
-                .nozzleId(shift.getNozzleId())
-                .nozzleNumber(nozzle != null ? nozzle.getNozzleNumber() : null)
+                .duId(shift.getDuId())
+                .duNumber(du != null ? du.getDuNumber() : null)
+                .duName(du != null ? du.getName() : null)
+                .nozzles(nozzleSummaries)
                 .operatorId(shift.getOperatorId())
                 .operatorName(operator != null ? operator.getFullName() : null)
                 .openedByUserName(openedByName)

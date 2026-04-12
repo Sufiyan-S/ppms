@@ -9,6 +9,7 @@ import type {
   BalanceSheetSummary,
   BsFuelLine,
   BsShiftLine,
+  NozzleReadingLine,
   MeterAmendmentLine,
   DipPlLine,
   GenerateBalanceSheetRequest,
@@ -510,7 +511,7 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
               <thead>
                 <tr className="bg-slate-50 text-left">
                   <Th>Operator</Th>
-                  <Th>Nozzle</Th>
+                  <Th>DU / Nozzle</Th>
                   <Th>Fuels</Th>
                   <Th right>Litres</Th>
                   <Th right>Expected</Th>
@@ -787,20 +788,46 @@ function FuelLineRow({ line }: { line: BsFuelLine }) {
 function ShiftLineRow({ line }: { line: BsShiftLine }) {
   const fleetCard = line.fleetCardCollected ?? 0
   return (
-    <tr className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
-      <Td>{line.operatorName}</Td>
-      <Td><span className="font-medium">#{line.nozzleNumber}</span></Td>
-      <Td><span className="text-xs text-slate-500 block max-w-[100px]">{line.fuelTypesSummary}</span></Td>
-      <Td right>{fmtLitres(line.litresSold)}</Td>
-      <Td right>{fmtMoney(line.expectedRevenue)}</Td>
-      <Td right><span className="font-medium text-slate-800">{fmtMoney(line.cashCollected + line.upiCollected + line.cardCollected + fleetCard)}</span></Td>
-      <Td right>{line.cashCollected > 0 ? fmtMoney(line.cashCollected) : <span className="text-slate-300">—</span>}</Td>
-      <Td right>{line.upiCollected > 0 ? fmtMoney(line.upiCollected) : <span className="text-slate-300">—</span>}</Td>
-      <Td right>{line.cardCollected > 0 ? fmtMoney(line.cardCollected) : <span className="text-slate-300">—</span>}</Td>
-      <Td right>{fleetCard > 0 ? fmtMoney(fleetCard) : <span className="text-slate-300">—</span>}</Td>
-      <Td right>{line.creditAmount > 0 ? fmtMoney(line.creditAmount) : <span className="text-slate-300">—</span>}</Td>
-      <DiscrepancyTd value={line.discrepancy} />
-    </tr>
+    <>
+      {/* Shift summary row — shows operator, DU, and all payment totals */}
+      <tr className="border-t border-slate-200 hover:bg-slate-50 transition-colors">
+        <Td>{line.operatorName}</Td>
+        <Td>
+          <span className="font-medium text-slate-700">DU #{line.duNumber}</span>
+          {line.duName && <span className="text-xs text-slate-500 ml-1">· {line.duName}</span>}
+        </Td>
+        <Td><span className="text-xs text-slate-500 block max-w-[100px]">{line.fuelTypesSummary}</span></Td>
+        <Td right>{fmtLitres(line.litresSold)}</Td>
+        <Td right>{fmtMoney(line.expectedRevenue)}</Td>
+        <Td right><span className="font-medium text-slate-800">{fmtMoney(line.cashCollected + line.upiCollected + line.cardCollected + fleetCard)}</span></Td>
+        <Td right>{line.cashCollected > 0 ? fmtMoney(line.cashCollected) : <span className="text-slate-300">—</span>}</Td>
+        <Td right>{line.upiCollected > 0 ? fmtMoney(line.upiCollected) : <span className="text-slate-300">—</span>}</Td>
+        <Td right>{line.cardCollected > 0 ? fmtMoney(line.cardCollected) : <span className="text-slate-300">—</span>}</Td>
+        <Td right>{fleetCard > 0 ? fmtMoney(fleetCard) : <span className="text-slate-300">—</span>}</Td>
+        <Td right>{line.creditAmount > 0 ? fmtMoney(line.creditAmount) : <span className="text-slate-300">—</span>}</Td>
+        <DiscrepancyTd value={line.discrepancy} />
+      </tr>
+      {/* Per-nozzle breakdown rows — one row per nozzle showing fuel type and litres only */}
+      {(line.nozzleReadings ?? []).map((nr: NozzleReadingLine, i: number) => {
+        const badge = FUEL_BADGE[nr.fuelType] ?? 'bg-slate-100 text-slate-600'
+        return (
+          <tr key={i} className="border-t border-slate-100 bg-slate-50/40">
+            <Td></Td>
+            <Td>
+              <span className="text-xs text-slate-400 ml-3">↳ Nozzle #{nr.nozzleNumber}</span>
+            </Td>
+            <Td>
+              <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${badge}`}>
+                {nr.fuelType.replace('_', ' ')}
+              </span>
+            </Td>
+            <Td right><span className="text-xs text-slate-500">{fmtLitres(nr.litresSold)}</span></Td>
+            <Td right><span className="text-xs text-slate-500">{fmtMoney(nr.expectedRevenue)}</span></Td>
+            <Td colSpan={7}></Td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 

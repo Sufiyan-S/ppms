@@ -156,7 +156,7 @@ export default function ShiftsPage() {
               </div>
               <button
                 onClick={() => setShowOpenModal(true)}
-                className="ui-btn ui-btn-primary"
+                className="ui-btn ui-btn-primary ml-auto"
               >
                 + Open Shift
               </button>
@@ -516,7 +516,12 @@ function ShiftRow({ shift, onClose, onAddCredit }: { shift: Shift; onClose: () =
 
   return (
     <tr className="border-b border-slate-50 hover:bg-slate-50">
-      <td className="px-6 py-3 font-medium text-slate-700">#{shift.nozzleNumber}</td>
+      <td className="px-6 py-3 font-medium text-slate-700">
+        <span className="text-xs text-slate-400 block">
+          {shift.duName ?? `DU #${shift.duNumber}`}
+        </span>
+        {shift.nozzles.map((n) => `#${n.nozzleNumber} ${n.fuelType}`).join(', ')}
+      </td>
       <td className="px-6 py-3 text-slate-600">{shift.operatorName}</td>
       <td className="px-6 py-3 text-slate-500">{shift.shiftWindow}</td>
       <td className="px-6 py-3 text-slate-500">{startTime}</td>
@@ -569,8 +574,11 @@ function HistoryRow({ shift }: { shift: Shift }) {
       <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
         <td className="px-5 py-3 text-slate-400 text-xs font-mono">{shift.id}</td>
         <td className="px-5 py-3">
+          <span className="text-xs text-slate-400 block">
+            {shift.duName ?? `DU #${shift.duNumber}`}
+          </span>
           <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-xs">
-            #{shift.nozzleNumber}
+            {shift.nozzles.map((n) => `#${n.nozzleNumber} ${n.fuelType}`).join(', ')}
           </span>
         </td>
         <td className="px-5 py-3">
@@ -728,7 +736,7 @@ function CreditEntriesModal({
               <div className="ui-modal-heading">
                 <h2 className="ui-modal-title">Credit Sales</h2>
                 <p className="ui-modal-subtitle">
-                  Shift #{shift.id} · Nozzle #{shift.nozzleNumber} · {shift.operatorName} · {shift.shiftDate}
+                  Shift #{shift.id} · Nozzle {shift.nozzles.map((n) => `#${n.nozzleNumber}`).join(', ')} · {shift.operatorName} · {shift.shiftDate}
                 </p>
               </div>
               <button
@@ -993,7 +1001,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
           <div className="ui-modal-heading">
             <h2 className="ui-modal-title">Add Credit Entry</h2>
             <p className="ui-modal-subtitle">
-              Nozzle #{shift.nozzleNumber} · {shift.operatorName}
+              Nozzle {shift.nozzles.map((n) => `#${n.nozzleNumber}`).join(', ')} · {shift.operatorName}
             </p>
           </div>
           <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">×</button>

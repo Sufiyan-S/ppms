@@ -1,8 +1,7 @@
 package com.ppms.adjustment;
 
-import com.ppms.common.exception.BusinessException;
 import com.ppms.fuel.FuelType;
-import com.ppms.pump.NozzleOutlet;
+import com.ppms.pump.Nozzle;
 import com.ppms.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,11 +25,11 @@ public class NozzleAdjustmentService {
     // ── Meter reading adjustment ──────────────────────────────────────────────
 
     /**
-     * Records a meter reading adjustment (RESET or CUSTOM_READING) on a nozzle outlet.
+     * Records a meter reading adjustment (RESET or CUSTOM_READING) on a nozzle.
      *
      * Rules:
      * - Only allowed when the nozzle has no active shift (OPEN / OPEN_OVERDUE).
-     *   An active shift uses the outlet's lastReading as its start reading snapshot;
+     *   An active shift uses the nozzle's lastReading as its start reading snapshot;
      *   changing it mid-shift would corrupt the units-sold calculation.
      * - RESET sets lastReading to 0 (meter physically reset to zero counter).
      * - CUSTOM_READING sets lastReading to the provided newReading value.
@@ -39,24 +38,23 @@ public class NozzleAdjustmentService {
      */
     @Transactional
     public NozzleReadingAdjustment recordReadingAdjustment(
-            Long pumpId, Long outletId, RecordAdjustmentRequest req, User currentUser) {
+            Long pumpId, Long nozzleId, RecordAdjustmentRequest req, User currentUser) {
 
-        NozzleOutlet outlet = supportService.requireAdjustableOutlet(outletId);
+        Nozzle nozzle = supportService.requireAdjustableNozzle(nozzleId);
         String type = supportService.validateAdjustmentType(req.getAdjustmentType());
 
-        BigDecimal previousReading = outlet.getLastReading();
+        BigDecimal previousReading = nozzle.getLastReading();
         BigDecimal newReading = supportService.resolveNewReading(type, req.getNewReading());
 
-        // Update the outlet's lastReading — this becomes the start reading for the next shift
-        outlet.setLastReading(newReading);
-        supportService.saveOutlet(outlet);
+        // Update the nozzle's lastReading — this becomes the start reading for the next shift
+        nozzle.setLastReading(newReading);
+        supportService.saveNozzle(nozzle);
 
         NozzleReadingAdjustment adjustment = NozzleReadingAdjustment.builder()
                 .pumpId(pumpId)
-                .nozzleId(outlet.getNozzleId())
-                .outletId(outletId)
+                .nozzleId(nozzleId)
                 .adjustmentType(type)
-                .fuelType(outlet.getFuelType().name())
+                .fuelType(nozzle.getFuelType().name())
                 .previousReading(previousReading)
                 .newReading(newReading)
                 .reason(req.getReason().trim())
@@ -65,14 +63,14 @@ public class NozzleAdjustmentService {
 
         NozzleReadingAdjustment saved = adjustmentRepository.save(adjustment);
 
-        log.info("Meter reading adjusted: outlet={}, nozzle={}, type={}, {} → {}, by={}",
-                outletId, outlet.getNozzleId(), type, previousReading, newReading, currentUser.getId());
+        log.info("Meter reading adjusted: nozzle={}, type={}, {} → {}, by={}",
+                nozzleId, type, previousReading, newReading, currentUser.getId());
 
         return saved;
     }
 
-    public List<NozzleReadingAdjustment> getAdjustments(Long outletId) {
-        return adjustmentRepository.findByOutletIdOrderByCreatedAtDesc(outletId);
+    public List<NozzleReadingAdjustment> getAdjustments(Long nozzleId) {
+        return adjustmentRepository.findByNozzleIdOrderByCreatedAtDesc(nozzleId);
     }
 
     // ── Fuel dip entry ────────────────────────────────────────────────────────

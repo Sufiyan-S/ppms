@@ -7,9 +7,9 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * Audit record of a manual meter reading correction on a nozzle outlet.
+ * Audit record of a manual meter reading correction on a nozzle.
  * Created when an Admin/Owner uses Setup → Adjust Reading (RESET or CUSTOM_READING).
- * No financial impact — purely a log entry. The outlet's lastReading is updated separately.
+ * No financial impact — purely a log entry. The nozzle's lastReading is updated separately.
  */
 @Entity
 @Table(name = "nozzle_reading_adjustments")
@@ -29,9 +29,6 @@ public class NozzleReadingAdjustment {
 
     @Column(name = "nozzle_id", nullable = false)
     private Long nozzleId;
-
-    @Column(name = "outlet_id", nullable = false)
-    private Long outletId;
 
     /** RESET or CUSTOM_READING */
     @Column(name = "adjustment_type", nullable = false)

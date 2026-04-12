@@ -71,7 +71,7 @@ public class FuelTransactionController {
         FuelTransaction transaction = FuelTransaction.builder()
                 .shiftId(shift.getId())
                 .pumpId(pumpId)
-                .nozzleOutletId(request.getNozzleOutletId())
+                .nozzleId(request.getNozzleId())
                 .fuelType(request.getFuelType())
                 .quantityLitres(request.getQuantityLitres().setScale(3, RoundingMode.HALF_UP))
                 .pricePerUnit(request.getPricePerUnit().setScale(4, RoundingMode.HALF_UP))

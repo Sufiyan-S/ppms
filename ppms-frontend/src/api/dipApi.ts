@@ -6,7 +6,6 @@ export interface NozzleReadingAdjustment {
   id: number
   pumpId: number
   nozzleId: number
-  outletId: number
   adjustmentType: AdjustmentType
   fuelType: string
   previousReading: number
@@ -33,14 +32,14 @@ export const dipApi = {
 
   // ── Meter reading adjustments ─────────────────────────────────────────────
 
-  recordAdjustment: (pumpId: number, outletId: number, adjustmentType: AdjustmentType, reason: string, newReading?: number) =>
+  recordAdjustment: (pumpId: number, nozzleId: number, adjustmentType: AdjustmentType, reason: string, newReading?: number) =>
     client.post<NozzleReadingAdjustment>(
-      `/pumps/${pumpId}/outlets/${outletId}/reading-adjustments`,
+      `/pumps/${pumpId}/nozzles/${nozzleId}/reading-adjustments`,
       { adjustmentType, reason, newReading }
     ).then(r => r.data),
 
-  getAdjustments: (pumpId: number, outletId: number) =>
-    client.get<NozzleReadingAdjustment[]>(`/pumps/${pumpId}/outlets/${outletId}/reading-adjustments`).then(r => r.data),
+  getAdjustments: (pumpId: number, nozzleId: number) =>
+    client.get<NozzleReadingAdjustment[]>(`/pumps/${pumpId}/nozzles/${nozzleId}/reading-adjustments`).then(r => r.data),
 
   // ── Fuel dip entries ──────────────────────────────────────────────────────
 

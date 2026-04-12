@@ -1,37 +1,32 @@
 import client from './client'
-import type { NozzleOption, FuelType } from '../types/shift'
+import type { DUOption, FuelType, NozzleDetail } from '../types/shift'
 
 export interface PumpSummary {
   id: number
   name: string
   address: string
-  maxNozzleCount: number
+  maxDuCount: number
   ownerId: number
   createdAt: string
-  nozzles: NozzleOption[]
+  dus: DUOption[]
 }
 
 export interface CreatePumpRequest {
   name: string
   address: string
-  maxNozzleCount: number
+  maxDuCount: number
 }
 
-export interface CreateNozzleRequest {
-  nozzleNumber: number
-  /** 1–4 non-CNG types, OR exactly 1 CNG */
-  fuelTypes: FuelType[]
-  /** Initial meter reading per outlet — use when meter already shows a non-zero value at setup */
-  startReadings?: Partial<Record<FuelType, number>>
-  maxMeterValue?: number
+export interface CreateDURequest {
+  name: string
+  nozzles: Array<{
+    nozzleNumber: number
+    fuelType: FuelType
+    initialReading?: number
+  }>
 }
 
-export interface AddNozzleOutletRequest {
-  fuelType: FuelType
-  initialReading?: number
-}
-
-export interface UpdateOutletReadingRequest {
+export interface UpdateNozzleReadingRequest {
   reading: number
 }
 
@@ -129,35 +124,36 @@ export const pumpApi = {
   deletePump: (pumpId: number) =>
     client.delete(`/pumps/${pumpId}`).then((r) => r.data),
 
-  // ── Nozzles ────────────────────────────────────────────────────────────────
+  // ── Dispensary Units ───────────────────────────────────────────────────────
 
-  /** Fetch ALL nozzles for a pump (ACTIVE + INACTIVE) — used by the Setup page. */
-  getNozzles: (pumpId: number) =>
-    client.get<NozzleOption[]>(`/pumps/${pumpId}/nozzles`).then((r) => r.data),
+  /** Fetch ALL DUs for a pump (ACTIVE + INACTIVE) — used by the Setup page. */
+  getDUs: (pumpId: number) =>
+    client.get<DUOption[]>(`/pumps/${pumpId}/dus`).then((r) => r.data),
 
-  addNozzle: (pumpId: number, req: CreateNozzleRequest) =>
-    client.post<NozzleOption>(`/pumps/${pumpId}/nozzles`, req).then((r) => r.data),
+  createDU: (pumpId: number, req: CreateDURequest) =>
+    client.post<DUOption>(`/pumps/${pumpId}/dus`, req).then((r) => r.data),
 
-  addOutlet: (nozzleId: number, req: AddNozzleOutletRequest) =>
-    client.post<NozzleOption>(`/pumps/nozzles/${nozzleId}/outlets`, req).then((r) => r.data),
+  /** Enables or disables a DU. Blocked by backend if an active shift exists on any nozzle. */
+  updateDUStatus: (pumpId: number, duId: number, status: 'ACTIVE' | 'INACTIVE') =>
+    client.patch<DUOption>(`/pumps/${pumpId}/dus/${duId}/status`, { status }).then((r) => r.data),
 
-  removeOutlet: (nozzleId: number, outletId: number) =>
-    client.delete<NozzleOption>(`/pumps/nozzles/${nozzleId}/outlets/${outletId}`).then((r) => r.data),
+  // ── Nozzles (within a DU) ──────────────────────────────────────────────────
 
-  updateOutletReading: (nozzleId: number, outletId: number, req: UpdateOutletReadingRequest) =>
-    client.put<NozzleOption>(`/pumps/nozzles/${nozzleId}/outlets/${outletId}/reading`, req).then((r) => r.data),
+  addNozzle: (pumpId: number, duId: number, nozzleNumber: number, fuelType: FuelType, initialReading?: number) =>
+    client.post<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles`, { nozzleNumber, fuelType, initialReading }).then((r) => r.data),
 
-  /** Maps (or clears) the tank an outlet draws fuel from. Pass tankId=null to clear. */
-  mapOutletToTank: (nozzleId: number, outletId: number, tankId: number | null) =>
-    client.patch<NozzleOption>(`/pumps/nozzles/${nozzleId}/outlets/${outletId}/tank`, { tankId }).then((r) => r.data),
+  updateNozzleStatus: (pumpId: number, duId: number, nozzleId: number, status: 'ACTIVE' | 'INACTIVE') =>
+    client.patch<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles/${nozzleId}/status`, { status }).then((r) => r.data),
 
-  /** Enables or disables a nozzle. Blocked by backend if an active shift exists. */
-  updateNozzleStatus: (nozzleId: number, status: 'ACTIVE' | 'INACTIVE') =>
-    client.patch<NozzleOption>(`/pumps/nozzles/${nozzleId}/status`, { status }).then((r) => r.data),
+  mapNozzleToTank: (pumpId: number, duId: number, nozzleId: number, tankId: number | null) =>
+    client.patch<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles/${nozzleId}/tank`, { tankId }).then((r) => r.data),
 
-  /** Increases the maximum number of nozzles allowed on a pump. */
-  updateMaxNozzleCount: (pumpId: number, maxNozzleCount: number) =>
-    client.patch<PumpSummary>(`/pumps/${pumpId}/max-nozzles`, { maxNozzleCount }).then((r) => r.data),
+  updateNozzleReading: (pumpId: number, duId: number, nozzleId: number, req: UpdateNozzleReadingRequest) =>
+    client.put<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles/${nozzleId}/reading`, req).then((r) => r.data),
+
+  /** Increases the maximum number of DUs allowed on a pump. */
+  updateMaxDuCount: (pumpId: number, maxDuCount: number) =>
+    client.patch<PumpSummary>(`/pumps/${pumpId}/max-dus`, { maxDuCount }).then((r) => r.data),
 
   // ── Tanks ──────────────────────────────────────────────────────────────────
 

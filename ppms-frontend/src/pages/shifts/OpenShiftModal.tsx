@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { shiftApi } from '../../api/shiftApi'
 import { userApi } from '../../api/userApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
-import type { NozzleOption, OpenShiftRequest, Shift } from '../../types/shift'
+import type { DUOption, NozzleDetail, OpenShiftRequest, Shift } from '../../types/shift'
 
 /** Returns true if the given "HH:MM:SS" time window (possibly crossing midnight) contains `nowHHMM`. */
 function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boolean, nowHHMM: string): boolean {
@@ -15,7 +15,6 @@ function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boo
   return nowHHMM >= start && nowHHMM < end
 }
 
-// Human-readable abbreviations for fuel types
 const FUEL_ABBR: Record<string, string> = {
   PETROL: 'Petrol', SPEED_PETROL: 'Speed Petrol',
   DIESEL: 'Diesel', SPEED_DIESEL: 'Speed Diesel', CNG: 'CNG',
@@ -34,20 +33,21 @@ interface Props {
 export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props) {
   const queryClient = useQueryClient()
 
-  const [selectedNozzle, setSelectedNozzle]         = useState<NozzleOption | null>(null)
+  const [selectedDU, setSelectedDU]                 = useState<DUOption | null>(null)
+  const [selectedNozzleIds, setSelectedNozzleIds]   = useState<Set<number>>(new Set())
   const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null)
   const [operatorSearch, setOperatorSearch]         = useState('')
-  /** Operator must tick this before opening to confirm the displayed readings are correct. */
   const [readingConfirmed, setReadingConfirmed]     = useState(false)
   const [validationError, setValidationError]       = useState<string | null>(null)
   const [serverError, setServerError]               = useState<string | null>(null)
 
-  const busyNozzleIds   = new Set(activeShifts.map((s) => s.nozzleId))
+  // Nozzle IDs already in an open shift (locked out)
+  const busyNozzleIds   = new Set(activeShifts.flatMap((s) => s.nozzles.map((n) => n.id)))
   const busyOperatorIds = new Set(activeShifts.map((s) => s.operatorId))
 
-  const { data: nozzles = [], isLoading: nozzlesLoading } = useQuery({
-    queryKey: ['nozzles', pumpId],
-    queryFn:  () => shiftApi.getNozzles(pumpId),
+  const { data: dus = [], isLoading: dusLoading } = useQuery({
+    queryKey: ['dus', pumpId],
+    queryFn:  () => shiftApi.getDUs(pumpId),
   })
 
   const { data: operators = [], isLoading: operatorsLoading } = useQuery({
@@ -60,7 +60,6 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
     queryFn:  () => shiftDefinitionApi.getActive(pumpId),
   })
 
-  // Determine if the current shift window is a night shift
   const nowHHMM = new Date().toTimeString().substring(0, 5)
   const currentDefinition = activeDefinitions.find(d =>
     isTimeInWindow(d.startTime, d.endTime, d.crossesMidnight, nowHHMM)
@@ -77,21 +76,35 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
       setServerError(err?.response?.data?.message ?? 'Failed to open shift. Please try again.'),
   })
 
-  const availableNozzles   = nozzles.filter((n) => !busyNozzleIds.has(n.id))
+  // Only ACTIVE DUs are available for shift open
+  const activeDUs = dus.filter((d) => d.status === 'ACTIVE')
+
   const availableOperators = operators.filter((o) => {
     if (busyOperatorIds.has(o.id)) return false
-    // Female operators without night-shift consent cannot be assigned to night shifts
     if (isNightShift && o.gender === 'FEMALE' && !o.nightShiftConsent) return false
     return true
   })
-  const filteredOperators  = availableOperators.filter((o) =>
+  const filteredOperators = availableOperators.filter((o) =>
     o.fullName.toLowerCase().includes(operatorSearch.toLowerCase())
   )
 
-  const handleNozzleSelect = (n: NozzleOption) => {
-    setSelectedNozzle(n)
+  const handleSelectDU = (du: DUOption) => {
+    if (selectedDU?.id === du.id) return
+    setSelectedDU(du)
+    setSelectedNozzleIds(new Set())
     setReadingConfirmed(false)
     setValidationError(null)
+  }
+
+  const handleNozzleToggle = (nozzle: NozzleDetail) => {
+    if (busyNozzleIds.has(nozzle.id)) return
+    setReadingConfirmed(false)
+    setSelectedNozzleIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(nozzle.id)) next.delete(nozzle.id)
+      else next.add(nozzle.id)
+      return next
+    })
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -99,17 +112,22 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
     setValidationError(null)
     setServerError(null)
 
-    if (!selectedNozzle)      { setValidationError('Please select a nozzle'); return }
-    if (!selectedOperatorId)  { setValidationError('Please select an operator'); return }
-    if (!readingConfirmed)    { setValidationError('Please confirm the meter readings are correct'); return }
+    if (!selectedDU)                    { setValidationError('Please select a Dispensary Unit'); return }
+    if (selectedNozzleIds.size === 0)   { setValidationError('Please select at least one nozzle'); return }
+    if (!selectedOperatorId)            { setValidationError('Please select an operator'); return }
+    if (!readingConfirmed)              { setValidationError('Please confirm the meter readings are correct'); return }
 
-    // Start readings come from the outlet's stored lastReading on the backend — not sent from the client.
     const req: OpenShiftRequest = {
-      nozzleId:   selectedNozzle.id,
+      duId:       selectedDU.id,
+      nozzleIds:  Array.from(selectedNozzleIds),
       operatorId: selectedOperatorId,
     }
     openMutation.mutate(req)
   }
+
+  const selectedNozzles = selectedDU
+    ? selectedDU.nozzles.filter((n) => selectedNozzleIds.has(n.id))
+    : []
 
   return (
     <div className="ui-modal-backdrop">
@@ -119,7 +137,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
           <div className="ui-modal-heading">
             <h2 className="ui-modal-title">Open New Shift</h2>
-            <p className="ui-modal-subtitle">Select a nozzle and assign an operator</p>
+            <p className="ui-modal-subtitle">Select a Dispensary Unit and assign an operator</p>
           </div>
           <button type="button" onClick={onClose}
             className="ui-btn ui-btn-ghost ui-modal-close">
@@ -129,36 +147,46 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
 
         <form onSubmit={handleSubmit} className="ui-modal-body space-y-5 max-h-[80vh] overflow-y-auto">
 
-          {/* ── Nozzle cards ── */}
+          {/* ── Step 1: Select DU ── */}
           <div>
             <label className="ui-label uppercase tracking-wide mb-2">
-              Select Nozzle
+              Step 1 — Select Dispensary Unit
+              {selectedDU && (
+                <span className="ml-2 text-blue-600 font-semibold normal-case">
+                  DU #{selectedDU.duNumber} — {selectedDU.name}
+                </span>
+              )}
             </label>
-            {nozzlesLoading ? (
-              <p className="ui-empty">Loading nozzles...</p>
-            ) : availableNozzles.length === 0 ? (
+            {dusLoading ? (
+              <p className="ui-empty">Loading dispensary units...</p>
+            ) : activeDUs.length === 0 ? (
               <div className="ui-alert ui-alert-warning text-xs">
-                All nozzles are currently on active shifts.
+                No active Dispensary Units found. Add one in Setup first.
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                {availableNozzles.map((n) => {
-                  const isSelected = selectedNozzle?.id === n.id
-                  const fuelTags = n.outlets.map((o) => FUEL_ABBR[o.fuelType] ?? o.fuelType)
+                {activeDUs.map((du) => {
+                  const isSelected = selectedDU?.id === du.id
+                  const fuelTypes = du.nozzles
+                    .filter((n) => n.status === 'ACTIVE')
+                    .map((n) => FUEL_ABBR[n.fuelType] ?? n.fuelType)
                   return (
-                    <button key={n.id} type="button"
-                      onClick={() => handleNozzleSelect(n)}
+                    <button key={du.id} type="button"
+                      onClick={() => handleSelectDU(du)}
                       className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
                         isSelected
                           ? 'border-blue-500 bg-blue-50 shadow-sm'
                           : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'
                       }`}
                     >
-                      <span className={`text-xl font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
-                        #{n.nozzleNumber}
+                      <span className={`text-xs font-bold ${isSelected ? 'text-blue-500' : 'text-slate-400'}`}>
+                        DU #{du.duNumber}
+                      </span>
+                      <span className={`text-sm font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
+                        {du.name}
                       </span>
                       <div className="flex flex-wrap gap-0.5 justify-center">
-                        {fuelTags.map((tag) => (
+                        {fuelTypes.map((tag) => (
                           <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                             isSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                           }`}>
@@ -166,6 +194,9 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                           </span>
                         ))}
                       </div>
+                      {isSelected && (
+                        <span className="text-xs text-blue-600 font-semibold">✓ Selected</span>
+                      )}
                     </button>
                   )
                 })}
@@ -173,10 +204,56 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
             )}
           </div>
 
-          {/* ── Operator searchable list ── */}
+          {/* ── Step 2: Select Nozzles from selected DU ── */}
+          {selectedDU && (
+            <div>
+              <label className="ui-label uppercase tracking-wide mb-2">
+                Step 2 — Select Nozzle(s)
+                {selectedNozzleIds.size > 0 && (
+                  <span className="ml-2 text-blue-600 font-semibold normal-case">
+                    {selectedNozzleIds.size} selected
+                  </span>
+                )}
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {selectedDU.nozzles.filter((n) => n.status === 'ACTIVE').map((nozzle) => {
+                  const isBusy     = busyNozzleIds.has(nozzle.id)
+                  const isSelected = selectedNozzleIds.has(nozzle.id)
+                  return (
+                    <button key={nozzle.id} type="button"
+                      disabled={isBusy}
+                      onClick={() => handleNozzleToggle(nozzle)}
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
+                        isBusy
+                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                          : isSelected
+                          ? 'border-blue-500 bg-blue-50 shadow-sm'
+                          : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className={`text-xl font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
+                        #{nozzle.nozzleNumber}
+                      </span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                        isSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {FUEL_ABBR[nozzle.fuelType] ?? nozzle.fuelType}
+                      </span>
+                      {isBusy
+                        ? <span className="text-xs text-slate-400">In use</span>
+                        : isSelected && <span className="text-xs text-blue-600 font-semibold">✓ Selected</span>
+                      }
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3: Operator ── */}
           <div>
             <label className="ui-label uppercase tracking-wide mb-2">
-              Assign Operator
+              {selectedDU ? 'Step 3 — ' : ''}Assign Operator
             </label>
             {operatorsLoading ? (
               <p className="ui-empty">Loading operators...</p>
@@ -236,8 +313,8 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
             )}
           </div>
 
-          {/* ── Current meter readings (read-only acknowledgment) ── */}
-          {selectedNozzle && selectedNozzle.outlets.length > 0 && (
+          {/* ── Current meter readings (acknowledgment) ── */}
+          {selectedNozzles.length > 0 && (
             <div className="ui-card-plain ui-card-muted p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -247,14 +324,14 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                   Read-only
                 </span>
               </div>
-              <div className={`grid gap-2 ${selectedNozzle.outlets.length > 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                {selectedNozzle.outlets.map((outlet) => (
-                  <div key={outlet.outletId} className="ui-card-plain bg-white border-slate-200 px-3 py-2.5">
+              <div className={`grid gap-2 ${selectedNozzles.length > 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {selectedNozzles.map((nozzle) => (
+                  <div key={nozzle.id} className="ui-card-plain bg-white border-slate-200 px-3 py-2.5">
                     <p className="text-xs text-slate-500 mb-0.5">
-                      {FUEL_ABBR[outlet.fuelType] ?? outlet.fuelType} ({FUEL_UNIT[outlet.fuelType] ?? 'L'})
+                      Nozzle #{nozzle.nozzleNumber} — {FUEL_ABBR[nozzle.fuelType] ?? nozzle.fuelType} ({FUEL_UNIT[nozzle.fuelType] ?? 'L'})
                     </p>
                     <p className="text-base font-semibold text-slate-800">
-                      {outlet.lastReading.toLocaleString('en-IN', { minimumFractionDigits: 3 })}
+                      {nozzle.lastReading.toLocaleString('en-IN', { minimumFractionDigits: 3 })}
                     </p>
                   </div>
                 ))}
@@ -265,7 +342,6 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                 <span className="font-medium text-slate-700">Setup → Nozzle → Adjust Reading</span> first.
               </p>
 
-              {/* Confirmation checkbox */}
               <label className="flex items-start gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -295,7 +371,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
             </button>
             <button
               type="submit"
-              disabled={!selectedNozzle || !selectedOperatorId || !readingConfirmed || openMutation.isPending}
+              disabled={!selectedDU || selectedNozzleIds.size === 0 || !selectedOperatorId || !readingConfirmed || openMutation.isPending}
               className="ui-btn ui-btn-primary flex-1 disabled:bg-blue-300 disabled:cursor-not-allowed">
               {openMutation.isPending ? 'Opening...' : 'Open Shift'}
             </button>

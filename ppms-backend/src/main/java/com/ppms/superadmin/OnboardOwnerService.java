@@ -64,7 +64,7 @@ public class OnboardOwnerService {
                 .ownerId(owner.getId())
                 .name(request.getPumpName())
                 .address(request.getPumpAddress())
-                .maxNozzleCount(request.getMaxNozzleCount())
+                .maxDuCount(request.getMaxDuCount())
                 .build();
 
         pump = pumpLocationRepository.save(pump);
@@ -98,7 +98,7 @@ public class OnboardOwnerService {
                 .ownerId(owner.getId())
                 .name(request.getPumpName())
                 .address(request.getPumpAddress())
-                .maxNozzleCount(request.getMaxNozzleCount())
+                .maxDuCount(request.getMaxDuCount())
                 .build();
 
         pump = pumpLocationRepository.save(pump);

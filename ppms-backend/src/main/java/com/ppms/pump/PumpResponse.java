@@ -13,8 +13,9 @@ public class PumpResponse {
     private Long id;
     private String name;
     private String address;
-    private Integer maxNozzleCount;
+    private Integer maxDuCount;
     private Long ownerId;
     private OffsetDateTime createdAt;
-    private List<NozzleResponse> nozzles;
+    /** Active Dispensary Units with their nozzles. */
+    private List<DUResponse> dus;
 }

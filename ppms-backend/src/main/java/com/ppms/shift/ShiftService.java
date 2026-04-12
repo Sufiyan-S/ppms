@@ -11,8 +11,8 @@ import com.ppms.inventory.LotConsumption;
 import com.ppms.inventory.LotConsumptionRepository;
 import com.ppms.inventory.LotConsumptionSource;
 import com.ppms.inventory.LotStatus;
-import com.ppms.pump.NozzleOutlet;
-import com.ppms.pump.NozzleOutletRepository;
+import com.ppms.pump.DispensaryUnit;
+import com.ppms.pump.DispensaryUnitRepository;
 import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleRepository;
 import com.ppms.pump.PumpLocationRepository;
@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -46,9 +47,10 @@ public class ShiftService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final ShiftRepository shiftRepository;
+    private final ShiftNozzleRepository shiftNozzleRepository;
     private final ShiftFuelReadingRepository fuelReadingRepository;
     private final NozzleRepository nozzleRepository;
-    private final NozzleOutletRepository outletRepository;
+    private final DispensaryUnitRepository duRepository;
     private final UserRepository userRepository;
     private final InventoryLotRepository inventoryLotRepository;
     private final LotConsumptionRepository lotConsumptionRepository;
@@ -63,31 +65,37 @@ public class ShiftService {
     private final Counter shiftClosedCounter;
 
     /**
-     * Opens a new shift for a nozzle and operator.
+     * Opens a new shift for selected nozzles on a Dispensary Unit.
      *
      * Rules:
-     * - One open shift per nozzle at a time
-     * - One open shift per operator at a time
-     * - A fuel price must exist for every fuel type on the nozzle before it can open
-     * - Start readings are validated against the last known reading for each outlet
-     * - Start readings must be provided for every outlet on the nozzle
+     * - All nozzles must belong to the specified DU
+     * - Each nozzle must not already have an open shift
+     * - The operator must not already have an open shift
+     * - A fuel price must exist for every nozzle's fuel type
+     * - Every nozzle must be mapped to an active tank
+     * - Start readings come from each nozzle's stored lastReading (auto pre-filled)
      */
     @Transactional
     public ShiftResponse openShift(OpenShiftRequest request, User currentUser) {
-        Nozzle nozzle = nozzleRepository.findById(request.getNozzleId())
-                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+        DispensaryUnit du = duRepository.findById(request.getDuId())
+                .orElseThrow(() -> new ResourceNotFoundException("Dispensary Unit not found: " + request.getDuId()));
+
+        List<Nozzle> nozzles = request.getNozzleIds().stream()
+                .map(id -> nozzleRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found: " + id)))
+                .toList();
 
         User operator = userRepository.findById(request.getOperatorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Operator not found"));
 
-        List<NozzleOutlet> outlets = outletRepository.findByNozzleId(nozzle.getId());
-        com.ppms.pump.PumpShiftDefinition shiftDef = lifecycleSupportService.validateShiftCanOpen(nozzle, operator, outlets);
+        com.ppms.pump.PumpShiftDefinition shiftDef = lifecycleSupportService.validateShiftCanOpen(du, nozzles, operator);
 
+        Long pumpId = du.getPumpId();
         OffsetDateTime now = OffsetDateTime.now();
 
         Shift shift = Shift.builder()
-                .pumpId(nozzle.getPumpId())
-                .nozzleId(nozzle.getId())
+                .pumpId(pumpId)
+                .duId(du.getId())
                 .operatorId(operator.getId())
                 .openedByUserId(currentUser.getId())
                 .shiftDefinitionId(shiftDef.getId())
@@ -101,32 +109,40 @@ public class ShiftService {
 
         shift = shiftRepository.save(shift);
         final Long shiftId = shift.getId();
-        lifecycleSupportService.createOpeningReadings(shiftId, nozzle.getPumpId(), outlets);
 
-        log.info("Shift {} opened: nozzle={}, operator={}, outlets={}, openedBy={}",
-                shiftId, nozzle.getId(), operator.getId(), outlets.size(), currentUser.getId());
+        // Persist nozzle assignments in the join table
+        for (Nozzle nozzle : nozzles) {
+            shiftNozzleRepository.save(ShiftNozzle.builder()
+                    .shiftId(shiftId)
+                    .nozzleId(nozzle.getId())
+                    .build());
+        }
+
+        // Create opening readings — one per nozzle (each nozzle = one fuel type)
+        lifecycleSupportService.createOpeningReadings(shiftId, pumpId, nozzles);
+
+        log.info("Shift {} opened: du={}, nozzles={}, operator={}, openedBy={}",
+                shiftId, du.getId(), request.getNozzleIds(), operator.getId(), currentUser.getId());
         shiftOpenedCounter.increment();
 
-        // Reconcile shift planning: mark the actual operator as CONFIRMED,
-        // any other planned operators for this slot as ABSENT.
         shiftPlanningService.reconcileOnShiftOpen(
-                nozzle.getPumpId(), shift.getShiftDate(), shift.getShiftDefinitionId(), operator.getId());
+                pumpId, shift.getShiftDate(), shift.getShiftDefinitionId(), operator.getId());
 
         List<ShiftFuelReading> readings = fuelReadingRepository.findByShiftId(shiftId);
-        return shiftReadModelService.toResponse(shift, nozzle, operator, currentUser.getFullName(), readings, Collections.emptyList());
+        return shiftReadModelService.toResponse(shift, du, nozzles, operator, currentUser.getFullName(), readings, Collections.emptyList());
     }
 
     /**
      * Closes a shift.
      *
      * Steps:
-     * 1. Validate end readings provided for every outlet that was opened
-     * 2. Calculate units sold per fuel type (with meter rollover support)
-     * 3. Compute total amount due = sum of (units * snapshotted price) across all fuel types
+     * 1. Validate end readings provided for every nozzle that was opened
+     * 2. Calculate units sold per nozzle (with meter rollover support)
+     * 3. Compute total amount due = sum of (units × snapshotted price) across all nozzles
      * 4. Validate payment breakdown sums match total due (or flag discrepancy)
      * 5. Validate credit entries if creditTotal > 0
-     * 6. FIFO inventory deduction per fuel type (scoped to pump + fuelType)
-     * 7. Update outlet last_reading for pre-fill on next shift open
+     * 6. FIFO inventory deduction per nozzle
+     * 7. Update each nozzle's last_reading for pre-fill on next shift open
      */
     @Transactional
     public ShiftResponse closeShift(Long shiftId, CloseShiftRequest request, User currentUser) {
@@ -139,19 +155,23 @@ public class ShiftService {
             throw new BusinessException("Shift is not open. Current status: " + shift.getStatus());
         }
 
-        Nozzle nozzle = nozzleRepository.findById(shift.getNozzleId())
-                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+        // Load all nozzles for this shift from the join table
+        List<Long> nozzleIds = shiftNozzleRepository.findNozzleIdsByShiftId(shiftId);
+        List<Nozzle> nozzles = nozzleRepository.findAllById(nozzleIds);
+        Map<Long, Nozzle> nozzleById = nozzles.stream()
+                .collect(Collectors.toMap(Nozzle::getId, Function.identity()));
+
+        // Build maxMeter per nozzle for rollover calculations
+        Map<Long, BigDecimal> maxMeterByNozzleId = nozzles.stream()
+                .collect(Collectors.toMap(Nozzle::getId, Nozzle::getMaxMeterValue));
 
         List<ShiftFuelReading> readings = fuelReadingRepository.findByShiftId(shiftId);
         ShiftLifecycleSupportService.ClosingSummary closingSummary =
-                lifecycleSupportService.processClosingReadings(shiftId, nozzle, request, readings);
+                lifecycleSupportService.processClosingReadings(shiftId, maxMeterByNozzleId, request, readings);
         List<CloseShiftRequest.CreditEntryRequest> creditEntries =
                 lifecycleSupportService.validateCloseCreditEntries(shiftId, request.getCreditTotal(), request.getCreditEntries());
 
-        // FIFO inventory deduction per fuel reading
-        // If the reading carries a frozen tankId (shift opened after V9), deduct
-        // from that tank only. For legacy readings (tankId is null) fall back to
-        // the old pump+fuelType scan so historical shifts can still be closed.
+        // FIFO inventory deduction per nozzle reading
         for (ShiftFuelReading reading : readings) {
             if (reading.getUnitsSold() != null && reading.getUnitsSold().compareTo(ZERO) > 0) {
                 deductFromInventory(shiftId, shift.getPumpId(), reading.getFuelType(),
@@ -180,29 +200,27 @@ public class ShiftService {
                 closingSummary.getDiscrepancyAmount(), closingSummary.getStatus());
         shiftClosedCounter.increment();
 
-        // Update outlet last_reading for pre-fill on next shift open
+        // Update each nozzle's last_reading for pre-fill on next shift open
         for (ShiftFuelReading reading : readings) {
-            outletRepository.findById(reading.getOutletId()).ifPresent(outlet -> {
-                outlet.setLastReading(reading.getEndReading());
-                outletRepository.save(outlet);
+            nozzleRepository.findById(reading.getNozzleId()).ifPresent(nozzle -> {
+                nozzle.setLastReading(reading.getEndReading());
+                nozzleRepository.save(nozzle);
             });
         }
-        lifecycleSupportService.createCashCollectionEvent(shift, currentUser, nozzle);
+
+        lifecycleSupportService.createCashCollectionEvent(shift, currentUser, nozzles);
         lifecycleSupportService.persistCloseCreditEntries(shift.getId(), shift.getPumpId(), creditEntries);
 
         User operator = userRepository.findById(shift.getOperatorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Operator not found"));
+        DispensaryUnit du = duRepository.findById(shift.getDuId()).orElse(null);
         List<ShiftCreditEntry> savedEntries = creditEntryRepository.findByShiftId(shift.getId());
         List<ShiftFuelReading> finalReadings = fuelReadingRepository.findByShiftId(shift.getId());
-        return shiftReadModelService.toResponse(shift, nozzle, operator, currentUser.getFullName(), finalReadings, savedEntries);
+        return shiftReadModelService.toResponse(shift, du, nozzles, operator, currentUser.getFullName(), finalReadings, savedEntries);
     }
 
     /**
      * Adds a credit entry to an open shift mid-shift.
-     *
-     * Operators can record credit sales as they happen (e.g. fleet vehicle refuels)
-     * rather than trying to remember 8 hours of credit at shift close time.
-     * The entry is persisted immediately so it is visible in the Credit Ledger.
      */
     @Transactional
     public ShiftResponse addCreditEntry(Long shiftId, AddCreditEntryRequest request, User currentUser) {
@@ -215,8 +233,6 @@ public class ShiftService {
             throw new BusinessException("Cannot add credit entries to a shift that is not open.");
         }
 
-        // Operators can only add credit entries to their own active shift.
-        // Enforced at the service layer so it cannot be bypassed via direct API calls.
         if (currentUser.getRole() == UserRole.OPERATOR
                 && !currentUser.getId().equals(shift.getOperatorId())) {
             throw new BusinessException("Operators can only add credit entries to their own active shift.");
@@ -245,9 +261,7 @@ public class ShiftService {
     }
 
     /**
-     * Updates the discrepancy resolution for a CLOSED_DISCREPANCY_PENDING shift (spec Section 4.10).
-     * WAIVED requires a non-blank reason (Business Rule 19).
-     * Transitions the shift to CLOSED_DISCREPANCY_RESOLVED once a resolution is set.
+     * Updates the discrepancy resolution for a CLOSED_DISCREPANCY_PENDING shift.
      */
     @Transactional
     public ShiftResponse resolveDiscrepancy(Long shiftId, ResolveDiscrepancyRequest request, User currentUser) {
@@ -265,10 +279,6 @@ public class ShiftService {
                     "A mandatory reason is required when waiving a discrepancy (Business Rule 19).");
         }
 
-        // P1.5 — Escalation threshold check.
-        // If the pump has a discrepancy_escalation_threshold configured, only OWNER can resolve
-        // discrepancies that exceed it. ADMIN/MANAGER must escalate to the Owner.
-        // Use final local copies so they are accessible inside the lambda.
         final BigDecimal discrepancyAmountForCheck = shift.getDiscrepancyAmount();
         final UserRole resolverRole = currentUser.getRole();
         if (discrepancyAmountForCheck != null) {
@@ -299,10 +309,7 @@ public class ShiftService {
     }
 
     /**
-     * Voids a credit entry on an OPEN shift (spec Section 3.7, Business Rule 7).
-     * Only the operator who logged the entry or the manager may void it.
-     * Voided entries stay in the DB permanently; the shift's credit_total is not recalculated
-     * here — it is recalculated at shift close from non-voided entries.
+     * Voids a credit entry on an OPEN shift.
      */
     @Transactional
     public ShiftResponse voidCreditEntry(Long shiftId, Long entryId, String voidReason, User currentUser) {
@@ -364,22 +371,29 @@ public class ShiftService {
     /**
      * FIFO inventory deduction.
      *
-     * When tankId is non-null (shift opened after V9 migration), deduction is
-     * scoped to that specific tank — the outlet's mapped tank was frozen at
-     * shift-open. This accurately reflects physical pipe connections.
-     *
-     * When tankId is null (pre-V9 legacy shift), falls back to the original
-     * pump+fuelType scan across all active tanks so old shifts can still close.
+     * When tankId is non-null (frozen at shift open), deduction is scoped to that
+     * specific tank. This accurately reflects physical pipe connections.
      *
      * Consumes from oldest lots first. Creates a LotConsumption record for each
-     * lot touched. Also decrements each tank's current_stock proportionally.
-     * Negative stock is allowed — it surfaces as a DIP discrepancy alert.
+     * lot touched and decrements the tank's current_stock proportionally.
      */
     private void deductFromInventory(Long shiftId, Long pumpId, FuelType fuelType,
                                      Long tankId, BigDecimal unitsToDeduct) {
         List<InventoryLot> lots = tankId != null
                 ? inventoryLotRepository.findActiveLotsByTankFifo(tankId)
                 : inventoryLotRepository.findActiveLotsByPumpAndFuelTypeFifo(pumpId, fuelType);
+
+        BigDecimal totalAvailable = lots.stream()
+                .map(InventoryLot::getRemainingQuantity)
+                .reduce(ZERO, BigDecimal::add);
+
+        if (unitsToDeduct.compareTo(totalAvailable) > 0) {
+            throw new BusinessException(
+                    "Insufficient fuel stock: shift recorded " + unitsToDeduct.setScale(2, RoundingMode.HALF_UP) +
+                    " L sold but only " + totalAvailable.setScale(2, RoundingMode.HALF_UP) +
+                    " L is available in inventory. Please verify the meter readings or record a tanker delivery first.");
+        }
+
         BigDecimal remaining = unitsToDeduct;
 
         for (InventoryLot lot : lots) {
@@ -401,7 +415,6 @@ public class ShiftService {
                     .costPricePerUnit(lot.getCostPricePerUnit())
                     .build());
 
-            // Decrement the physical tank's stock
             tankRepository.findById(lot.getTankId()).ifPresent(tank -> {
                 BigDecimal newStock = tank.getCurrentStock().subtract(consume).setScale(3, RoundingMode.HALF_UP);
                 tank.setCurrentStock(newStock);
@@ -410,12 +423,5 @@ public class ShiftService {
 
             remaining = remaining.subtract(consume);
         }
-
-        // If stock ran out before all units were deducted — allow negative (DIP will surface it)
-        if (remaining.compareTo(ZERO) > 0) {
-            log.warn("Inventory shortage for pump={} fuelType={} tankId={}: {} L deducted but {} L not covered by any lot",
-                    pumpId, fuelType, tankId, unitsToDeduct, remaining);
-        }
     }
-
 }

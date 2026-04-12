@@ -28,8 +28,9 @@ public class PumpLocation {
     @Column(name = "address", nullable = false)
     private String address;
 
-    @Column(name = "max_nozzle_count", nullable = false)
-    private Integer maxNozzleCount;
+    /** Maximum number of Dispensary Units (machines) allowed on this pump. Hard cap: 20. */
+    @Column(name = "max_du_count", nullable = false)
+    private Integer maxDuCount;
 
     @Column(name = "manager_id")
     private Long managerId;

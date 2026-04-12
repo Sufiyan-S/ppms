@@ -40,6 +40,7 @@ public class NozzleCalibrationController {
 
     private final NozzleCalibrationLogRepository calibrationRepository;
     private final NozzleRepository nozzleRepository;
+    private final DispensaryUnitRepository dispensaryUnitRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
@@ -127,7 +128,9 @@ public class NozzleCalibrationController {
     private Nozzle findNozzleForPump(Long nozzleId, Long pumpId) {
         Nozzle nozzle = nozzleRepository.findById(nozzleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
-        if (!nozzle.getPumpId().equals(pumpId)) {
+        DispensaryUnit du = dispensaryUnitRepository.findById(nozzle.getDuId())
+                .orElseThrow(() -> new ResourceNotFoundException("Dispensary unit not found"));
+        if (!du.getPumpId().equals(pumpId)) {
             throw new BusinessException("Nozzle does not belong to this pump");
         }
         return nozzle;

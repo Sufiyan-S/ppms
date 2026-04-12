@@ -65,7 +65,8 @@ public class BalanceSheetService {
     private final ShiftCreditEntryRepository shiftCreditEntryRepository;
     private final GlobalFuelPriceRepository globalFuelPriceRepository;
     private final UndergroundTankRepository tankRepository;
-    private final NozzleRepository          nozzleRepository;
+    private final NozzleRepository              nozzleRepository;
+    private final com.ppms.pump.DispensaryUnitRepository dispensaryUnitRepository;
     private final UserRepository            userRepository;
     private final PumpShiftDefinitionService shiftDefinitionService;
     private final BusinessClock             businessClock;
@@ -389,9 +390,12 @@ public class BalanceSheetService {
         Map<Long, String> operatorNames = userRepository.findAllById(operatorIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
 
-        Set<Long> nozzleIds = shifts.stream().map(Shift::getNozzleId).collect(Collectors.toSet());
-        Map<Long, Integer> nozzleNumbers = nozzleRepository.findAllById(nozzleIds).stream()
-                .collect(Collectors.toMap(com.ppms.pump.Nozzle::getId, com.ppms.pump.Nozzle::getNozzleNumber));
+        Set<Long> duIds = shifts.stream().map(Shift::getDuId).collect(Collectors.toSet());
+        List<com.ppms.pump.DispensaryUnit> fetchedDUs = dispensaryUnitRepository.findAllById(duIds);
+        Map<Long, Integer> duNumbers = fetchedDUs.stream()
+                .collect(Collectors.toMap(com.ppms.pump.DispensaryUnit::getId, com.ppms.pump.DispensaryUnit::getDuNumber));
+        Map<Long, String> duNames = fetchedDUs.stream()
+                .collect(Collectors.toMap(com.ppms.pump.DispensaryUnit::getId, com.ppms.pump.DispensaryUnit::getName));
 
         for (Shift s : shifts) {
             List<ShiftFuelReading> readings = readingsByShift.getOrDefault(s.getId(), List.of());
@@ -427,7 +431,8 @@ public class BalanceSheetService {
                     .balanceSheetId(bsId)
                     .shiftId(s.getId())
                     .operatorName(operatorNames.getOrDefault(s.getOperatorId(), "Unknown"))
-                    .nozzleNumber(nozzleNumbers.getOrDefault(s.getNozzleId(), 0))
+                    .duNumber(duNumbers.getOrDefault(s.getDuId(), 0))
+                    .duName(duNames.getOrDefault(s.getDuId(), ""))
                     .fuelTypesSummary(fuelTypesSummary)
                     .litresSold(shiftLitres.setScale(3, RoundingMode.HALF_UP))
                     .expectedRevenue(shiftExpected)
@@ -525,7 +530,7 @@ public class BalanceSheetService {
             throw new BusinessException("Balance sheet does not belong to this pump");
         }
         List<BsFuelLine>  fuelLines  = bsFuelLineRepository.findByBalanceSheetIdOrderByFuelType(id);
-        List<BsShiftLine> shiftLines = bsShiftLineRepository.findByBalanceSheetIdOrderByNozzleNumber(id);
+        List<BsShiftLine> shiftLines = bsShiftLineRepository.findByBalanceSheetIdOrderByDuNumber(id);
         String userName = bs.getGeneratedByUserId() != null
                 ? userRepository.findById(bs.getGeneratedByUserId()).map(User::getFullName).orElse("Unknown")
                 : "System";

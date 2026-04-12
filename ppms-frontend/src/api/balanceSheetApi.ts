@@ -49,10 +49,18 @@ export interface BsFuelLine {
   dipLossAmount: number
 }
 
+export interface NozzleReadingLine {
+  nozzleNumber: number
+  fuelType: string
+  litresSold: number
+  expectedRevenue: number
+}
+
 export interface BsShiftLine {
   shiftId: number
   operatorName: string
-  nozzleNumber: number
+  duNumber: number
+  duName: string
   fuelTypesSummary: string
   litresSold: number
   expectedRevenue: number
@@ -62,6 +70,7 @@ export interface BsShiftLine {
   fleetCardCollected: number
   creditAmount: number
   discrepancy: number
+  nozzleReadings: NozzleReadingLine[]
 }
 
 export interface MeterAmendmentLine {

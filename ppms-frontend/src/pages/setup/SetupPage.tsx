@@ -8,8 +8,8 @@ import { DAY_LABELS } from '../../api/shiftPlanApi'
 import type { CreateUserRequest, StaffMember, UserGender } from '../../api/userApi'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
-import type { PumpSummary, CreditClient, TankInfo, CreateNozzleRequest, UpdateCreditClientRequest, PriceDeviationWarning } from '../../api/pumpApi'
-import type { FuelType, NozzleOption } from '../../types/shift'
+import type { PumpSummary, CreditClient, TankInfo, UpdateCreditClientRequest, PriceDeviationWarning } from '../../api/pumpApi'
+import type { FuelType, DUOption, NozzleDetail } from '../../types/shift'
 import { dipApi } from '../../api/dipApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { CreateShiftDefinitionRequest } from '../../api/shiftDefinitionApi'
@@ -142,7 +142,7 @@ function PumpManagementPanel({
           </div>
           <div className="flex gap-2">
             <span className="bg-white/10 text-slate-300 text-xs px-2.5 py-1 rounded-full">
-              {pump.nozzles.length}/{pump.maxNozzleCount} nozzles
+              {pump.dus.length}/{pump.maxDuCount} DUs
             </span>
           </div>
         </div>
@@ -157,8 +157,8 @@ function PumpManagementPanel({
           open={openSection === 'nozzles'}
           onToggle={() => toggle('nozzles')}
           icon="⚙️"
-          title="Nozzles"
-          summary={`${pump.nozzles.length} of ${pump.maxNozzleCount} configured`}
+          title="Dispensary Units"
+          summary={`${pump.dus.length} of ${pump.maxDuCount} DUs configured`}
           badgeColor="bg-slate-100 text-slate-600"
         >
           <NozzleContent pump={pump} onAdded={onPumpUpdated} />
@@ -171,7 +171,7 @@ function PumpManagementPanel({
           onToggle={() => toggle('tanks')}
           icon="🛢"
           title="Underground Tanks"
-          summary={pump.nozzles.length > 0 ? 'Tap to configure capacity' : 'Add nozzles first'}
+          summary={pump.dus.length > 0 ? 'Tap to configure capacity' : 'Add a DU first'}
           badgeColor="bg-blue-50 text-blue-700"
         >
           <TanksContent pump={pump} />
@@ -290,7 +290,7 @@ function AccordionSection({
 function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) {
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
-  const [maxNozzles, setMaxNozzles] = useState('4')
+  const [maxDUs, setMaxDUs] = useState('4')
   const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
@@ -308,7 +308,7 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    mutation.mutate({ name, address, maxNozzleCount: Number(maxNozzles) })
+    mutation.mutate({ name, address, maxDuCount: Number(maxDUs) })
   }
 
   return (
@@ -325,14 +325,14 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
           />
         </div>
         <div>
-          <label className="ui-label">Max Nozzles</label>
+          <label className="ui-label">Max DUs</label>
           <input
             required
             type="number"
             min="1"
-            max="9"
-            value={maxNozzles}
-            onChange={(e) => setMaxNozzles(e.target.value)}
+            max="20"
+            value={maxDUs}
+            onChange={(e) => setMaxDUs(e.target.value)}
             className="text-sm"
           />
         </div>
@@ -385,57 +385,56 @@ const FUEL_PICKER_THEME: Record<string, string> = {
   CNG: 'ui-fuel-pill--cng',
 }
 
-// ── Nozzle content ────────────────────────────────────────────────────────────
+// ── DU / Nozzle content ───────────────────────────────────────────────────────
 
 function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => void }) {
   const queryClient = useQueryClient()
 
-  // Panel visibility — only one panel open at a time per nozzle
-  type NozzlePanel = 'mapTanks' | 'reading' | 'fuelTypes' | 'disable' | 'dip'
+  // Panel visibility — one panel open at a time per nozzle
+  type NozzlePanel = 'mapTank' | 'reading' | 'disable' | 'dip'
   const [openPanel, setOpenPanel] = useState<{ nozzleId: number; panel: NozzlePanel } | null>(null)
 
   // Kebab menu — which nozzle's action menu is open
   const [openMenu, setOpenMenu] = useState<number | null>(null)
 
-  // Add nozzle form
-  const [nozzleNumber, setNozzleNumber] = useState('')
-  const [selectedFuelTypes, setSelectedFuelTypes] = useState<FuelType[]>([])
-  const [startReadings, setStartReadings] = useState<Partial<Record<FuelType, string>>>({})
+  // Create DU form state
+  const [duName, setDuName] = useState('')
+  const [duNozzles, setDuNozzles] = useState<Array<{ nozzleNumber: string; fuelType: FuelType | ''; initialReading: string }>>([
+    { nozzleNumber: '1', fuelType: '', initialReading: '' },
+  ])
   const [addError, setAddError] = useState<string | null>(null)
 
-  // Panel-specific state
-  const [tankSelections, setTankSelections] = useState<Record<number, number | null>>({})
+  // Per-nozzle panel state
+  const [tankSelection, setTankSelection] = useState<number | null>(null)
   const [mapError, setMapError] = useState<string | null>(null)
-  const [fuelEditError, setFuelEditError] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
 
   // Adjust Reading panel state
   const [adjustType, setAdjustType] = useState<'RESET' | 'CUSTOM_READING'>('CUSTOM_READING')
-  const [adjustReadings, setAdjustReadings] = useState<Record<number, string>>({})
+  const [adjustReading, setAdjustReading] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjustError, setAdjustError] = useState<string | null>(null)
 
   // Record Dip panel state
-  const [dipFuelType, setDipFuelType] = useState('')
   const [dipLitres, setDipLitres] = useState('')
   const [dipDate, setDipDate] = useState('')
   const [dipReason, setDipReason] = useState('')
   const [dipError, setDipError] = useState<string | null>(null)
 
-  // Increase max nozzle count
+  // Increase max DU count
   const [showIncreaseMax, setShowIncreaseMax] = useState(false)
   const [newMaxCount, setNewMaxCount] = useState('')
   const [increaseError, setIncreaseError] = useState<string | null>(null)
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['nozzles', pump.id] })
+    queryClient.invalidateQueries({ queryKey: ['dus', pump.id] })
     queryClient.invalidateQueries({ queryKey: ['myPumps'] })
   }
 
-  // Fetch ALL nozzles (active + inactive) — the list the user manages in setup
-  const { data: allNozzles = [] } = useQuery({
-    queryKey: ['nozzles', pump.id],
-    queryFn: () => pumpApi.getNozzles(pump.id),
+  // Fetch ALL DUs (active + inactive)
+  const { data: allDUs = [] } = useQuery({
+    queryKey: ['dus', pump.id],
+    queryFn: () => pumpApi.getDUs(pump.id),
   })
 
   // Tanks needed for the Map Tanks panel
@@ -450,736 +449,621 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
     queryFn: () => pumpApi.getCurrentPrices(pump.id),
   })
 
-  const addMutation = useMutation({
-    mutationFn: ({ pumpId, req }: { pumpId: number; req: CreateNozzleRequest }) =>
-      pumpApi.addNozzle(pumpId, req),
+  const createDUMutation = useMutation({
+    mutationFn: (req: { name: string; nozzles: Array<{ nozzleNumber: number; fuelType: FuelType; initialReading?: number }> }) =>
+      pumpApi.createDU(pump.id, req),
     onSuccess: () => {
-      setNozzleNumber(''); setSelectedFuelTypes([]); setStartReadings({}); setAddError(null)
+      setDuName('')
+      setDuNozzles([{ nozzleNumber: '1', fuelType: '', initialReading: '' }])
+      setAddError(null)
       invalidate(); onAdded()
     },
-    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to add nozzle'),
+    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to create DU'),
   })
 
   const recordAdjustmentMutation = useMutation({
-    mutationFn: ({ outletId, adjustmentType, reason, newReading }: { outletId: number; adjustmentType: 'RESET' | 'CUSTOM_READING'; reason: string; newReading?: number }) =>
-      dipApi.recordAdjustment(pump.id, outletId, adjustmentType, reason, newReading),
-    onSuccess: () => { setOpenPanel(null); setAdjustError(null); setAdjustReason(''); setAdjustReadings({}); invalidate() },
+    mutationFn: ({ nozzleId, adjustmentType, reason, newReading }: { nozzleId: number; adjustmentType: 'RESET' | 'CUSTOM_READING'; reason: string; newReading?: number }) =>
+      dipApi.recordAdjustment(pump.id, nozzleId, adjustmentType, reason, newReading),
+    onSuccess: () => { setOpenPanel(null); setAdjustError(null); setAdjustReason(''); setAdjustReading(''); invalidate() },
     onError: (err: any) => setAdjustError(err?.response?.data?.message ?? 'Failed to record adjustment'),
   })
 
   const recordDipMutation = useMutation({
     mutationFn: ({ fuelType, litresRemoved, reason, date }: { fuelType: string; litresRemoved: number; reason: string; date?: string }) =>
       dipApi.recordDip(pump.id, fuelType, litresRemoved, reason, date),
-    onSuccess: () => { setOpenPanel(null); setDipError(null); setDipLitres(''); setDipReason(''); setDipFuelType(''); setDipDate(''); invalidate() },
+    onSuccess: () => { setOpenPanel(null); setDipError(null); setDipLitres(''); setDipReason(''); setDipDate(''); invalidate() },
     onError: (err: any) => setDipError(err?.response?.data?.message ?? 'Failed to record dip'),
   })
 
   const mapTankMutation = useMutation({
-    mutationFn: ({ nozzleId, outletId, tankId }: { nozzleId: number; outletId: number; tankId: number | null }) =>
-      pumpApi.mapOutletToTank(nozzleId, outletId, tankId),
-    onSuccess: () => invalidate(),
+    mutationFn: ({ pumpId, duId, nozzleId, tankId }: { pumpId: number; duId: number; nozzleId: number; tankId: number | null }) =>
+      pumpApi.mapNozzleToTank(pumpId, duId, nozzleId, tankId),
+    onSuccess: () => { setOpenPanel(null); invalidate() },
     onError: (err: any) => setMapError(err?.response?.data?.message ?? 'Failed to save tank mapping'),
   })
 
-  const addOutletMutation = useMutation({
-    mutationFn: ({ nozzleId, fuelType }: { nozzleId: number; fuelType: FuelType }) =>
-      pumpApi.addOutlet(nozzleId, { fuelType }),
-    onSuccess: () => { setFuelEditError(null); invalidate() },
-    onError: (err: any) => setFuelEditError(err?.response?.data?.message ?? 'Failed to add fuel type'),
-  })
-
-  const removeOutletMutation = useMutation({
-    mutationFn: ({ nozzleId, outletId }: { nozzleId: number; outletId: number }) =>
-      pumpApi.removeOutlet(nozzleId, outletId),
-    onSuccess: () => { setFuelEditError(null); invalidate() },
-    onError: (err: any) => setFuelEditError(err?.response?.data?.message ?? 'Failed to remove fuel type'),
-  })
-
   const statusMutation = useMutation({
-    mutationFn: ({ nozzleId, status }: { nozzleId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
-      pumpApi.updateNozzleStatus(nozzleId, status),
+    mutationFn: ({ pumpId, duId, nozzleId, status }: { pumpId: number; duId: number; nozzleId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
+      pumpApi.updateNozzleStatus(pumpId, duId, nozzleId, status),
     onSuccess: () => { setOpenPanel(null); setStatusError(null); invalidate() },
     onError: (err: any) => setStatusError(err?.response?.data?.message ?? 'Failed to update nozzle status'),
   })
 
   const increaseMaxMutation = useMutation({
-    mutationFn: (count: number) => pumpApi.updateMaxNozzleCount(pump.id, count),
+    mutationFn: (count: number) => pumpApi.updateMaxDuCount(pump.id, count),
     onSuccess: () => {
       setShowIncreaseMax(false); setNewMaxCount(''); setIncreaseError(null)
       invalidate(); onAdded()
     },
-    onError: (err: any) => setIncreaseError(err?.response?.data?.message ?? 'Failed to update nozzle limit'),
+    onError: (err: any) => setIncreaseError(err?.response?.data?.message ?? 'Failed to update DU limit'),
   })
 
-  const openPanelFor = (nozzleId: number, panel: NozzlePanel, n?: NozzleOption) => {
+  // Per-DU inline "Add Nozzle" state
+  const [addNozzleDuId, setAddNozzleDuId] = useState<number | null>(null)
+  const [inlineNozzleNumber, setInlineNozzleNumber] = useState('')
+  const [inlineFuelType, setInlineFuelType] = useState<FuelType | ''>('')
+  const [inlineReading, setInlineReading] = useState('')
+  const [inlineError, setInlineError] = useState<string | null>(null)
+
+  const addNozzleMutation = useMutation({
+    mutationFn: ({ duId, nozzleNumber, fuelType, initialReading }: { duId: number; nozzleNumber: number; fuelType: FuelType; initialReading?: number }) =>
+      pumpApi.addNozzle(pump.id, duId, nozzleNumber, fuelType, initialReading),
+    onSuccess: () => {
+      setAddNozzleDuId(null); setInlineNozzleNumber(''); setInlineFuelType(''); setInlineReading(''); setInlineError(null)
+      invalidate()
+    },
+    onError: (err: any) => setInlineError(err?.response?.data?.message ?? 'Failed to add nozzle'),
+  })
+
+  const submitInlineNozzle = (e: React.FormEvent, du: DUOption) => {
+    e.preventDefault(); setInlineError(null)
+    if (!inlineFuelType) { setInlineError('Select a fuel type.'); return }
+    if (!inlineNozzleNumber) { setInlineError('Enter a nozzle number.'); return }
+    addNozzleMutation.mutate({
+      duId: du.id,
+      nozzleNumber: Number(inlineNozzleNumber),
+      fuelType: inlineFuelType as FuelType,
+      initialReading: inlineReading ? Number(inlineReading) : undefined,
+    })
+  }
+
+  const openPanelFor = (nozzleId: number, panel: NozzlePanel, nozzle?: NozzleDetail) => {
     setOpenPanel((prev) =>
       prev?.nozzleId === nozzleId && prev?.panel === panel ? null : { nozzleId, panel }
     )
-    setAdjustError(null); setMapError(null); setFuelEditError(null); setStatusError(null); setDipError(null)
-    if (panel === 'reading' && n) {
-      const initial: Record<number, string> = {}
-      n.outlets.forEach((o) => { initial[o.outletId] = '' })
-      setAdjustReadings(initial)
+    setAdjustError(null); setMapError(null); setStatusError(null); setDipError(null)
+    if (panel === 'reading') {
+      setAdjustReading('')
       setAdjustType('CUSTOM_READING')
       setAdjustReason('')
     }
-    if (panel === 'dip' && n) {
-      setDipFuelType(n.outlets[0]?.fuelType ?? '')
-      setDipLitres('')
-      setDipDate('')
-      setDipReason('')
+    if (panel === 'dip') {
+      setDipLitres(''); setDipDate(''); setDipReason('')
     }
-    if (panel === 'mapTanks' && n) {
-      const initial: Record<number, number | null> = {}
-      n.outlets.forEach((o) => { initial[o.outletId] = o.tankId ?? null })
-      setTankSelections(initial)
+    if (panel === 'mapTank' && nozzle) {
+      setTankSelection(nozzle.tankId ?? null)
     }
   }
 
   const isOpen = (nozzleId: number, panel: NozzlePanel) =>
     openPanel?.nozzleId === nozzleId && openPanel?.panel === panel
 
-  const toggleFuelType = (ft: FuelType) => {
-    setSelectedFuelTypes((prev) => {
-      if (prev.includes(ft)) {
-        setStartReadings((r) => { const next = { ...r }; delete next[ft]; return next })
-        return prev.filter((t) => t !== ft)
-      }
-      if (ft === 'CNG') { setStartReadings({}); return ['CNG'] }
-      setStartReadings((r) => { const next = { ...r }; delete next['CNG']; return next })
-      return [...prev.filter((t) => t !== 'CNG'), ft]
-    })
-  }
-
   const submitAdd = (e: React.FormEvent) => {
     e.preventDefault(); setAddError(null)
-    if (selectedFuelTypes.length === 0) { setAddError('Select at least one fuel type.'); return }
-    const readings: Partial<Record<FuelType, number>> = {}
-    for (const ft of selectedFuelTypes) {
-      const val = startReadings[ft]
-      if (val && val.trim() !== '') readings[ft] = Number(val)
-    }
-    addMutation.mutate({
-      pumpId: pump.id,
-      req: {
-        nozzleNumber: Number(nozzleNumber),
-        fuelTypes: selectedFuelTypes,
-        startReadings: Object.keys(readings).length > 0 ? readings : undefined,
-      },
+    if (!duName.trim()) { setAddError('Enter a DU name.'); return }
+    const validNozzles = duNozzles.filter((n) => n.nozzleNumber && n.fuelType)
+    if (validNozzles.length === 0) { setAddError('Add at least one nozzle with a fuel type.'); return }
+    createDUMutation.mutate({
+      name: duName.trim(),
+      nozzles: validNozzles.map((n) => ({
+        nozzleNumber: Number(n.nozzleNumber),
+        fuelType: n.fuelType as FuelType,
+        initialReading: n.initialReading ? Number(n.initialReading) : undefined,
+      })),
     })
   }
 
-  const submitAdjustment = async (e: React.FormEvent, n: NozzleOption) => {
+  const submitAdjustment = async (e: React.FormEvent, nozzle: NozzleDetail) => {
     e.preventDefault(); setAdjustError(null)
     if (!adjustReason.trim()) { setAdjustError('Please provide a reason.'); return }
     if (adjustType === 'CUSTOM_READING') {
-      const dirty = n.outlets.filter((o) => adjustReadings[o.outletId] !== '' && adjustReadings[o.outletId] !== undefined)
-      if (dirty.length === 0) { setAdjustError('Enter at least one new reading.'); return }
-      for (const outlet of dirty) {
-        await recordAdjustmentMutation.mutateAsync({
-          outletId: outlet.outletId,
-          adjustmentType: 'CUSTOM_READING',
-          reason: adjustReason,
-          newReading: Number(adjustReadings[outlet.outletId]),
-        })
-      }
+      if (!adjustReading) { setAdjustError('Enter a new reading.'); return }
+      await recordAdjustmentMutation.mutateAsync({
+        nozzleId: nozzle.id,
+        adjustmentType: 'CUSTOM_READING',
+        reason: adjustReason,
+        newReading: Number(adjustReading),
+      })
     } else {
-      for (const outlet of n.outlets) {
-        await recordAdjustmentMutation.mutateAsync({
-          outletId: outlet.outletId,
-          adjustmentType: 'RESET',
-          reason: adjustReason,
-        })
-      }
+      await recordAdjustmentMutation.mutateAsync({
+        nozzleId: nozzle.id,
+        adjustmentType: 'RESET',
+        reason: adjustReason,
+      })
     }
   }
 
-  const submitDip = (e: React.FormEvent) => {
+  const submitDip = (e: React.FormEvent, nozzle: NozzleDetail) => {
     e.preventDefault(); setDipError(null)
-    if (!dipFuelType) { setDipError('Select a fuel type.'); return }
     if (!dipLitres || Number(dipLitres) <= 0) { setDipError('Enter a valid litres amount.'); return }
     if (!dipReason.trim()) { setDipError('Please provide a reason.'); return }
     recordDipMutation.mutate({
-      fuelType: dipFuelType,
+      fuelType: nozzle.fuelType,
       litresRemoved: Number(dipLitres),
       reason: dipReason,
       date: dipDate || undefined,
     })
   }
 
-  const submitTankMappings = async (e: React.FormEvent, n: NozzleOption) => {
-    e.preventDefault(); setMapError(null)
-    const changed = n.outlets.filter((o) => tankSelections[o.outletId] !== (o.tankId ?? null))
-    if (changed.length === 0) { setMapError('No changes made.'); return }
-    for (const outlet of changed) {
-      await mapTankMutation.mutateAsync({
-        nozzleId: n.id,
-        outletId: outlet.outletId,
-        tankId: tankSelections[outlet.outletId] ?? null,
-      })
-    }
-    setOpenPanel(null)
-  }
-
-  const activeNozzleCount = allNozzles.filter((n) => n.status === 'ACTIVE').length
+  const activeDUCount = allDUs.filter((d) => d.status === 'ACTIVE').length
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-400">
-        A nozzle can have 1–4 non-CNG fuel outlets (each with its own meter), or exactly one CNG outlet.
-        CNG cannot be combined with other fuel types.
+        Each Dispensary Unit (DU) is a physical MPD machine. Add one or more nozzles to each DU — each nozzle carries exactly one fuel type with its own meter counter.
+        CNG nozzles cannot share a DU with other fuel types.
       </p>
 
-      {/* Existing nozzles (active + inactive) */}
-      {allNozzles.length > 0 && (
-        <div className="space-y-2">
-          {allNozzles.map((n) => {
-            const isInactive = n.status === 'INACTIVE'
+      {/* Existing DUs (active + inactive) */}
+      {allDUs.length > 0 && (
+        <div className="space-y-3">
+          {allDUs.map((du) => {
+            const isDUInactive = du.status === 'INACTIVE'
             return (
-              <div key={n.id} className={`border rounded-lg bg-white transition-opacity ${isInactive ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
-                {/* Nozzle header row */}
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-slate-700 w-8">#{n.nozzleNumber}</span>
-                    {isInactive && (
+              <div key={du.id} className={`border rounded-xl bg-white transition-opacity ${isDUInactive ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
+                {/* DU header */}
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-t-xl border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400">DU #{du.duNumber}</span>
+                    <span className="text-sm font-bold text-slate-700">{du.name}</span>
+                    {isDUInactive && (
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium border bg-orange-50 text-orange-700 border-orange-200">
-                        Maintenance
+                        Inactive
                       </span>
-                    )}
-                    {n.outlets.map((o) => (
-                      <span key={o.outletId}
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium border ${FUEL_COLOR[o.fuelType] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                        {FUEL_LABEL[o.fuelType] ?? o.fuelType}
-                      </span>
-                    ))}
-                    {!isInactive && (
-                      <span className="text-xs text-slate-400">
-                        {n.outlets.map((o) => `${FUEL_LABEL[o.fuelType]}: ${o.lastReading}`).join(' · ')}
-                      </span>
-                    )}
-                    {!isInactive && n.outlets.some((o) => o.tankId == null) && (
-                      <span className="text-xs text-amber-600 font-medium">⚠ tank not mapped</span>
                     )}
                   </div>
-
-                  <div className="flex shrink-0 ml-2 items-center gap-2">
-                    {isInactive ? (
-                      /* Re-enable button */
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400">{du.nozzles.filter((n) => n.status === 'ACTIVE').length} active nozzle(s)</span>
+                    {!isDUInactive && du.nozzles.length < 9 && (
                       <button
                         type="button"
-                        onClick={() => statusMutation.mutate({ nozzleId: n.id, status: 'ACTIVE' })}
-                        disabled={statusMutation.isPending}
-                        className="text-xs text-emerald-700 hover:text-emerald-900 font-medium border border-emerald-300 hover:border-emerald-500 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                        onClick={() => {
+                          setAddNozzleDuId(addNozzleDuId === du.id ? null : du.id)
+                          setInlineNozzleNumber(String(du.nozzles.length + 1))
+                          setInlineFuelType(''); setInlineReading(''); setInlineError(null)
+                        }}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-0.5 rounded-md transition-colors"
                       >
-                        {statusMutation.isPending ? 'Enabling…' : 'Enable'}
+                        {addNozzleDuId === du.id ? 'Cancel' : '+ Add Nozzle'}
                       </button>
-                    ) : (
-                      /* Kebab menu — replaces 4 text buttons */
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenMenu(openMenu === n.id ? null : n.id)}
-                          className="ui-btn ui-btn-ghost min-h-0 p-1.5 text-base leading-none text-slate-400 hover:text-slate-600"
-                          title="Nozzle actions"
-                        >
-                          ⋮
-                        </button>
-                        {openMenu === n.id && (
-                          <>
-                            {/* Transparent backdrop to close on outside click */}
-                            <div
-                              className="fixed inset-0 z-[5]"
-                              onClick={() => setOpenMenu(null)}
-                            />
-                            <div className="absolute right-0 top-full z-[6] mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur">
-                              {(
-                                [
-                                  { label: 'Map Tanks', description: 'Assign outlet tanks', icon: '🛢', panel: 'mapTanks'  as NozzlePanel, color: 'text-emerald-700 hover:bg-emerald-50' },
-                                  { label: 'Edit Fuel Types', description: 'Add or update fuel mix', icon: '⛽', panel: 'fuelTypes' as NozzlePanel, color: 'text-violet-700 hover:bg-violet-50' },
-                                  { label: 'Adjust Reading', description: 'Correct stored meter value', icon: '🔧', panel: 'reading'   as NozzlePanel, color: 'text-blue-600 hover:bg-blue-50' },
-                                  { label: 'Record Dip', description: 'Log a manual dip check', icon: '📏', panel: 'dip'       as NozzlePanel, color: 'text-orange-600 hover:bg-orange-50' },
-                                  { label: 'Disable for Maintenance', description: 'Temporarily take nozzle offline', icon: '⛔', panel: 'disable' as NozzlePanel, color: 'text-red-600 hover:bg-red-50' },
-                                ] as const
-                              ).map(({ label, description, icon, panel, color }) => (
-                                <button
-                                  key={panel}
-                                  type="button"
-                                  onClick={() => {
-                                    openPanelFor(n.id, panel, n)
-                                    setOpenMenu(null)
-                                  }}
-                                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${color}`}
-                                >
-                                  <span className="mt-0.5 shrink-0 text-sm leading-none">{icon}</span>
-                                  <span className="min-w-0">
-                                    <span className="block text-xs font-semibold leading-5">{label}</span>
-                                    <span className="block text-[11px] leading-4 text-slate-400">{description}</span>
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
                     )}
                   </div>
                 </div>
 
-                {/* Disable confirmation panel */}
-                {isOpen(n.id, 'disable') && (
-                  <div className="px-3 py-3 border-t border-slate-100">
-                    <div className="ui-disable-editor">
-                      <div className="ui-disable-editor__hero">
-                        <div>
-                          <p className="ui-section-kicker mb-2">Maintenance Lock</p>
-                          <h5 className="ui-title-sm">Disable nozzle #{n.nozzleNumber}</h5>
-                          <p className="ui-subtitle mt-1">
-                            Take this nozzle offline for maintenance or operational issues.
-                          </p>
+                {/* Nozzle rows inside this DU */}
+                <div className="divide-y divide-slate-50">
+                  {du.nozzles.map((nozzle) => {
+                    const isInactive = nozzle.status === 'INACTIVE'
+                    return (
+                      <div key={nozzle.id} className={`transition-opacity ${isInactive ? 'opacity-60' : ''}`}>
+                        {/* Nozzle row */}
+                        <div className="flex items-center justify-between px-4 py-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-slate-700">#{nozzle.nozzleNumber}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${FUEL_COLOR[nozzle.fuelType] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                              {FUEL_LABEL[nozzle.fuelType] ?? nozzle.fuelType}
+                            </span>
+                            {isInactive && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium border bg-orange-50 text-orange-700 border-orange-200">
+                                Maintenance
+                              </span>
+                            )}
+                            {!isInactive && (
+                              <span className="text-xs text-slate-400">
+                                {FUEL_LABEL[nozzle.fuelType]}: {nozzle.lastReading}
+                              </span>
+                            )}
+                            {!isInactive && nozzle.tankId == null && (
+                              <span className="text-xs text-amber-600 font-medium">⚠ tank not mapped</span>
+                            )}
+                          </div>
+
+                          <div className="flex shrink-0 ml-2 items-center gap-2">
+                            {isInactive ? (
+                              <button
+                                type="button"
+                                onClick={() => statusMutation.mutate({ pumpId: pump.id, duId: du.id, nozzleId: nozzle.id, status: 'ACTIVE' })}
+                                disabled={statusMutation.isPending}
+                                className="text-xs text-emerald-700 hover:text-emerald-900 font-medium border border-emerald-300 hover:border-emerald-500 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                              >
+                                {statusMutation.isPending ? 'Enabling…' : 'Enable'}
+                              </button>
+                            ) : (
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenMenu(openMenu === nozzle.id ? null : nozzle.id)}
+                                  className="ui-btn ui-btn-ghost min-h-0 p-1.5 text-base leading-none text-slate-400 hover:text-slate-600"
+                                  title="Nozzle actions"
+                                >
+                                  ⋮
+                                </button>
+                                {openMenu === nozzle.id && (
+                                  <>
+                                    <div className="fixed inset-0 z-[5]" onClick={() => setOpenMenu(null)} />
+                                    <div className="absolute right-0 top-full z-[6] mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur">
+                                      {(
+                                        [
+                                          { label: 'Map Tank', description: 'Assign the supply tank', icon: '🛢', panel: 'mapTank'  as NozzlePanel, color: 'text-emerald-700 hover:bg-emerald-50' },
+                                          { label: 'Adjust Reading', description: 'Correct stored meter value', icon: '🔧', panel: 'reading'  as NozzlePanel, color: 'text-blue-600 hover:bg-blue-50' },
+                                          { label: 'Record Dip', description: 'Log a manual dip check', icon: '📏', panel: 'dip'      as NozzlePanel, color: 'text-orange-600 hover:bg-orange-50' },
+                                          { label: 'Disable for Maintenance', description: 'Temporarily take nozzle offline', icon: '⛔', panel: 'disable' as NozzlePanel, color: 'text-red-600 hover:bg-red-50' },
+                                        ] as const
+                                      ).map(({ label, description, icon, panel, color }) => (
+                                        <button
+                                          key={panel}
+                                          type="button"
+                                          onClick={() => {
+                                            openPanelFor(nozzle.id, panel, nozzle)
+                                            setOpenMenu(null)
+                                          }}
+                                          className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${color}`}
+                                        >
+                                          <span className="mt-0.5 shrink-0 text-sm leading-none">{icon}</span>
+                                          <span className="min-w-0">
+                                            <span className="block text-xs font-semibold leading-5">{label}</span>
+                                            <span className="block text-[11px] leading-4 text-slate-400">{description}</span>
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="ui-alert ui-alert-danger text-xs">
-                        No new shifts can be opened on this nozzle until it is re-enabled. If an active shift is running, close it first.
-                      </div>
-
-                      {statusError && <p className="ui-error-text">{statusError}</p>}
-                      <div className="ui-disable-editor__actions">
-                        <button
-                          type="button"
-                          onClick={() => statusMutation.mutate({ nozzleId: n.id, status: 'INACTIVE' })}
-                          disabled={statusMutation.isPending}
-                          className="ui-btn ui-btn-danger"
-                        >
-                          {statusMutation.isPending ? 'Disabling…' : 'Yes, Disable'}
-                        </button>
-                        <button type="button" onClick={() => setOpenPanel(null)}
-                          className="ui-btn ui-btn-secondary">
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Map Tanks panel */}
-                {isOpen(n.id, 'mapTanks') && (
-                  <div className="px-3 py-3 border-t border-slate-100">
-                    <form onSubmit={(e) => submitTankMappings(e, n)} className="ui-tank-map-form">
-                      <div className="ui-tank-map-form__hero">
-                        <div>
-                          <p className="ui-section-kicker mb-2">Tank Mapping</p>
-                          <h5 className="ui-title-sm">Map outlets to tanks</h5>
-                          <p className="ui-subtitle mt-1">
-                            Assign each outlet on nozzle #{n.nozzleNumber} to the tank it draws from. Remapping takes effect on the next shift.
-                          </p>
-                        </div>
-                        <div className="ui-tank-map-form__meta">
-                          <span className="ui-tank-map-form__meta-value">{n.outlets.length}</span>
-                          <span className="ui-tank-map-form__meta-label">outlets</span>
-                        </div>
-                      </div>
-
-                      <div className="ui-tank-map-form__grid">
-                        {n.outlets.map((outlet) => {
-                          const compatibleTanks = tanks.filter(
-                            (t) => t.fuelType === outlet.fuelType && t.status === 'ACTIVE'
-                          )
-                          const selectedTankId = tankSelections[outlet.outletId]
-                          const currentTank = compatibleTanks.find((t) => t.id === selectedTankId) ?? null
-
-                          return (
-                            <div key={outlet.outletId} className="ui-tank-map-form__card">
-                              <div className="ui-tank-map-form__card-head">
-                                <span className={`ui-tank-map-form__fuel-dot ${FUEL_PICKER_THEME[outlet.fuelType] ?? ''}`} />
+                        {/* Disable panel */}
+                        {isOpen(nozzle.id, 'disable') && (
+                          <div className="px-4 py-3 border-t border-slate-100">
+                            <div className="ui-disable-editor">
+                              <div className="ui-disable-editor__hero">
                                 <div>
-                                  <label className="ui-label mb-0">{FUEL_LABEL[outlet.fuelType]}</label>
-                                  <p className="ui-help mt-0">
-                                    {compatibleTanks.length > 0
-                                      ? `${compatibleTanks.length} active compatible tank${compatibleTanks.length !== 1 ? 's' : ''}`
-                                      : `No active ${FUEL_LABEL[outlet.fuelType]} tanks available`}
+                                  <p className="ui-section-kicker mb-2">Maintenance Lock</p>
+                                  <h5 className="ui-title-sm">Disable nozzle #{nozzle.nozzleNumber}</h5>
+                                  <p className="ui-subtitle mt-1">Take this nozzle offline for maintenance or operational issues.</p>
+                                </div>
+                              </div>
+                              <div className="ui-alert ui-alert-danger text-xs">
+                                No new shifts can be opened on this nozzle until it is re-enabled. Close any active shift first.
+                              </div>
+                              {statusError && <p className="ui-error-text">{statusError}</p>}
+                              <div className="ui-disable-editor__actions">
+                                <button
+                                  type="button"
+                                  onClick={() => statusMutation.mutate({ pumpId: pump.id, duId: du.id, nozzleId: nozzle.id, status: 'INACTIVE' })}
+                                  disabled={statusMutation.isPending}
+                                  className="ui-btn ui-btn-danger"
+                                >
+                                  {statusMutation.isPending ? 'Disabling…' : 'Yes, Disable'}
+                                </button>
+                                <button type="button" onClick={() => setOpenPanel(null)} className="ui-btn ui-btn-secondary">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Map Tank panel */}
+                        {isOpen(nozzle.id, 'mapTank') && (
+                          <div className="px-4 py-3 border-t border-slate-100">
+                            <div className="ui-tank-map-form">
+                              <div className="ui-tank-map-form__hero">
+                                <div>
+                                  <p className="ui-section-kicker mb-2">Tank Mapping</p>
+                                  <h5 className="ui-title-sm">Map nozzle to tank</h5>
+                                  <p className="ui-subtitle mt-1">
+                                    Assign nozzle #{nozzle.nozzleNumber} ({FUEL_LABEL[nozzle.fuelType]}) to the tank it draws from.
                                   </p>
                                 </div>
                               </div>
-
-                              <SearchableSelect
-                                value={selectedTankId != null ? selectedTankId.toString() : ''}
-                                onChange={v => setTankSelections(prev => ({
-                                  ...prev,
-                                  [outlet.outletId]: v === '' ? null : Number(v),
-                                }))}
-                                placeholder="— unmap —"
-                                size="sm"
-                                options={compatibleTanks.map(t => ({ value: t.id.toString(), label: t.tankIdentifier }))}
-                              />
-
-                              <div className="ui-tank-map-form__status">
-                                <span className="ui-tank-map-form__status-label">Selected tank</span>
-                                <span className={`ui-tank-map-form__status-value ${currentTank ? '' : 'ui-tank-map-form__status-value--muted'}`}>
-                                  {currentTank ? currentTank.tankIdentifier : 'Unmapped'}
-                                </span>
-                              </div>
-
-                              {compatibleTanks.length === 0 && (
-                                <p className="text-xs text-amber-600 mt-2">No active {FUEL_LABEL[outlet.fuelType]} tanks</p>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {mapError && <p className="ui-error-text">{mapError}</p>}
-                      <div className="ui-tank-map-form__actions">
-                        <button type="submit" disabled={mapTankMutation.isPending}
-                          className="ui-btn ui-btn-primary">
-                          {mapTankMutation.isPending ? 'Saving...' : 'Save'}
-                        </button>
-                        <button type="button" onClick={() => setOpenPanel(null)}
-                          className="ui-btn ui-btn-secondary">
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
-                {/* Edit Fuel Types panel */}
-                {isOpen(n.id, 'fuelTypes') && (
-                  <div className="px-3 py-3 border-t border-slate-100">
-                    <div className="ui-fuel-editor">
-                      <div className="ui-fuel-editor__hero">
-                        <div>
-                          <p className="ui-section-kicker mb-2">Fuel Mix Editor</p>
-                          <h5 className="ui-title-sm">Edit fuel types</h5>
-                          <p className="ui-subtitle mt-1">
-                            Add supported products or remove unused ones for nozzle #{n.nozzleNumber}.
-                          </p>
-                        </div>
-                        <div className="ui-fuel-editor__meta">
-                          <span className="ui-fuel-editor__meta-value">{n.outlets.length}</span>
-                          <span className="ui-fuel-editor__meta-label">active outlets</span>
-                        </div>
-                      </div>
-
-                      <div className="ui-alert ui-alert-warning text-xs">
-                        Close any active shift on this nozzle before making changes.
-                      </div>
-
-                      <div className="ui-fuel-editor__section">
-                        <div className="ui-fuel-editor__section-head">
-                          <div>
-                            <p className="ui-label mb-1">Current fuel types</p>
-                            <p className="ui-help mt-0">Click any current chip to remove it. The last outlet must remain.</p>
-                          </div>
-                        </div>
-
-                        <div className="ui-fuel-editor__grid">
-                          {n.outlets.map((o) => (
-                            <button
-                              key={o.outletId}
-                              type="button"
-                              onClick={() => removeOutletMutation.mutate({ nozzleId: n.id, outletId: o.outletId })}
-                              disabled={removeOutletMutation.isPending || addOutletMutation.isPending}
-                              className={`ui-fuel-editor__chip ui-fuel-editor__chip--remove ${FUEL_PICKER_THEME[o.fuelType] ?? ''}`}
-                              title={`Remove ${FUEL_LABEL[o.fuelType]}`}
-                            >
-                              <span className="ui-fuel-editor__chip-copy">
-                                <span className="ui-fuel-editor__chip-label">{FUEL_LABEL[o.fuelType]}</span>
-                                <span className="ui-fuel-editor__chip-help">Remove fuel type</span>
-                              </span>
-                              <span className="ui-fuel-editor__chip-action" aria-hidden="true">✕</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {(() => {
-                        const currentTypes = n.outlets.map((o) => o.fuelType)
-                        const hasCng = currentTypes.includes('CNG' as FuelType)
-                        const addable = ALL_FUEL_TYPES.filter((ft) => {
-                          if (currentTypes.includes(ft)) return false
-                          if (hasCng) return false
-                          if (ft === 'CNG') return currentTypes.length === 0
-                          return currentTypes.length < 4
-                        })
-                        if (addable.length === 0) return null
-                        return (
-                          <div className="ui-fuel-editor__section">
-                            <div className="ui-fuel-editor__section-head">
-                              <div>
-                                <p className="ui-label mb-1">Add fuel types</p>
-                                <p className="ui-help mt-0">Only compatible options are shown for this nozzle.</p>
-                              </div>
-                            </div>
-
-                            <div className="ui-fuel-editor__grid">
-                              {addable.map((ft) => (
+                              {(() => {
+                                const compatibleTanks = tanks.filter(
+                                  (t) => t.fuelType === nozzle.fuelType && t.status === 'ACTIVE'
+                                )
+                                return (
+                                  <>
+                                    <SearchableSelect
+                                      value={tankSelection != null ? tankSelection.toString() : ''}
+                                      onChange={(v) => setTankSelection(v === '' ? null : Number(v))}
+                                      placeholder="— unmap —"
+                                      size="sm"
+                                      options={compatibleTanks.map((t) => ({ value: t.id.toString(), label: t.tankIdentifier }))}
+                                    />
+                                    {compatibleTanks.length === 0 && (
+                                      <p className="text-xs text-amber-600 mt-1">
+                                        No active {FUEL_LABEL[nozzle.fuelType]} tanks available.
+                                      </p>
+                                    )}
+                                  </>
+                                )
+                              })()}
+                              {mapError && <p className="ui-error-text">{mapError}</p>}
+                              <div className="ui-tank-map-form__actions">
                                 <button
-                                  key={ft}
                                   type="button"
-                                  onClick={() => addOutletMutation.mutate({ nozzleId: n.id, fuelType: ft })}
-                                  disabled={addOutletMutation.isPending || removeOutletMutation.isPending}
-                                  className={`ui-fuel-editor__chip ui-fuel-editor__chip--add ${FUEL_PICKER_THEME[ft] ?? ''}`}
+                                  onClick={() => mapTankMutation.mutate({ pumpId: pump.id, duId: du.id, nozzleId: nozzle.id, tankId: tankSelection })}
+                                  disabled={mapTankMutation.isPending}
+                                  className="ui-btn ui-btn-primary"
                                 >
-                                  <span className="ui-fuel-editor__chip-copy">
-                                    <span className="ui-fuel-editor__chip-label">{FUEL_LABEL[ft]}</span>
-                                    <span className="ui-fuel-editor__chip-help">Add fuel type</span>
-                                  </span>
-                                  <span className="ui-fuel-editor__chip-action" aria-hidden="true">+</span>
+                                  {mapTankMutation.isPending ? 'Saving…' : 'Save'}
                                 </button>
-                              ))}
+                                <button type="button" onClick={() => setOpenPanel(null)} className="ui-btn ui-btn-secondary">
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        )
-                      })()}
-                      {fuelEditError && <p className="ui-error-text">{fuelEditError}</p>}
-                      <div className="ui-fuel-editor__actions">
-                        <button type="button" onClick={() => setOpenPanel(null)}
-                          className="ui-btn ui-btn-secondary">
-                          Done
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                        )}
 
-                {/* Adjust Reading panel */}
-                {isOpen(n.id, 'reading') && (
-                  <div className="px-3 py-3 border-t border-slate-100">
-                    <form onSubmit={(e) => submitAdjustment(e, n)} className="ui-reading-editor">
-                      <div className="ui-reading-editor__hero">
-                        <div>
-                          <p className="ui-section-kicker mb-2">Meter Adjustment</p>
-                          <h5 className="ui-title-sm">Adjust meter reading</h5>
-                          <p className="ui-subtitle mt-1">
-                            Use this only when a meter was replaced, reset, or the stored reading is incorrect for nozzle #{n.nozzleNumber}.
-                          </p>
-                        </div>
-                        <div className="ui-reading-editor__meta">
-                          <span className="ui-reading-editor__meta-value">{n.outlets.length}</span>
-                          <span className="ui-reading-editor__meta-label">outlets</span>
-                        </div>
-                      </div>
-
-                      <div className="ui-alert ui-alert-warning text-xs">
-                        Cannot be done while an active shift is running on this nozzle.
-                      </div>
-
-                      <div className="ui-reading-editor__section">
-                        <div className="ui-reading-editor__section-head">
-                          <div>
-                            <p className="ui-label mb-1">Adjustment type</p>
-                            <p className="ui-help mt-0">Choose whether to set exact readings or reset every outlet on this nozzle to zero.</p>
-                          </div>
-                        </div>
-
-                        <div className="ui-reading-editor__mode-grid">
-                          <button
-                            type="button"
-                            onClick={() => setAdjustType('CUSTOM_READING')}
-                            className={`ui-reading-editor__mode-card ${adjustType === 'CUSTOM_READING' ? 'ui-reading-editor__mode-card--active ui-reading-editor__mode-card--custom' : ''}`}
-                          >
-                            <span className="ui-reading-editor__mode-title">Set custom reading</span>
-                            <span className="ui-reading-editor__mode-copy">Enter a replacement reading for one or more outlets.</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAdjustType('RESET')}
-                            className={`ui-reading-editor__mode-card ${adjustType === 'RESET' ? 'ui-reading-editor__mode-card--active ui-reading-editor__mode-card--danger' : ''}`}
-                          >
-                            <span className="ui-reading-editor__mode-title">Reset to zero</span>
-                            <span className="ui-reading-editor__mode-copy">Apply a full zero reset to every outlet on this nozzle.</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {adjustType === 'CUSTOM_READING' && (
-                        <div className="ui-reading-editor__section">
-                          <div className="ui-reading-editor__section-head">
-                            <div>
-                              <p className="ui-label mb-1">Outlet readings</p>
-                              <p className="ui-help mt-0">Only filled values will be updated when you save.</p>
-                            </div>
-                          </div>
-
-                          <div className="ui-reading-editor__grid">
-                          {n.outlets.map((outlet) => (
-                            <div key={outlet.outletId} className="ui-reading-editor__card">
-                              <div className="ui-reading-editor__card-head">
-                                <span className={`ui-reading-editor__fuel-dot ${FUEL_PICKER_THEME[outlet.fuelType] ?? ''}`} />
+                        {/* Adjust Reading panel */}
+                        {isOpen(nozzle.id, 'reading') && (
+                          <div className="px-4 py-3 border-t border-slate-100">
+                            <form onSubmit={(e) => submitAdjustment(e, nozzle)} className="ui-reading-editor">
+                              <div className="ui-reading-editor__hero">
                                 <div>
-                                  <label className="ui-label mb-0">{FUEL_LABEL[outlet.fuelType]}</label>
-                                  <p className="ui-help mt-0">Current: {outlet.lastReading} {FUEL_UNIT[outlet.fuelType]}</p>
+                                  <p className="ui-section-kicker mb-2">Meter Adjustment</p>
+                                  <h5 className="ui-title-sm">Adjust meter reading</h5>
+                                  <p className="ui-subtitle mt-1">
+                                    Use this only when the meter was replaced, reset, or the stored reading is incorrect for nozzle #{nozzle.nozzleNumber}.
+                                  </p>
                                 </div>
                               </div>
-                              <input
-                                type="number" step="0.001" min="0"
-                                value={adjustReadings[outlet.outletId] ?? ''}
-                                onChange={(e) => setAdjustReadings((prev) => ({ ...prev, [outlet.outletId]: e.target.value }))}
-                                placeholder="New reading"
-                                className="text-sm"
-                              />
+                              <div className="ui-alert ui-alert-warning text-xs">
+                                Cannot be done while an active shift is running on this nozzle.
+                              </div>
+                              <div className="ui-reading-editor__section">
+                                <div className="ui-reading-editor__section-head">
+                                  <div>
+                                    <p className="ui-label mb-1">Adjustment type</p>
+                                    <p className="ui-help mt-0">Choose whether to set an exact reading or reset this nozzle's meter to zero.</p>
+                                  </div>
+                                </div>
+                                <div className="ui-reading-editor__mode-grid">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAdjustType('CUSTOM_READING')}
+                                    className={`ui-reading-editor__mode-card ${adjustType === 'CUSTOM_READING' ? 'ui-reading-editor__mode-card--active ui-reading-editor__mode-card--custom' : ''}`}
+                                  >
+                                    <span className="ui-reading-editor__mode-title">Set custom reading</span>
+                                    <span className="ui-reading-editor__mode-copy">Enter a replacement reading for this nozzle.</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAdjustType('RESET')}
+                                    className={`ui-reading-editor__mode-card ${adjustType === 'RESET' ? 'ui-reading-editor__mode-card--active ui-reading-editor__mode-card--danger' : ''}`}
+                                  >
+                                    <span className="ui-reading-editor__mode-title">Reset to zero</span>
+                                    <span className="ui-reading-editor__mode-copy">Apply a full zero reset to this nozzle's meter.</span>
+                                  </button>
+                                </div>
+                              </div>
+                              {adjustType === 'CUSTOM_READING' && (
+                                <div className="ui-reading-editor__section">
+                                  <label className="ui-label">
+                                    New reading <span className="ui-help mt-0">Current: {nozzle.lastReading} {FUEL_UNIT[nozzle.fuelType]}</span>
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.001"
+                                    min="0"
+                                    value={adjustReading}
+                                    onChange={(e) => setAdjustReading(e.target.value)}
+                                    placeholder="New reading"
+                                    className="text-sm"
+                                  />
+                                </div>
+                              )}
+                              {adjustType === 'RESET' && (
+                                <div className="ui-reading-editor__section">
+                                  <div className="ui-alert ui-alert-danger">
+                                    <p className="text-xs text-red-700">
+                                      This will reset the meter on nozzle #{nozzle.nozzleNumber} to <strong>0.000</strong>. This action is logged and cannot be undone.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              <div className="ui-reading-editor__section">
+                                <label className="ui-label">Reason <span className="text-red-500">*</span></label>
+                                <input
+                                  type="text"
+                                  value={adjustReason}
+                                  onChange={(e) => setAdjustReason(e.target.value)}
+                                  placeholder="e.g. Meter replaced after malfunction"
+                                  className="text-sm"
+                                />
+                                <p className="ui-help">This note is stored with the adjustment log for audit history.</p>
+                              </div>
+                              {adjustError && <p className="ui-error-text">{adjustError}</p>}
+                              <div className="ui-reading-editor__actions">
+                                <button
+                                  type="submit"
+                                  disabled={recordAdjustmentMutation.isPending}
+                                  className={`ui-btn ${adjustType === 'RESET' ? 'ui-btn-danger' : 'ui-btn-primary'}`}
+                                >
+                                  {recordAdjustmentMutation.isPending ? 'Saving…' : adjustType === 'RESET' ? 'Reset to Zero' : 'Save Reading'}
+                                </button>
+                                <button type="button" onClick={() => setOpenPanel(null)} className="ui-btn ui-btn-secondary">
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+
+                        {/* Record Dip panel */}
+                        {isOpen(nozzle.id, 'dip') && (() => {
+                          const priceEntry = currentPrices.find((p) => p.fuelType === nozzle.fuelType)
+                          const pricePerUnit = priceEntry?.pricePerUnit ?? 0
+                          const estimatedLoss = dipLitres && Number(dipLitres) > 0 && pricePerUnit > 0
+                            ? Number(dipLitres) * pricePerUnit
+                            : null
+                          return (
+                            <div className="px-4 py-3 border-t border-slate-100">
+                              <form onSubmit={(e) => submitDip(e, nozzle)} className="ui-dip-editor">
+                                <div className="ui-dip-editor__hero">
+                                  <div>
+                                    <p className="ui-section-kicker mb-2">Dip Record</p>
+                                    <h5 className="ui-title-sm">Record fuel dip</h5>
+                                    <p className="ui-subtitle mt-1">
+                                      Record fuel physically removed from the tank, such as maintenance draining or contamination removal.
+                                    </p>
+                                  </div>
+                                  <div className="ui-dip-editor__meta">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${FUEL_COLOR[nozzle.fuelType] ?? ''}`}>
+                                      {FUEL_LABEL[nozzle.fuelType]}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="ui-dip-editor__section">
+                                  <label className="ui-label">Litres Removed</label>
+                                  <input
+                                    type="number"
+                                    step="0.001"
+                                    min="0.001"
+                                    value={dipLitres}
+                                    onChange={(e) => setDipLitres(e.target.value)}
+                                    placeholder="e.g. 12.500"
+                                    className="text-xs min-h-10"
+                                  />
+                                  {estimatedLoss !== null && (
+                                    <p className="ui-dip-editor__loss">
+                                      Estimated loss: ₹{estimatedLoss.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {` @ ₹${pricePerUnit}/unit`}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="ui-dip-editor__grid">
+                                  <div className="ui-dip-editor__section">
+                                    <label className="ui-label">
+                                      Date <span className="text-slate-400">(leave blank for today)</span>
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={dipDate}
+                                      onChange={(e) => setDipDate(e.target.value)}
+                                      className="text-xs min-h-10"
+                                    />
+                                  </div>
+                                  <div className="ui-dip-editor__section">
+                                    <label className="ui-label">Reason <span className="text-red-500">*</span></label>
+                                    <input
+                                      type="text"
+                                      value={dipReason}
+                                      onChange={(e) => setDipReason(e.target.value)}
+                                      placeholder="e.g. Water contamination draining"
+                                      className="text-xs min-h-10"
+                                    />
+                                  </div>
+                                </div>
+                                {dipError && <p className="ui-error-text">{dipError}</p>}
+                                <div className="ui-dip-editor__actions">
+                                  <button
+                                    type="submit"
+                                    disabled={recordDipMutation.isPending}
+                                    className="ui-btn ui-btn-warning"
+                                  >
+                                    {recordDipMutation.isPending ? 'Recording…' : 'Record Dip'}
+                                  </button>
+                                  <button type="button" onClick={() => setOpenPanel(null)} className="ui-btn ui-btn-secondary">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
                             </div>
-                          ))}
-                          </div>
-                        </div>
-                      )}
+                          )
+                        })()}
+                      </div>
+                    )
+                  })}
+                </div>
 
-                      {adjustType === 'RESET' && (
-                        <div className="ui-reading-editor__section">
-                          <div className="ui-alert ui-alert-danger">
-                            <p className="text-xs text-red-700">
-                            This will reset all meter readings on nozzle #{n.nozzleNumber} to <strong>0.000</strong>. This action is logged and cannot be undone.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="ui-reading-editor__section">
-                        <label className="ui-label">Reason <span className="text-red-500">*</span></label>
+                {/* Inline add-nozzle form */}
+                {addNozzleDuId === du.id && (
+                  <div className="px-4 py-3 border-t border-blue-100 bg-blue-50/40 rounded-b-xl">
+                    <form onSubmit={(e) => submitInlineNozzle(e, du)} className="flex items-end gap-2 flex-wrap">
+                      <div className="w-20">
+                        <label className="ui-label mb-1 text-[10px]">Nozzle #</label>
                         <input
-                          type="text"
-                          value={adjustReason}
-                          onChange={(e) => setAdjustReason(e.target.value)}
-                          placeholder="e.g. Meter replaced after malfunction"
-                          className="text-sm"
+                          type="number" min="1" max="9"
+                          value={inlineNozzleNumber}
+                          onChange={(e) => setInlineNozzleNumber(e.target.value)}
+                          className="text-xs w-full"
+                          placeholder="1"
                         />
-                        <p className="ui-help">This note is stored with the adjustment log for audit history.</p>
                       </div>
-
-                      {adjustError && <p className="ui-error-text">{adjustError}</p>}
-                      <div className="ui-reading-editor__actions">
-                        <button type="submit" disabled={recordAdjustmentMutation.isPending}
-                          className={`ui-btn ${adjustType === 'RESET' ? 'ui-btn-danger' : 'ui-btn-primary'}`}>
-                          {recordAdjustmentMutation.isPending ? 'Saving...' : adjustType === 'RESET' ? 'Reset to Zero' : 'Save Reading'}
-                        </button>
-                        <button type="button" onClick={() => setOpenPanel(null)}
-                          className="ui-btn ui-btn-secondary">
-                          Cancel
-                        </button>
+                      <div className="flex-1 min-w-[160px]">
+                        <label className="ui-label mb-1 text-[10px]">Fuel Type</label>
+                        <SearchableSelect
+                          value={inlineFuelType}
+                          onChange={(v) => setInlineFuelType(v as FuelType)}
+                          placeholder="— select —"
+                          size="sm"
+                          options={ALL_FUEL_TYPES.map((ft) => ({ value: ft, label: FUEL_LABEL[ft] }))}
+                        />
                       </div>
+                      <div className="w-32">
+                        <label className="ui-label mb-1 text-[10px]">Start Reading</label>
+                        <input
+                          type="number" step="0.001" min="0"
+                          value={inlineReading}
+                          onChange={(e) => setInlineReading(e.target.value)}
+                          placeholder="0"
+                          className="text-xs w-full"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={addNozzleMutation.isPending}
+                        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs"
+                      >
+                        {addNozzleMutation.isPending ? 'Adding…' : 'Add'}
+                      </button>
                     </form>
+                    {inlineError && <p className="ui-error-text mt-2">{inlineError}</p>}
                   </div>
                 )}
-
-                {/* Record Dip panel */}
-                {isOpen(n.id, 'dip') && (() => {
-                  const priceEntry = currentPrices.find((p) => p.fuelType === dipFuelType)
-                  const pricePerUnit = priceEntry?.pricePerUnit ?? 0
-                  const estimatedLoss = dipLitres && Number(dipLitres) > 0 && pricePerUnit > 0
-                    ? Number(dipLitres) * pricePerUnit
-                    : null
-                  return (
-                    <div className="px-3 py-3 border-t border-slate-100">
-                      <form onSubmit={submitDip} className="ui-dip-editor">
-                        <div className="ui-dip-editor__hero">
-                          <div>
-                            <p className="ui-section-kicker mb-2">Dip Record</p>
-                            <h5 className="ui-title-sm">Record fuel dip</h5>
-                            <p className="ui-subtitle mt-1">
-                              Record fuel physically removed from the tank, such as maintenance draining or contamination removal.
-                            </p>
-                          </div>
-                          <div className="ui-dip-editor__meta">
-                            <span className="ui-dip-editor__meta-value">{n.outlets.length}</span>
-                            <span className="ui-dip-editor__meta-label">fuel options</span>
-                          </div>
-                        </div>
-
-                        <div className="ui-dip-editor__section">
-                          <label className="ui-label">Fuel Type</label>
-                          <SearchableSelect
-                            value={dipFuelType}
-                            onChange={v => setDipFuelType(v)}
-                            size="sm"
-                            accentColor="orange"
-                            options={n.outlets.map(o => ({ value: o.fuelType, label: FUEL_LABEL[o.fuelType] }))}
-                          />
-                        </div>
-
-                        <div className="ui-dip-editor__section">
-                          <label className="ui-label">Litres Removed</label>
-                          <input
-                            type="number" step="0.001" min="0.001"
-                            value={dipLitres}
-                            onChange={(e) => setDipLitres(e.target.value)}
-                            placeholder="e.g. 12.500"
-                            className="text-xs min-h-10"
-                          />
-                          {estimatedLoss !== null && (
-                            <p className="ui-dip-editor__loss">
-                              Estimated loss: ₹{estimatedLoss.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              {` @ ₹${pricePerUnit}/unit`}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="ui-dip-editor__grid">
-                          <div className="ui-dip-editor__section">
-                          <label className="ui-label">
-                            Date <span className="text-slate-400">(leave blank for today)</span>
-                          </label>
-                          <input
-                            type="date"
-                            value={dipDate}
-                            onChange={(e) => setDipDate(e.target.value)}
-                            className="text-xs min-h-10"
-                          />
-                          </div>
-
-                          <div className="ui-dip-editor__section">
-                          <label className="ui-label">Reason <span className="text-red-500">*</span></label>
-                          <input
-                            type="text"
-                            value={dipReason}
-                            onChange={(e) => setDipReason(e.target.value)}
-                            placeholder="e.g. Water contamination draining"
-                            className="text-xs min-h-10"
-                          />
-                          </div>
-                        </div>
-
-                        {dipError && <p className="ui-error-text">{dipError}</p>}
-                        <div className="ui-dip-editor__actions">
-                          <button type="submit" disabled={recordDipMutation.isPending}
-                            className="ui-btn ui-btn-warning">
-                            {recordDipMutation.isPending ? 'Recording...' : 'Record Dip'}
-                          </button>
-                          <button type="button" onClick={() => setOpenPanel(null)}
-                            className="ui-btn ui-btn-secondary">
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  )
-                })()}
               </div>
             )
           })}
         </div>
       )}
 
-      {/* Add nozzle form or max-reached notice */}
-      {activeNozzleCount >= pump.maxNozzleCount ? (
+      {/* Create DU form or max-reached notice */}
+      {activeDUCount >= pump.maxDuCount ? (
         <div className="space-y-2">
           <p className="ui-alert ui-alert-warning text-xs">
-            Maximum nozzle count ({pump.maxNozzleCount}) reached.
-            {' '}If you have added a new machine with more fuel types, you can increase the limit below.
+            Maximum DU count ({pump.maxDuCount}) reached.
+            {' '}If you have added a new machine, you can increase the limit below.
           </p>
           {!showIncreaseMax ? (
             <button
               type="button"
-              onClick={() => { setShowIncreaseMax(true); setNewMaxCount(String(pump.maxNozzleCount + 1)) }}
+              onClick={() => { setShowIncreaseMax(true); setNewMaxCount(String(pump.maxDuCount + 1)) }}
               className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
             >
-              + Increase nozzle limit
+              + Increase DU limit
             </button>
           ) : (
             <div className="flex items-end gap-3 flex-wrap">
               <div>
-                <label className="ui-label">New maximum nozzle count</label>
+                <label className="ui-label">New maximum DU count</label>
                 <input
-                  type="number" min={pump.maxNozzleCount + 1} max="20"
+                  type="number"
+                  min={pump.maxDuCount + 1}
+                  max="20"
                   value={newMaxCount}
                   onChange={(e) => setNewMaxCount(e.target.value)}
                   className="w-24 text-sm"
@@ -1193,8 +1077,11 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
               >
                 {increaseMaxMutation.isPending ? 'Saving…' : 'Increase Limit'}
               </button>
-              <button type="button" onClick={() => { setShowIncreaseMax(false); setIncreaseError(null) }}
-                className="ui-btn ui-btn-ghost text-xs">
+              <button
+                type="button"
+                onClick={() => { setShowIncreaseMax(false); setIncreaseError(null) }}
+                className="ui-btn ui-btn-ghost text-xs"
+              >
                 Cancel
               </button>
               {increaseError && <p className="ui-error-text w-full">{increaseError}</p>}
@@ -1205,106 +1092,97 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
         <form onSubmit={submitAdd} className="ui-nozzle-form">
           <div className="ui-nozzle-form__hero">
             <div>
-              <p className="ui-section-kicker mb-2">Nozzle Setup</p>
-              <h4 className="ui-title-sm">Add a new nozzle</h4>
+              <p className="ui-section-kicker mb-2">DU Setup</p>
+              <h4 className="ui-title-sm">Add a new Dispensary Unit</h4>
               <p className="ui-subtitle mt-1">
-                Pick the nozzle number, assign its fuel mix, and seed opening meter values if the machine is already in service.
+                A Dispensary Unit (DU) is a physical MPD machine. Give it a name and add one or more nozzles — each nozzle carries exactly one fuel type.
               </p>
             </div>
+          </div>
 
-            <div className="ui-nozzle-form__number-card">
-              <label className="ui-label mb-2">Nozzle #</label>
-              <input
-                required
-                type="number"
-                min="1"
-                max="20"
-                value={nozzleNumber}
-                onChange={(e) => setNozzleNumber(e.target.value)}
-                className="ui-nozzle-form__number-input"
-                placeholder="1"
-              />
-            </div>
+          <div className="ui-nozzle-form__section">
+            <label className="ui-label">DU Name <span className="text-red-500">*</span></label>
+            <input
+              required
+              type="text"
+              value={duName}
+              onChange={(e) => setDuName(e.target.value)}
+              placeholder="e.g. DU-1, Machine A"
+              className="text-sm"
+            />
           </div>
 
           <div className="ui-nozzle-form__section">
             <div className="ui-nozzle-form__section-head">
               <div>
-                <label className="ui-label mb-1">Fuel Types</label>
-                <p className="ui-help mt-0">Choose one or more products for this nozzle. CNG remains exclusive.</p>
+                <label className="ui-label mb-1">Nozzles</label>
+                <p className="ui-help mt-0">Each nozzle has a unique number and exactly one fuel type.</p>
               </div>
-              <span className="ui-nozzle-form__selection-count">
-                {selectedFuelTypes.length} selected
-              </span>
+              <button
+                type="button"
+                onClick={() => setDuNozzles((prev) => [...prev, { nozzleNumber: String(prev.length + 1), fuelType: '', initialReading: '' }])}
+                className="ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-blue-600"
+              >
+                + Add nozzle
+              </button>
             </div>
 
-            <div className="ui-nozzle-form__fuel-grid">
-              {ALL_FUEL_TYPES.map((ft) => {
-                const checked = selectedFuelTypes.includes(ft)
-                const disabled = ft === 'CNG'
-                  ? selectedFuelTypes.some((t) => t !== 'CNG')
-                  : selectedFuelTypes.includes('CNG')
-
-                return (
-                  <label
-                    key={ft}
-                    className={`ui-fuel-pill ${FUEL_PICKER_THEME[ft] ?? ''} ${checked ? 'ui-fuel-pill--selected' : ''} ${disabled ? 'ui-fuel-pill--disabled' : ''}`}
-                  >
+            <div className="space-y-2 mt-2">
+              {duNozzles.map((row, idx) => (
+                <div key={idx} className="flex items-end gap-2 flex-wrap">
+                  <div className="w-20">
+                    <label className="ui-label mb-1 text-[10px]">Nozzle #</label>
                     <input
-                      type="checkbox"
-                      className="hidden"
-                      checked={checked}
-                      disabled={disabled}
-                      onChange={() => !disabled && toggleFuelType(ft)}
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={row.nozzleNumber}
+                      onChange={(e) => setDuNozzles((prev) => prev.map((r, i) => i === idx ? { ...r, nozzleNumber: e.target.value } : r))}
+                      className="text-xs w-full"
+                      placeholder="1"
                     />
-                    <span className="ui-fuel-pill__label">{FUEL_LABEL[ft]}</span>
-                    <span className="ui-fuel-pill__meta">{FUEL_UNIT[ft]}</span>
-                  </label>
-                )
-              })}
-            </div>
-            <p className="ui-help">CNG cannot be combined with other fuel types.</p>
-          </div>
-
-          {selectedFuelTypes.length > 0 && (
-            <div className="ui-nozzle-form__readings">
-              <div className="ui-nozzle-form__section-head">
-                <div>
-                  <label className="ui-label mb-1">Start Reading</label>
-                  <p className="ui-help mt-0">Optional. Enter a value only when the meter already has an opening reading.</p>
-                </div>
-              </div>
-
-              <div className="ui-nozzle-form__reading-grid">
-                {selectedFuelTypes.map((ft) => (
-                  <div key={ft} className="ui-nozzle-form__reading-card">
-                    <div className="ui-nozzle-form__reading-head">
-                      <span className={`ui-nozzle-form__reading-dot ${FUEL_PICKER_THEME[ft] ?? ''}`} />
-                      <div>
-                        <label className="ui-label mb-0">{FUEL_LABEL[ft]}</label>
-                        <p className="ui-help mt-0">{FUEL_UNIT[ft]} meter value</p>
-                      </div>
-                    </div>
+                  </div>
+                  <div className="flex-1 min-w-[160px]">
+                    <label className="ui-label mb-1 text-[10px]">Fuel Type</label>
+                    <SearchableSelect
+                      value={row.fuelType}
+                      onChange={(v) => setDuNozzles((prev) => prev.map((r, i) => i === idx ? { ...r, fuelType: v as FuelType } : r))}
+                      placeholder="— select —"
+                      size="sm"
+                      options={ALL_FUEL_TYPES.map((ft) => ({ value: ft, label: FUEL_LABEL[ft] }))}
+                    />
+                  </div>
+                  <div className="w-32">
+                    <label className="ui-label mb-1 text-[10px]">Start Reading</label>
                     <input
                       type="number"
                       step="0.001"
                       min="0"
-                      value={startReadings[ft] ?? ''}
-                      onChange={(e) => setStartReadings((prev) => ({ ...prev, [ft]: e.target.value }))}
+                      value={row.initialReading}
+                      onChange={(e) => setDuNozzles((prev) => prev.map((r, i) => i === idx ? { ...r, initialReading: e.target.value } : r))}
                       placeholder="0"
-                      className="text-sm"
+                      className="text-xs w-full"
                     />
                   </div>
-                ))}
-              </div>
+                  {duNozzles.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setDuNozzles((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-xs text-red-500 hover:text-red-700 pb-1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
-          )}
+          </div>
 
           {addError && <p className="ui-error-text">{addError}</p>}
 
           <div className="ui-nozzle-form__actions">
-            <button type="submit" disabled={addMutation.isPending} className="ui-btn ui-btn-primary">
-              {addMutation.isPending ? 'Adding...' : 'Add Nozzle'}
+            <button type="submit" disabled={createDUMutation.isPending} className="ui-btn ui-btn-primary">
+              {createDUMutation.isPending ? 'Creating…' : 'Create DU'}
             </button>
           </div>
         </form>
@@ -1326,9 +1204,9 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
   // P2.3 — open shifts warning shown after a successful price update
   const [openShiftsWarning, setOpenShiftsWarning] = useState<string | null>(null)
 
-  // Derive the unique fuel types across all nozzle outlets
+  // Derive the unique fuel types across all DU nozzles
   const availableFuelTypes = [...new Set(
-    pump.nozzles.flatMap((n) => n.outlets.map((o) => o.fuelType))
+    pump.dus.flatMap((d) => d.nozzles.map((n) => n.fuelType))
   )] as FuelType[]
 
   const mutation = useMutation({
@@ -1389,8 +1267,8 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
   const todayStr = localDateInputValue()
   const pricesStale = currentPrices.length > 0 && currentPrices.some((p) => p.effectiveFrom < todayStr)
 
-  if (pump.nozzles.length === 0) {
-    return <p className="text-xs text-slate-400">Add at least one nozzle first (Nozzles section above).</p>
+  if (pump.dus.length === 0) {
+    return <p className="text-xs text-slate-400">Add at least one DU with a nozzle first (Nozzles section above).</p>
   }
 
   return (

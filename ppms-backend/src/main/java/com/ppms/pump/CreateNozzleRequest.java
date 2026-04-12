@@ -15,8 +15,8 @@ import java.util.Map;
 public class CreateNozzleRequest {
 
     @NotNull(message = "Nozzle number is required")
-    @Min(value = 1, message = "Nozzle number must be 1–9")
-    @Max(value = 9, message = "Nozzle number must be 1–9")
+    @Min(value = 1, message = "Nozzle number must be 1–20")
+    @Max(value = 20, message = "Nozzle number must be 1–20")
     private Integer nozzleNumber;
 
     /**

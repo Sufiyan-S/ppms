@@ -23,13 +23,15 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             """)
     List<Shift> findActiveShiftsByPump(Long pumpId);
 
-    // Check if nozzle already has an open shift (Rule 33)
+    // Check if a nozzle already has an open shift — enforces one operator per nozzle at a time.
+    // Queries via the shift_nozzles join table.
     @Query("""
             SELECT s FROM Shift s
-            WHERE s.nozzleId = :nozzleId
+            JOIN ShiftNozzle sn ON sn.shiftId = s.id
+            WHERE sn.nozzleId = :nozzleId
               AND s.status IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
             """)
-    Optional<Shift> findOpenShiftByNozzle(Long nozzleId);
+    Optional<Shift> findOpenShiftByNozzle(@Param("nozzleId") Long nozzleId);
 
     // Check if operator already has an open shift (Rule 27)
     @Query("""

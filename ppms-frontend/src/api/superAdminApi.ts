@@ -8,7 +8,7 @@ export interface OnboardOwnerRequest {
   password: string
   pumpName: string
   pumpAddress: string
-  maxNozzleCount: number
+  maxDuCount: number
 }
 
 export interface OnboardOwnerResponse {
@@ -46,7 +46,7 @@ export interface OwnerSummary {
 export interface AddPumpRequest {
   pumpName: string
   pumpAddress: string
-  maxNozzleCount: number
+  maxDuCount: number
 }
 
 // ── Update Pump (SuperAdmin) ───────────────────────────────────────────────────

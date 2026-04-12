@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { pumpApi } from '../../api/pumpApi'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -46,8 +46,10 @@ export default function InventoryPage() {
   const [deliveryFuelFilter, setDeliveryFuelFilter] = useState('')
   const [dipPage,           setDipPage]           = useState(0)
   const [dipPageSize,       setDipPageSize]       = useState(10)
-  const [dipTankFilter,     setDipTankFilter]     = useState('')
-  const [dipFuelFilter,     setDipFuelFilter]     = useState('')
+  const [dipTankFilter,          setDipTankFilter]          = useState('')
+  const [dipFuelFilter,          setDipFuelFilter]          = useState('')
+  const [collapsedDeliveries,    setCollapsedDeliveries]    = useState<Set<string>>(new Set())
+  const [collapsedDipGroups,     setCollapsedDipGroups]     = useState<Set<string>>(new Set())
 
   const { data: pumps = [] } = useQuery({
     queryKey: ['myPumps'],
@@ -88,6 +90,28 @@ export default function InventoryPage() {
     enabled:  !!pumpId && dipHistOpen,
   })
   const dipChecks = dipChecksPage?.content ?? []
+
+  // When delivery data loads, collapse all groups except the first (newest) one
+  useEffect(() => {
+    const content = deliveriesPage?.content
+    if (!content?.length) return
+    const keys = [...new Set(content.map(d => d.invoiceReference || 'No Invoice'))]
+      .sort((a, b) => {
+        const dateA = content.find(d => (d.invoiceReference || 'No Invoice') === a)?.deliveryDate ?? ''
+        const dateB = content.find(d => (d.invoiceReference || 'No Invoice') === b)?.deliveryDate ?? ''
+        return dateB.localeCompare(dateA)
+      })
+    setCollapsedDeliveries(new Set(keys.slice(1)))
+  }, [deliveriesPage])
+
+  // When DIP data loads, collapse all groups except the first (newest) one
+  useEffect(() => {
+    const content = dipChecksPage?.content
+    if (!content?.length) return
+    const keys = [...new Set(content.map(d => d.checkedAt.slice(0, 10)))]
+      .sort((a, b) => b.localeCompare(a))
+    setCollapsedDipGroups(new Set(keys.slice(1)))
+  }, [dipChecksPage])
 
   // Compute last-checked timestamp per tank from alert page (newest-first, page 0)
   const lastDipByTankId = new Map<number, Date>()
@@ -195,7 +219,7 @@ export default function InventoryPage() {
               {isOwnerOrAdmin && (
                 <button
                   onClick={() => setShowDeliveryModal(true)}
-                  className="ui-btn ui-btn-primary shrink-0"
+                  className="ui-btn ui-btn-primary shrink-0 ml-auto"
                 >
                   + Record Delivery
                 </button>
@@ -313,40 +337,53 @@ export default function InventoryPage() {
                         {groups.map(([invoice, rows]) => {
                           const totalQty = rows.reduce((s, r) => s + r.quantityDelivered, 0)
                           const totalCost = rows.reduce((s, r) => s + r.totalCost, 0)
+                          const isCollapsed = collapsedDeliveries.has(invoice)
+                          const toggleDelivery = () => setCollapsedDeliveries(prev => {
+                            const next = new Set(prev)
+                            next.has(invoice) ? next.delete(invoice) : next.add(invoice)
+                            return next
+                          })
                           return (
-                            <div key={invoice} className="px-5 py-4">
-                              <div className="ui-card p-0 overflow-hidden">
-                                <div className="bg-slate-50 px-4 py-3 flex flex-wrap items-center gap-2">
-                                  <span className="text-xs text-slate-500">Bill No.</span>
-                                  <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">
-                                    {invoice}
+                            <div key={invoice} className="px-5 py-4 space-y-2">
+                              <button
+                                type="button"
+                                onClick={toggleDelivery}
+                                className="w-full flex items-center gap-2 text-left hover:opacity-70 transition-opacity"
+                              >
+                                <span className="text-xs text-slate-500">Bill No.</span>
+                                <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">
+                                  {invoice}
+                                </span>
+                                <span className="text-xs text-slate-400">{fmtDate(rows[0].deliveryDate)}</span>
+                                <span className="text-xs text-slate-400">·</span>
+                                <span className="text-xs text-slate-500">{rows.length} tank{rows.length !== 1 ? 's' : ''}</span>
+                                <div className="ml-auto flex items-center gap-3">
+                                  <span className="text-xs text-slate-500">
+                                    {totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
                                   </span>
-                                  <span className="text-xs text-slate-400">{fmtDate(rows[0].deliveryDate)}</span>
-                                  <span className="text-xs text-slate-400">·</span>
-                                  <span className="text-xs text-slate-500">{rows.length} tank{rows.length !== 1 ? 's' : ''}</span>
-                                  <div className="ml-auto flex items-center gap-3">
-                                    <span className="text-xs text-slate-500">
-                                      {totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                                    </span>
-                                    <span className="text-sm font-bold text-slate-800">
-                                      ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
+                                  <span className="text-sm font-bold text-slate-800">
+                                    ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-xs text-slate-400 ml-1">{isCollapsed ? '▼' : '▲'}</span>
                                 </div>
+                              </button>
 
-                                <div className="px-4 py-3">
-                                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                                    <span>Tank</span>
-                                    <span>Fuel</span>
-                                    <span className="text-right">Quantity</span>
-                                    <span className="text-right">Rate</span>
-                                    <span className="text-right">Amount</span>
-                                  </div>
-                                  <div className="space-y-2 pt-2">
-                                    {rows.map(d => <DeliveryItem key={d.id} delivery={d} />)}
+                              {!isCollapsed && (
+                                <div className="ui-card p-0 overflow-hidden">
+                                  <div className="px-4 py-3">
+                                    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                      <span>Tank</span>
+                                      <span>Fuel</span>
+                                      <span className="text-right">Quantity</span>
+                                      <span className="text-right">Rate</span>
+                                      <span className="text-right">Amount</span>
+                                    </div>
+                                    <div className="space-y-2 pt-2">
+                                      {rows.map(d => <DeliveryItem key={d.id} delivery={d} />)}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                           )
                         })}
@@ -448,10 +485,19 @@ export default function InventoryPage() {
                     <div className="divide-y divide-slate-100">
                       {groups.map(([dateKey, rows]) => {
                         const allBalanced = rows.every(r => r.variance === 0)
+                        const isCollapsed = collapsedDipGroups.has(dateKey)
+                        const toggleDip = () => setCollapsedDipGroups(prev => {
+                          const next = new Set(prev)
+                          next.has(dateKey) ? next.delete(dateKey) : next.add(dateKey)
+                          return next
+                        })
                         return (
                           <div key={dateKey} className="px-5 py-4 space-y-2">
-                            {/* Date header */}
-                            <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={toggleDip}
+                              className="w-full flex items-center gap-2 text-left hover:opacity-70 transition-opacity"
+                            >
                               <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md">
                                 {fmtDate(dateKey)}
                               </span>
@@ -468,18 +514,20 @@ export default function InventoryPage() {
                                   Variance Detected
                                 </span>
                               )}
-                            </div>
-                            {/* Tank rows */}
-                            <div className="space-y-1.5">
-                              {rows.map(d => (
-                                <DipItem
-                                  key={d.id}
-                                  check={d}
-                                  pumpId={selectedPumpId!}
-                                  canReview={isOwnerOrAdmin}
-                                />
-                              ))}
-                            </div>
+                              <span className="text-xs text-slate-400 ml-1">{isCollapsed ? '▼' : '▲'}</span>
+                            </button>
+                            {!isCollapsed && (
+                              <div className="space-y-1.5">
+                                {rows.map(d => (
+                                  <DipItem
+                                    key={d.id}
+                                    check={d}
+                                    pumpId={selectedPumpId!}
+                                    canReview={isOwnerOrAdmin}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -854,11 +902,12 @@ function RecordDeliveryModal({
   const queryClient = useQueryClient()
   const defaultTankId = tanks[0]?.tankId ? String(tanks[0].tankId) : ''
 
-  const [date,    setDate]    = useState(localDateInputValue())
-  const [invoice, setInvoice] = useState('')
-  const [rows,    setRows]    = useState<DeliveryRow[]>([newRow(defaultTankId)])
-  const [error,   setError]   = useState<string | null>(null)
-  const [reviewOpen, setReviewOpen] = useState(false)
+  const [date,          setDate]          = useState(localDateInputValue())
+  const [invoice,       setInvoice]       = useState('')
+  const [rows,          setRows]          = useState<DeliveryRow[]>([newRow(defaultTankId)])
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(() => _rowSeq)
+  const [error,         setError]         = useState<string | null>(null)
+  const [reviewOpen,    setReviewOpen]    = useState(false)
 
   const mutation = useMutation({
     mutationFn: (req: RecordBatchDeliveryRequest) =>
@@ -875,11 +924,16 @@ function RecordDeliveryModal({
   const updateRow = (id: number, field: keyof Omit<DeliveryRow, 'id'>, value: string) =>
     setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
 
-  const addRow = () =>
-    setRows(prev => [...prev, newRow(defaultTankId)])
+  const addRow = () => {
+    const r = newRow(defaultTankId)
+    setRows(prev => [...prev, r])
+    setExpandedRowId(r.id)
+  }
 
-  const removeRow = (id: number) =>
+  const removeRow = (id: number) => {
     setRows(prev => prev.filter(r => r.id !== id))
+    if (expandedRowId === id) setExpandedRowId(null)
+  }
 
   const grandTotal = rows.reduce((sum, r) => {
     const q = parseFloat(r.qty) || 0
@@ -1028,89 +1082,148 @@ function RecordDeliveryModal({
           {/* Scrollable tank rows */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             {rows.map((row, idx) => {
-              const tank      = tanks.find(t => t.tankId === Number(row.tankId))
-              const rowCost   = (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0)
+              const tank       = tanks.find(t => t.tankId === Number(row.tankId))
+              const rowCost    = (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0)
               const afterStock = tank ? tank.currentStock + (parseFloat(row.qty) || 0) : null
+              const isExpanded = expandedRowId === row.id
+              const isFilled   = !!row.tankId && parseFloat(row.qty) > 0 && parseFloat(row.costPrice) > 0
 
               return (
-                <div key={row.id} className="ui-card ui-card-muted p-4 space-y-3">
-                  {/* Row header */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                      Tank {idx + 1}
-                    </span>
-                    {rows.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.id)}
-                      className="ui-btn ui-btn-ghost min-h-8 px-0 py-0 text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        Remove
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Tank selector */}
-                  <div>
-                    <label className="ui-label">Tank</label>
-                    <SearchableSelect
-                      value={row.tankId}
-                      onChange={v => updateRow(row.id, 'tankId', v)}
-                      options={tankOptions}
-                      placeholder="Select tank…"
-                    />
-                  </div>
-
-                  {/* Qty + Cost */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="ui-label">
-                        Quantity (Litres) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.001"
-                        min="0.001"
-                        value={row.qty}
-                        onChange={e => updateRow(row.id, 'qty', e.target.value)}
-                        placeholder="e.g. 5000"
-                        className="shadow-sm"
-                      />
+                <div key={row.id} className="ui-card ui-card-muted overflow-hidden">
+                  {/* ── Collapsed summary row ── */}
+                  {!isExpanded ? (
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs font-bold text-slate-400 shrink-0">#{idx + 1}</span>
+                        {isFilled ? (
+                          <>
+                            <span className="text-sm font-medium text-slate-700 truncate">
+                              {tank?.tankIdentifier ?? '—'} · {tank?.fuelType ?? '—'}
+                            </span>
+                            <span className="text-xs text-slate-400 shrink-0">{parseFloat(row.qty).toLocaleString('en-IN')} L</span>
+                            <span className="text-sm font-semibold text-blue-700 shrink-0">
+                              ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">Incomplete — click Edit to fill</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedRowId(row.id)}
+                          className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {rows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeRow(row.id)}
+                            className="text-red-300 hover:text-red-600 text-sm transition-colors leading-none"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label className="ui-label">
-                        Cost per Litre (₹) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.0001"
-                        min="0.0001"
-                        value={row.costPrice}
-                        onChange={e => updateRow(row.id, 'costPrice', e.target.value)}
-                        placeholder="e.g. 88.50"
-                        className="shadow-sm"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Per-row live previews */}
-                  {(rowCost > 0 || afterStock !== null) && (
-                    <div className="flex items-center gap-3 text-xs">
-                      {rowCost > 0 && (
-                        <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium">
-                          ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} delivery cost
+                  ) : (
+                    /* ── Expanded form ── */
+                    <div className="p-4 space-y-3">
+                      {/* Row header */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                          Tank {idx + 1}
                         </span>
+                        {rows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeRow(row.id)}
+                            className="ui-btn ui-btn-ghost min-h-8 px-0 py-0 text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Tank selector */}
+                      <div>
+                        <label className="ui-label">Tank</label>
+                        <SearchableSelect
+                          value={row.tankId}
+                          onChange={v => updateRow(row.id, 'tankId', v)}
+                          options={tankOptions}
+                          placeholder="Select tank…"
+                        />
+                      </div>
+
+                      {/* Qty + Cost */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="ui-label">
+                            Quantity (Litres) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={row.qty}
+                            onChange={e => updateRow(row.id, 'qty', e.target.value)}
+                            placeholder="e.g. 5000"
+                            className="shadow-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="ui-label">
+                            Cost per Litre (₹) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            min="0.0001"
+                            value={row.costPrice}
+                            onChange={e => updateRow(row.id, 'costPrice', e.target.value)}
+                            placeholder="e.g. 88.50"
+                            className="shadow-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Per-row live previews */}
+                      {(rowCost > 0 || afterStock !== null) && (
+                        <div className="flex items-center gap-3 text-xs">
+                          {rowCost > 0 && (
+                            <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium">
+                              ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} delivery cost
+                            </span>
+                          )}
+                          {afterStock !== null && row.qty && (
+                            <span className="text-slate-400">
+                              Stock after: <span className="font-semibold text-slate-600">
+                                {afterStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                              </span>
+                              {tank && ` / ${tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L`}
+                            </span>
+                          )}
+                        </div>
                       )}
-                      {afterStock !== null && row.qty && (
-                        <span className="text-slate-400">
-                          Stock after: <span className="font-semibold text-slate-600">
-                            {afterStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                          </span>
-                          {tank && ` / ${tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L`}
-                        </span>
+
+                      {/* Collapse button */}
+                      {isFilled && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRowId(null)}
+                            className="ui-btn ui-btn-ghost text-xs px-3 py-1.5 min-h-0"
+                          >
+                            Done
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}

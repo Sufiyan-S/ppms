@@ -5,8 +5,8 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * Used by PUT /api/pumps/nozzles/{nozzleId}/outlets/{outletId}/reading
- * to manually correct the stored meter reading for a specific outlet.
+ * Used by PUT /api/pumps/{pumpId}/dus/{duId}/nozzles/{nozzleId}/reading
+ * to manually correct the stored meter reading for a nozzle.
  * Needed when a meter is physically replaced or reset.
  */
 @Data

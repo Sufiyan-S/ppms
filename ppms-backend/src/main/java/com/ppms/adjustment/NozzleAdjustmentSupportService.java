@@ -4,8 +4,8 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.fuel.FuelType;
 import com.ppms.fuel.GlobalFuelPriceRepository;
-import com.ppms.pump.NozzleOutlet;
-import com.ppms.pump.NozzleOutletRepository;
+import com.ppms.pump.Nozzle;
+import com.ppms.pump.NozzleRepository;
 import com.ppms.shift.ShiftRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,18 +17,18 @@ import java.math.RoundingMode;
 @RequiredArgsConstructor
 public class NozzleAdjustmentSupportService {
 
-    private final NozzleOutletRepository outletRepository;
+    private final NozzleRepository nozzleRepository;
     private final ShiftRepository shiftRepository;
     private final GlobalFuelPriceRepository fuelPriceRepository;
 
-    public NozzleOutlet requireAdjustableOutlet(Long outletId) {
-        NozzleOutlet outlet = outletRepository.findById(outletId)
-                .orElseThrow(() -> new ResourceNotFoundException("Outlet not found"));
-        if (shiftRepository.hasOpenShift(outlet.getNozzleId())) {
+    public Nozzle requireAdjustableNozzle(Long nozzleId) {
+        Nozzle nozzle = nozzleRepository.findById(nozzleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+        shiftRepository.findOpenShiftByNozzle(nozzleId).ifPresent(shift -> {
             throw new BusinessException(
                     "Cannot adjust the meter reading — an active shift is running on this nozzle. Close the shift first.");
-        }
-        return outlet;
+        });
+        return nozzle;
     }
 
     public String validateAdjustmentType(String adjustmentType) {
@@ -67,7 +67,7 @@ public class NozzleAdjustmentSupportService {
                         "No price configured for " + fuelType + " on this pump. Set a price first."));
     }
 
-    public NozzleOutlet saveOutlet(NozzleOutlet outlet) {
-        return outletRepository.save(outlet);
+    public Nozzle saveNozzle(Nozzle nozzle) {
+        return nozzleRepository.save(nozzle);
     }
 }

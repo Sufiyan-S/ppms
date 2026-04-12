@@ -7,7 +7,7 @@ import java.util.List;
 
 @Repository
 public interface BsShiftLineRepository extends JpaRepository<BsShiftLine, Long> {
-    List<BsShiftLine> findByBalanceSheetIdOrderByNozzleNumber(Long balanceSheetId);
+    List<BsShiftLine> findByBalanceSheetIdOrderByDuNumber(Long balanceSheetId);
 
     /** Count-only query — avoids loading full entities just to count shifts in the list view. */
     int countByBalanceSheetId(Long balanceSheetId);

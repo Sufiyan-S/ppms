@@ -27,11 +27,12 @@ export default function CalibrationPage() {
 
   const { selectedPumpId: pumpId } = usePumpStore()
 
-  const { data: nozzles = [] } = useQuery({
-    queryKey:  ['nozzles', pumpId],
-    queryFn:   () => pumpApi.getNozzles(pumpId!),
+  const { data: dus = [] } = useQuery({
+    queryKey:  ['dus', pumpId],
+    queryFn:   () => pumpApi.getDUs(pumpId!),
     enabled:   !!pumpId,
   })
+  const nozzles = dus.flatMap((d) => d.nozzles)
 
   const [selectedNozzleId, setSelectedNozzleId] = useState<number>(0)
 
@@ -81,11 +82,11 @@ export default function CalibrationPage() {
     setReviewOpen(true)
   }
 
-  const selectedNozzle = nozzles.find((n: any) => n.id === selectedNozzleId)
-  const historyNozzle  = nozzles.find((n: any) => n.id === historyNozzleId)
+  const selectedNozzle = nozzles.find((n) => n.id === selectedNozzleId)
+  const historyNozzle  = nozzles.find((n) => n.id === historyNozzleId)
   const calibrations   = calibrationsPage?.content ?? []
   const nozzleMap = useMemo(
-    () => new Map(nozzles.map((n: any) => [n.id, n])),
+    () => new Map(nozzles.map((n) => [n.id, n])),
     [nozzles],
   )
 
@@ -145,9 +146,9 @@ export default function CalibrationPage() {
               value={selectedNozzleId ? selectedNozzleId.toString() : ''}
               onChange={v => { setSelectedNozzleId(parseInt(v) || 0); setFormError(null) }}
               placeholder="Select nozzle…"
-              options={nozzles.map((n: any) => ({
+              options={nozzles.map((n) => ({
                 value: n.id.toString(),
-                label: `Nozzle #${n.nozzleNumber} — ${n.outlets?.map((o: any) => o.fuelType).join(' / ') ?? ''}`,
+                label: `Nozzle #${n.nozzleNumber} — ${n.fuelType}`,
               }))}
             />
           </div>
@@ -234,7 +235,7 @@ export default function CalibrationPage() {
                 <CalibrationReviewRow
                   label="Nozzle"
                   value={selectedNozzle
-                    ? `Nozzle #${selectedNozzle.nozzleNumber} — ${selectedNozzle.outlets?.map((o: any) => o.fuelType).join(' / ')}`
+                    ? `Nozzle #${selectedNozzle.nozzleNumber} — ${selectedNozzle.fuelType}`
                     : '—'}
                 />
                 <CalibrationReviewRow label="Calibration Date" value={fmtDate(form.calibrationDate)} />
@@ -269,7 +270,7 @@ export default function CalibrationPage() {
               <span className="text-slate-400 font-normal ml-1">— All nozzles</span>
             ) : historyNozzle ? (
               <span className="text-slate-400 font-normal ml-1">
-                — Nozzle #{historyNozzle.nozzleNumber} ({historyNozzle.outlets?.map((o: any) => o.fuelType).join(' / ')})
+                — Nozzle #{historyNozzle.nozzleNumber} ({historyNozzle.fuelType})
               </span>
             ) : null}
           </p>
@@ -282,9 +283,9 @@ export default function CalibrationPage() {
               placeholder="Filter by nozzle…"
               options={[
                 { value: '', label: 'All nozzles' },
-                ...nozzles.map((n: any) => ({
+                ...nozzles.map((n) => ({
                   value: n.id.toString(),
-                  label: `Nozzle #${n.nozzleNumber} — ${n.outlets?.map((o: any) => o.fuelType).join(' / ') ?? ''}`,
+                  label: `Nozzle #${n.nozzleNumber} — ${n.fuelType}`,
                 })),
               ]}
               size="sm"
@@ -312,7 +313,7 @@ export default function CalibrationPage() {
                       <p className="text-sm font-medium text-slate-800">{fmtDate(c.calibrationDate)}</p>
                       <div className="ui-record-row__meta mt-0">
                         Nozzle #{nozzle?.nozzleNumber ?? c.nozzleId}
-                        {nozzle?.outlets?.length ? ` · ${nozzle.outlets.map((o: any) => o.fuelType).join(' / ')}` : ''}
+                        {nozzle?.fuelType ? ` · ${nozzle.fuelType}` : ''}
                       </div>
                     </div>
                     {c.nextCalibrationDue && (

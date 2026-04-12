@@ -15,8 +15,15 @@ public class ShiftResponse {
 
     private Long id;
     private Long pumpId;
-    private Long nozzleId;
-    private Integer nozzleNumber;
+
+    // ── DU info ──────────────────────────────────────────────────────────────
+    private Long duId;
+    private Integer duNumber;
+    private String duName;
+
+    /** Nozzles from this DU that are active in this shift. */
+    private List<NozzleSummary> nozzles;
+
     private Long operatorId;
     private String operatorName;
     private String openedByUserName;
@@ -26,10 +33,9 @@ public class ShiftResponse {
     private OffsetDateTime actualStartTime;
     private OffsetDateTime actualEndTime;
 
-    /** Per-outlet fuel readings (one per fuel type on the nozzle). */
+    /** Per-nozzle fuel readings (one per nozzle in this shift). */
     private List<FuelReadingResponse> fuelReadings;
 
-    /** Computed at close: sum of all (units * price) across all fuel types. */
     private BigDecimal totalAmountDue;
 
     // Payment breakdown
@@ -39,7 +45,7 @@ public class ShiftResponse {
     private BigDecimal fleetCardCollected;
     private BigDecimal creditTotal;
 
-    // Discrepancy info
+    // Discrepancy
     private BigDecimal discrepancyAmount;
     private String discrepancyType;
     private String discrepancyReason;
@@ -50,10 +56,16 @@ public class ShiftResponse {
 
     private List<CreditEntryResponse> creditEntries;
 
-    // ── Inner records ────────────────────────────────────────────────────────
+    // ── Inner records ─────────────────────────────────────────────────────────
+
+    public record NozzleSummary(
+            Long id,
+            Integer nozzleNumber,
+            String fuelType
+    ) {}
 
     public record FuelReadingResponse(
-            Long outletId,
+            Long nozzleId,
             FuelType fuelType,
             BigDecimal startReading,
             BigDecimal endReading,

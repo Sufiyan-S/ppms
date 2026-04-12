@@ -17,7 +17,7 @@ import { formatIstDate } from '../../utils/date'
 const addPumpSchema = z.object({
   pumpName:      z.string().min(1, 'Pump name is required'),
   pumpAddress:   z.string().min(1, 'Pump address is required'),
-  maxNozzleCount: z.coerce.number().int().min(1, 'Must be at least 1').max(20, 'Cannot exceed 20'),
+  maxDuCount: z.coerce.number().int().min(1, 'Must be at least 1').max(20, 'Cannot exceed 20'),
 })
 type AddPumpFormData = z.infer<typeof addPumpSchema>
 
@@ -36,7 +36,7 @@ const onboardSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
   pumpName: z.string().min(1, 'Pump name is required'),
   pumpAddress: z.string().min(1, 'Pump address is required'),
-  maxNozzleCount: z.coerce.number().int().min(1, 'Must be at least 1 nozzle').max(20, 'Cannot exceed 20 nozzles'),
+  maxDuCount: z.coerce.number().int().min(1, 'Must be at least 1 DU').max(20, 'Cannot exceed 20 DUs'),
 })
 
 type OnboardFormData = z.infer<typeof onboardSchema>
@@ -492,9 +492,9 @@ export default function SuperAdminPage() {
                         />
                       </FormField>
 
-                      <FormField label="Max Nozzle Count" error={errors.maxNozzleCount?.message}>
+                      <FormField label="Max DU Count" error={errors.maxDuCount?.message}>
                         <input
-                          {...register('maxNozzleCount')}
+                          {...register('maxDuCount')}
                           type="number"
                           min={1}
                           max={20}
@@ -734,9 +734,9 @@ export default function SuperAdminPage() {
                                         className="text-sm"
                                       />
                                     </FormField>
-                                    <FormField label="Max Nozzle Count" error={pumpErrors.maxNozzleCount?.message}>
+                                    <FormField label="Max DU Count" error={pumpErrors.maxDuCount?.message}>
                                       <input
-                                        {...registerPump('maxNozzleCount')}
+                                        {...registerPump('maxDuCount')}
                                         type="number"
                                         min={1}
                                         max={20}

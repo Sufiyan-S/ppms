@@ -10,28 +10,33 @@ export type ShiftStatus =
 
 export type DiscrepancyType = 'SHORT' | 'OVER'
 
-// ── Nozzle outlet (one fuel type on one nozzle) ──────────────────────────────
+// ── Nozzle on a Dispensary Unit ───────────────────────────────────────────────
 
-export interface NozzleOutlet {
-  outletId: number
+export interface NozzleDetail {
+  id: number
+  nozzleNumber: number
   fuelType: FuelType
   lastReading: number
-  tankId: number | null  // null until mapped in Setup
+  maxMeterValue: number
+  tankId: number | null
+  status: string
 }
 
-export interface NozzleOption {
+// ── Dispensary Unit (DU) — the physical MPD machine ──────────────────────────
+
+export interface DUOption {
   id: number
   pumpId: number
-  nozzleNumber: number
+  duNumber: number
+  name: string
   status: string
-  maxMeterValue: number
-  outlets: NozzleOutlet[]
+  nozzles: NozzleDetail[]
 }
 
-// ── Shift fuel reading (one per outlet) ────────────────────────────────────
+// ── Shift fuel reading (one per nozzle) ────────────────────────────────────
 
 export interface FuelReading {
-  outletId: number
+  nozzleId: number
   fuelType: FuelType
   startReading: number
   endReading: number | null
@@ -62,11 +67,19 @@ export interface CreditEntryInput {
   description?: string
 }
 
+export interface NozzleSummary {
+  id: number
+  nozzleNumber: number
+  fuelType: string
+}
+
 export interface Shift {
   id: number
   pumpId: number
-  nozzleId: number
-  nozzleNumber: number
+  duId: number
+  duNumber: number | null
+  duName: string | null
+  nozzles: NozzleSummary[]
   operatorId: number
   operatorName: string
   openedByUserName: string
@@ -93,14 +106,14 @@ export interface Shift {
 // ── API Request types ───────────────────────────────────────────────────────
 
 export interface OpenShiftRequest {
-  nozzleId: number
+  duId: number
+  nozzleIds: number[]
   operatorId: number
-  // fuelReadings removed — backend now uses outlet.lastReading automatically as start reading
 }
 
 export interface CloseShiftRequest {
   fuelReadings: Array<{
-    outletId: number
+    nozzleId: number
     endReading: number
   }>
   cashCollected: number

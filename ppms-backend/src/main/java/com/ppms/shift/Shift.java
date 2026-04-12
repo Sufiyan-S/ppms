@@ -25,8 +25,9 @@ public class Shift {
     @Column(name = "pump_id", nullable = false)
     private Long pumpId;
 
-    @Column(name = "nozzle_id", nullable = false)
-    private Long nozzleId;
+    /** The Dispensary Unit (machine) this shift was operated on. */
+    @Column(name = "du_id", nullable = false)
+    private Long duId;
 
     @Column(name = "operator_id", nullable = false)
     private Long operatorId;

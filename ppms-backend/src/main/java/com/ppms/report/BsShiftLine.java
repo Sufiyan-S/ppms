@@ -28,8 +28,11 @@ public class BsShiftLine {
     @Column(name = "operator_name", nullable = false)
     private String operatorName;
 
-    @Column(name = "nozzle_number", nullable = false)
-    private Integer nozzleNumber;
+    @Column(name = "du_number", nullable = false)
+    private Integer duNumber;
+
+    @Column(name = "du_name", nullable = false)
+    private String duName;
 
     /** Comma-separated fuel types sold in this shift, e.g. "PETROL, DIESEL" */
     @Column(name = "fuel_types_summary", nullable = false)
