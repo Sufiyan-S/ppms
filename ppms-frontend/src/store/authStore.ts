@@ -11,7 +11,9 @@ interface AuthState {
   updateUser: (patch: Partial<AuthUser>) => void
 }
 
-// Persists auth state to localStorage so the user stays logged in on page refresh
+// Persists auth state to localStorage so the user stays logged in on page refresh.
+// The token lives exclusively in Zustand's persisted state (key: ppms_user) —
+// client.ts reads it via useAuthStore.getState().token, not from localStorage directly.
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -20,12 +22,10 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
 
       setAuth: (user, token) => {
-        localStorage.setItem('ppms_token', token)
         set({ user, token, isAuthenticated: true })
       },
 
       clearAuth: () => {
-        localStorage.removeItem('ppms_token')
         set({ user: null, token: null, isAuthenticated: false })
       },
 

@@ -9,6 +9,7 @@ import { pumpApi } from '../../api/pumpApi'
 import NotificationBell from '../../components/NotificationBell'
 import { canAccessPage } from '../../permissions/permissions'
 import { formatIstDateTime } from '../../utils/date'
+import { PasswordInput } from '../../components/PasswordInput'
 
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
@@ -374,8 +375,7 @@ export default function DashboardPage() {
             <div className="ui-modal-body space-y-4">
               <div>
                 <label className="ui-label">Current Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   className="shadow-sm"
@@ -384,8 +384,7 @@ export default function DashboardPage() {
 
               <div>
                 <label className="ui-label">New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="shadow-sm"
@@ -395,8 +394,7 @@ export default function DashboardPage() {
 
               <div>
                 <label className="ui-label">Confirm New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword() }}

@@ -8,25 +8,22 @@ const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT from localStorage to every request automatically
+// Attach JWT to every request — read from Zustand store (single source of truth)
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('ppms_token')
+  const token = useAuthStore.getState().token
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// Guard so multiple concurrent 401 responses only trigger one logout+redirect
-let sessionExpired = false
-
-// If the server returns 401, the token has expired — clear auth state and force re-login
+// If the server returns 401 and we are still authenticated, the token has expired.
+// Checking isAuthenticated prevents repeated redirects from concurrent 401 responses
+// and also means this guard self-resets whenever the user logs back in.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && !sessionExpired) {
-      sessionExpired = true
-      // Clear both in-memory Zustand state and persisted localStorage keys
+    if (error.response?.status === 401 && useAuthStore.getState().isAuthenticated) {
       useAuthStore.getState().clearAuth()
       window.location.href = '/login?reason=session_expired'
     }

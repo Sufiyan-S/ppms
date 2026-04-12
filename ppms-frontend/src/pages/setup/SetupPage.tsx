@@ -14,6 +14,7 @@ import { dipApi } from '../../api/dipApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { CreateShiftDefinitionRequest } from '../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
+import { PasswordInput } from '../../components/PasswordInput'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -298,7 +299,7 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
     onSuccess: (pump) => {
       setName('')
       setAddress('')
-      setMaxNozzles('4')
+      setMaxDUs('4')
       setError(null)
       onCreated(pump)
     },
@@ -375,14 +376,6 @@ const FUEL_COLOR: Record<string, string> = {
   DIESEL:       'bg-blue-100 text-blue-700 border-blue-300',
   SPEED_DIESEL: 'bg-indigo-100 text-indigo-700 border-indigo-300',
   CNG:          'bg-amber-100 text-amber-700 border-amber-300',
-}
-
-const FUEL_PICKER_THEME: Record<string, string> = {
-  PETROL: 'ui-fuel-pill--petrol',
-  SPEED_PETROL: 'ui-fuel-pill--speed-petrol',
-  DIESEL: 'ui-fuel-pill--diesel',
-  SPEED_DIESEL: 'ui-fuel-pill--speed-diesel',
-  CNG: 'ui-fuel-pill--cng',
 }
 
 // ── DU / Nozzle content ───────────────────────────────────────────────────────
@@ -1941,7 +1934,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="ui-label">Password</label>
-                    <input required type="password" value={form.password} onChange={(e) => set('password', e.target.value)}
+                    <PasswordInput required value={form.password} onChange={(e) => set('password', e.target.value)}
                       placeholder="Min 6 characters"
                       className="text-sm" />
                     <p className="ui-help">Use a temporary password the staff member can reset later.</p>

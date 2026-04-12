@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../../api/authApi'
+import { PasswordInput } from '../../components/PasswordInput'
 
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
@@ -60,8 +61,7 @@ export default function ResetPasswordPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="ui-label">New Password</label>
-            <input
-              type="password"
+            <PasswordInput
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               placeholder="Use a strong password"
@@ -75,8 +75,7 @@ export default function ResetPasswordPage() {
 
           <div>
             <label className="ui-label">Confirm Password</label>
-            <input
-              type="password"
+            <PasswordInput
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Repeat the password"

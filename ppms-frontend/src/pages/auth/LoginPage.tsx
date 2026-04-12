@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { authApi } from '../../api/authApi'
 import { useAuthStore } from '../../store/authStore'
 import type { AuthUser } from '../../types/auth'
+import { PasswordInput } from '../../components/PasswordInput'
 
 const loginSchema = z.object({
   phoneNumber: z.string().length(10, 'Phone number must be exactly 10 digits').regex(/^\d+$/, 'Must be digits only'),
@@ -139,9 +140,8 @@ export default function LoginPage() {
               <label className="ui-label">
                 Password
               </label>
-              <input
+              <PasswordInput
                 {...register('password')}
-                type="password"
                 placeholder="Enter your password"
                 className="shadow-sm"
               />

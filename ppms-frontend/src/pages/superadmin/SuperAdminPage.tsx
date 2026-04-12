@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { PasswordInput } from '../../components/PasswordInput'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -87,6 +88,13 @@ export default function SuperAdminPage() {
     queryKey: ['superadmin-analytics'],
     queryFn: () => client.get('/super-admin/analytics').then(r => r.data),
   })
+
+  // Auto-clear the credential panel after 5 minutes to limit plaintext password exposure
+  useEffect(() => {
+    if (!createdOwner) return
+    const timer = setTimeout(() => setCreatedOwner(null), 5 * 60 * 1000)
+    return () => clearTimeout(timer)
+  }, [createdOwner])
 
   // Onboard mutation
   const onboardMutation = useMutation({
@@ -459,9 +467,8 @@ export default function SuperAdminPage() {
                       </FormField>
 
                       <FormField label="Initial Password" error={errors.password?.message}>
-                        <input
+                        <PasswordInput
                           {...register('password')}
-                          type="password"
                           placeholder="Min. 6 characters"
                           className="text-sm"
                         />
@@ -798,8 +805,7 @@ export default function SuperAdminPage() {
             <div className="ui-modal-body space-y-4">
               <div>
                 <label className="ui-label">Current Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   className="shadow-sm"
@@ -808,8 +814,7 @@ export default function SuperAdminPage() {
 
               <div>
                 <label className="ui-label">New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="shadow-sm"
@@ -819,8 +824,7 @@ export default function SuperAdminPage() {
 
               <div>
                 <label className="ui-label">Confirm New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword() }}
