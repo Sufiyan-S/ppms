@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useCountUp } from '../../hooks/useCountUp'
 import { PasswordInput } from '../../components/PasswordInput'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -10,8 +11,11 @@ import { superAdminApi } from '../../api/superAdminApi'
 import { authApi } from '../../api/authApi'
 import type { OnboardOwnerResponse, AddPumpRequest, UpdatePumpRequest, PumpSummary } from '../../api/superAdminApi'
 import { Pagination } from '../../components/Pagination'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
 import client from '../../api/client'
 import { formatIstDate } from '../../utils/date'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Validation schemas ────────────────────────────────────────────────────────
 
@@ -359,20 +363,22 @@ export default function SuperAdminPage() {
 
           {/* ── Platform analytics strip ───────────────────────────────────── */}
           {analytics && (
+            <Reveal delay={60}>
             <div className="mb-6 ui-summary-strip">
               <div className="ui-summary-strip__item">
                 <span className="ui-summary-strip__label">Pump Owners</span>
-                <span className="ui-summary-strip__value">{analytics.totalOwners}</span>
+                <span className="ui-summary-strip__value"><AnimatedCount value={analytics.totalOwners} /></span>
               </div>
               <div className="ui-summary-strip__item">
                 <span className="ui-summary-strip__label">Pumps</span>
-                <span className="ui-summary-strip__value">{analytics.totalPumps}</span>
+                <span className="ui-summary-strip__value"><AnimatedCount value={analytics.totalPumps} /></span>
               </div>
               <div className="ui-summary-strip__item">
                 <span className="ui-summary-strip__label">Staff Members</span>
-                <span className="ui-summary-strip__value">{analytics.totalStaff}</span>
+                <span className="ui-summary-strip__value"><AnimatedCount value={analytics.totalStaff} /></span>
               </div>
             </div>
+            </Reveal>
           )}
 
           {/* ── Credentials card (shown after successful onboarding) ───────── */}
@@ -429,6 +435,7 @@ export default function SuperAdminPage() {
           )}
 
           {/* ── 2-column layout ────────────────────────────────────────────── */}
+          <Reveal delay={130}>
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
             {/* ── Left: Onboard form ──────────────────────────────────────── */}
@@ -543,7 +550,7 @@ export default function SuperAdminPage() {
                 </div>
 
                 {ownersLoading ? (
-                  <div className="ui-empty px-5 py-8">Loading owners...</div>
+                  <div className="px-5 py-4"><SkeletonRows count={5} /></div>
                 ) : owners.length === 0 ? (
                   <div className="ui-empty px-5 py-8">
                     <p className="ui-subtitle">No owners yet.</p>
@@ -785,10 +792,12 @@ export default function SuperAdminPage() {
               </div>
             </div>
           </div>
+          </Reveal>
         </div>
       </div>
 
       {passwordModalOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={clearPasswordForm}>
           <div
             className="ui-modal-panel"
@@ -857,6 +866,7 @@ export default function SuperAdminPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   )
@@ -872,6 +882,13 @@ function FormField({ label, error, children }: { label: string; error?: string; 
       {error && <p className="ui-error-text">{error}</p>}
     </div>
   )
+}
+
+// ── Animated counter — wraps useCountUp so it can be called inside a component
+// boundary rather than directly inside a conditional render.
+function AnimatedCount({ value }: { value: number }) {
+  const animated = useCountUp(value)
+  return <>{animated}</>
 }
 
 function CredentialField({ label, value }: { label: string; value: string }) {

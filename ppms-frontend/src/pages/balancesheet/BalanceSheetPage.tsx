@@ -20,6 +20,11 @@ import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, formatIstDateTime } from '../../utils/date'
+import { SkeletonRows } from '../../components/Skeleton'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 // Use local calendar date (not UTC) so the value matches the user's timezone.
@@ -73,6 +78,7 @@ interface GenerateModalProps {
 
 function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
 
   const [reportType, setReportType] = useState<'SHIFT' | 'DAY'>('SHIFT')
   const [reportDate, setReportDate] = useState(() => localDateStr(0))
@@ -101,6 +107,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
     mutationFn: (req: GenerateBalanceSheetRequest) => balanceSheetApi.generate(pumpId, req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['balance-sheets', pumpId] })
+      addToast('Balance sheet generated successfully', 'success')
       onClose()
     },
     onError: (err: any) => {
@@ -111,6 +118,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
         setError(null)
       } else {
         setError(msg)
+        addToast(msg, 'error')
       }
     },
   })
@@ -140,6 +148,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel">
         {/* Header */}
@@ -233,7 +242,9 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
                   disabled={mutation.isPending}
                   className="ui-btn min-h-0 px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
                 >
-                  {mutation.isPending ? 'Generating…' : 'Yes, generate revision'}
+                  {mutation.isPending
+                    ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Generating…</span>
+                    : 'Yes, generate revision'}
                 </button>
                 <button
                   onClick={() => setConfirmRegenerate(false)}
@@ -264,11 +275,14 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
             disabled={mutation.isPending}
             className="ui-btn ui-btn-primary"
           >
-            {mutation.isPending ? 'Generating…' : 'Generate Report'}
+            {mutation.isPending
+              ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Generating…</span>
+              : 'Generate Report'}
           </button>
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -282,16 +296,20 @@ interface DeleteConfirmProps {
 
 function DeleteConfirmModal({ report, pumpId, onClose }: DeleteConfirmProps) {
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
 
   const mutation = useMutation({
     mutationFn: () => balanceSheetApi.delete(pumpId, report.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['balance-sheets', pumpId] })
+      addToast('Balance sheet deleted', 'success')
       onClose()
     },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete balance sheet', 'error'),
   })
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel w-full max-w-sm">
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--danger">
@@ -320,11 +338,14 @@ function DeleteConfirmModal({ report, pumpId, onClose }: DeleteConfirmProps) {
             disabled={mutation.isPending}
             className="ui-btn ui-btn-danger"
           >
-            {mutation.isPending ? 'Deleting…' : 'Delete Report'}
+            {mutation.isPending
+              ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Deleting…</span>
+              : 'Delete Report'}
           </button>
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -348,8 +369,8 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
 
   if (isLoading || !detail) {
     return (
-      <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-        Loading report…
+      <div className="flex-1 px-6 py-6">
+        <SkeletonRows count={6} />
       </div>
     )
   }
@@ -1076,14 +1097,15 @@ export default function BalanceSheetPage() {
         {/* Report list */}
         <div className="flex-1 overflow-y-auto">
           {(!pumpId || isLoading) && (
-            <div className="ui-empty p-6">Loading reports…</div>
+            <div className="px-4 py-4"><SkeletonRows count={5} /></div>
           )}
 
           {!isLoading && pumpId && reports.length === 0 && (
-            <div className="ui-empty p-6">
-              <p className="text-sm text-slate-500">No balance sheets found.</p>
-              <p className="text-xs text-slate-400 mt-1">Generate a report after closing all shifts for a period.</p>
-            </div>
+            <EmptyState
+              icon="generic"
+              title="No balance sheets found"
+              subtitle="Generate a report after closing all shifts for a period."
+            />
           )}
 
           {reports.map(report => (

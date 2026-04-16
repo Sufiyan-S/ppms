@@ -16,6 +16,10 @@ import type { CreateShiftDefinitionRequest } from '../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { PasswordInput } from '../../components/PasswordInput'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { Reveal } from '../../components/Reveal'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -44,15 +48,18 @@ export default function SetupPage() {
     <div className="ui-page ui-page--narrow space-y-6">
 
       {/* Page title */}
+      <Reveal delay={60}>
       <div>
         <h2 className="ui-title-sm">Pump Setup</h2>
         <p className="ui-subtitle">
           Create pump locations, configure nozzles, set prices, manage staff and credit clients.
         </p>
       </div>
+      </Reveal>
 
       {/* ── Create Pump card — Super Admin only (SaaS: adding a pump requires subscription change) ── */}
       {isSuperAdmin && (
+        <Reveal delay={130}>
         <div className="ui-card overflow-hidden p-0">
           <button
             onClick={() => setCreateOpen((v) => !v)}
@@ -73,14 +80,17 @@ export default function SetupPage() {
               </div>
             )}
         </div>
+        </Reveal>
       )}
 
       {/* ── Pump management accordion ── */}
       {selectedPump && (
+        <Reveal delay={200}>
         <PumpManagementPanel
           pump={selectedPump}
           onPumpUpdated={() => queryClient.invalidateQueries({ queryKey: ['myPumps'] })}
         />
+        </Reveal>
       )}
 
       {!isLoading && pumps.length === 0 && !createOpen && (
@@ -289,6 +299,7 @@ function AccordionSection({
 // ── Create pump form ──────────────────────────────────────────────────────────
 
 function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) {
+  const { addToast } = useToastStore()
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [maxDUs, setMaxDUs] = useState('4')
@@ -301,9 +312,14 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
       setAddress('')
       setMaxDUs('4')
       setError(null)
+      addToast(`Pump "${pump.name}" created`, 'success')
       onCreated(pump)
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to create pump'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to create pump'
+      setError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const submit = (e: React.FormEvent) => {
@@ -354,7 +370,9 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
         disabled={mutation.isPending}
         className="ui-btn ui-btn-primary"
       >
-        {mutation.isPending ? 'Creating...' : 'Create Pump'}
+        {mutation.isPending
+        ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Creating…</span>
+        : 'Create Pump'}
       </button>
     </form>
   )
@@ -382,6 +400,7 @@ const FUEL_COLOR: Record<string, string> = {
 
 function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => void }) {
   const queryClient = useQueryClient()
+  const { addToast } = useToastStore()
 
   // Panel visibility — one panel open at a time per nozzle
   type NozzlePanel = 'mapTank' | 'reading' | 'disable' | 'dip'
@@ -449,46 +468,52 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
       setDuName('')
       setDuNozzles([{ nozzleNumber: '1', fuelType: '', initialReading: '' }])
       setAddError(null)
+      addToast('DU created successfully', 'success')
       invalidate(); onAdded()
     },
-    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to create DU'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to create DU'
+      setAddError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const recordAdjustmentMutation = useMutation({
     mutationFn: ({ nozzleId, adjustmentType, reason, newReading }: { nozzleId: number; adjustmentType: 'RESET' | 'CUSTOM_READING'; reason: string; newReading?: number }) =>
       dipApi.recordAdjustment(pump.id, nozzleId, adjustmentType, reason, newReading),
-    onSuccess: () => { setOpenPanel(null); setAdjustError(null); setAdjustReason(''); setAdjustReading(''); invalidate() },
-    onError: (err: any) => setAdjustError(err?.response?.data?.message ?? 'Failed to record adjustment'),
+    onSuccess: () => { setOpenPanel(null); setAdjustError(null); setAdjustReason(''); setAdjustReading(''); addToast('Reading adjusted', 'success'); invalidate() },
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to record adjustment'; setAdjustError(msg); addToast(msg, 'error') },
   })
 
   const recordDipMutation = useMutation({
     mutationFn: ({ fuelType, litresRemoved, reason, date }: { fuelType: string; litresRemoved: number; reason: string; date?: string }) =>
       dipApi.recordDip(pump.id, fuelType, litresRemoved, reason, date),
-    onSuccess: () => { setOpenPanel(null); setDipError(null); setDipLitres(''); setDipReason(''); setDipDate(''); invalidate() },
-    onError: (err: any) => setDipError(err?.response?.data?.message ?? 'Failed to record dip'),
+    onSuccess: () => { setOpenPanel(null); setDipError(null); setDipLitres(''); setDipReason(''); setDipDate(''); addToast('Dip recorded', 'success'); invalidate() },
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to record dip'; setDipError(msg); addToast(msg, 'error') },
   })
 
   const mapTankMutation = useMutation({
     mutationFn: ({ pumpId, duId, nozzleId, tankId }: { pumpId: number; duId: number; nozzleId: number; tankId: number | null }) =>
       pumpApi.mapNozzleToTank(pumpId, duId, nozzleId, tankId),
-    onSuccess: () => { setOpenPanel(null); invalidate() },
-    onError: (err: any) => setMapError(err?.response?.data?.message ?? 'Failed to save tank mapping'),
+    onSuccess: () => { setOpenPanel(null); addToast('Tank mapped successfully', 'success'); invalidate() },
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to save tank mapping'; setMapError(msg); addToast(msg, 'error') },
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ pumpId, duId, nozzleId, status }: { pumpId: number; duId: number; nozzleId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
       pumpApi.updateNozzleStatus(pumpId, duId, nozzleId, status),
-    onSuccess: () => { setOpenPanel(null); setStatusError(null); invalidate() },
-    onError: (err: any) => setStatusError(err?.response?.data?.message ?? 'Failed to update nozzle status'),
+    onSuccess: (_, { status }) => { setOpenPanel(null); setStatusError(null); addToast(status === 'ACTIVE' ? 'Nozzle enabled' : 'Nozzle disabled', 'success'); invalidate() },
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to update nozzle status'; setStatusError(msg); addToast(msg, 'error') },
   })
 
   const increaseMaxMutation = useMutation({
     mutationFn: (count: number) => pumpApi.updateMaxDuCount(pump.id, count),
     onSuccess: () => {
       setShowIncreaseMax(false); setNewMaxCount(''); setIncreaseError(null)
+      addToast('DU limit updated', 'success')
       invalidate(); onAdded()
     },
-    onError: (err: any) => setIncreaseError(err?.response?.data?.message ?? 'Failed to update DU limit'),
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to update DU limit'; setIncreaseError(msg); addToast(msg, 'error') },
   })
 
   // Per-DU inline "Add Nozzle" state
@@ -503,9 +528,10 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
       pumpApi.addNozzle(pump.id, duId, nozzleNumber, fuelType, initialReading),
     onSuccess: () => {
       setAddNozzleDuId(null); setInlineNozzleNumber(''); setInlineFuelType(''); setInlineReading(''); setInlineError(null)
+      addToast('Nozzle added', 'success')
       invalidate()
     },
-    onError: (err: any) => setInlineError(err?.response?.data?.message ?? 'Failed to add nozzle'),
+    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to add nozzle'; setInlineError(msg); addToast(msg, 'error') },
   })
 
   const submitInlineNozzle = (e: React.FormEvent, du: DUOption) => {
@@ -1135,7 +1161,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                       placeholder="1"
                     />
                   </div>
-                  <div className="flex-1 min-w-[160px]">
+                  <div className="flex-1">
                     <label className="ui-label mb-1 text-[10px]">Fuel Type</label>
                     <SearchableSelect
                       value={row.fuelType}
@@ -1145,7 +1171,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                       options={ALL_FUEL_TYPES.map((ft) => ({ value: ft, label: FUEL_LABEL[ft] }))}
                     />
                   </div>
-                  <div className="w-32">
+                  <div className="flex-1">
                     <label className="ui-label mb-1 text-[10px]">Start Reading</label>
                     <input
                       type="number"
@@ -1188,6 +1214,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
 
 function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; currentPrices: any[] }) {
   const queryClient = useQueryClient()
+  const { addToast } = useToastStore()
   // Dynamic price inputs keyed by fuel type (only for fuel types actually present on this pump)
   const [prices, setPrices] = useState<Record<string, string>>({})
   const [error, setError]   = useState<string | null>(null)
@@ -1232,6 +1259,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
       queryClient.invalidateQueries({ queryKey: ['fuelPrices', pump.id] })
       setPrices({})
       setSuccess(true); setTimeout(() => setSuccess(false), 3000)
+      addToast('Fuel prices updated', 'success')
       // Show open-shifts warning if any price update detected open shifts
       const warning = results.find((r) => r.openShiftsWarning)?.openShiftsWarning ?? null
       setOpenShiftsWarning(warning)
@@ -1341,6 +1369,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
 
       {/* 15% deviation confirmation dialog */}
       {deviationWarning && (
+        <ModalPortal>
         <div className="ui-modal-backdrop">
           <div className="ui-modal-panel w-full max-w-sm">
             <div className="ui-modal-header ui-modal-header--themed ui-modal-header--warning">
@@ -1390,6 +1419,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   )

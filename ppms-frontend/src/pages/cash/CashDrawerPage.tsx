@@ -6,6 +6,12 @@ import type { CashEventType, RecordCashEventRequest } from '../../api/cashApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 const EVENT_TYPES: { value: CashEventType; label: string }[] = [
   { value: 'OPENING_BALANCE', label: 'Opening Balance' },
@@ -53,6 +59,8 @@ export default function CashDrawerPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
 
+  const { addToast } = useToastStore()
+
   const createMutation = useMutation({
     mutationFn: (data: RecordCashEventRequest) => cashApi.recordCashEvent(pumpId!, data),
     onSuccess: () => {
@@ -60,8 +68,13 @@ export default function CashDrawerPage() {
       setForm({ eventType: 'CASH_IN', amount: 0, description: '', eventDate: localDateInputValue() })
       setFormError(null)
       setReviewOpen(false)
+      addToast('Cash event recorded successfully', 'success')
     },
-    onError: (err: any) => setFormError(err?.response?.data?.message ?? 'Failed to record event'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to record event'
+      setFormError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const validateForm = () => {
@@ -101,6 +114,7 @@ export default function CashDrawerPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
           <p className="ui-section-kicker">Cash flow</p>
@@ -118,15 +132,19 @@ export default function CashDrawerPage() {
           </div>
         </div>
       </div>
+      </Reveal>
 
       {/* ── Balance card ── */}
+      <Reveal delay={130}>
       <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-3xl px-6 py-5 text-white shadow-[0_22px_42px_rgba(5,150,105,0.22)]">
         <p className="text-emerald-200 text-sm">Current Balance</p>
         <p className="text-3xl font-bold mt-1">{fmtAmt(balance)}</p>
         <p className="text-emerald-200 text-xs mt-1">Calculated from all cash-in minus cash-out events</p>
       </div>
+      </Reveal>
 
       {/* ── Add event form ── */}
+      <Reveal delay={200}>
       <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
         <div className="ui-form-shell__head">
           <div>
@@ -196,11 +214,15 @@ export default function CashDrawerPage() {
           disabled={createMutation.isPending}
           className="ui-btn ui-btn-primary"
         >
-          {createMutation.isPending ? 'Saving…' : 'Review Event'}
+          {createMutation.isPending
+          ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Saving…</span>
+          : 'Review Event'}
         </button>
       </form>
+      </Reveal>
 
       {reviewOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={() => setReviewOpen(false)}>
           <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className={`ui-modal-header ui-modal-header--themed ${reviewHeaderTone}`}>
@@ -252,9 +274,11 @@ export default function CashDrawerPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ── Event list ── */}
+      <Reveal delay={270}>
       <div className="ui-card p-0 overflow-hidden">
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">Cash Events</p>
@@ -274,9 +298,13 @@ export default function CashDrawerPage() {
         </div>
 
         {isLoading ? (
-          <p className="ui-empty px-5 py-6">Loading…</p>
+          <div className="px-5 py-4"><SkeletonRows count={4} /></div>
         ) : (cashData?.events?.content ?? []).length === 0 ? (
-          <p className="ui-empty px-5 py-6">No cash events recorded yet.</p>
+          <EmptyState
+            icon="transactions"
+            title="No cash events recorded yet"
+            subtitle="Use the form above to record your first cash movement."
+          />
         ) : (
           <>
             <div className="ui-record-list">
@@ -314,6 +342,7 @@ export default function CashDrawerPage() {
           </>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

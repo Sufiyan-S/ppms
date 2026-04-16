@@ -14,7 +14,6 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string
   userId: number
   fullName: string
   phoneNumber: string

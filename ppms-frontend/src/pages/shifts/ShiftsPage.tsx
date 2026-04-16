@@ -10,7 +10,13 @@ import type { Shift, CreditEntry, CreditEntryInput } from '../../types/shift'
 import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
 import { SearchableSelect } from '../../components/SearchableSelect'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { RefreshIndicator } from '../../components/RefreshIndicator'
 import { formatIstDate, formatIstDateTime } from '../../utils/date'
+import { maskPhone } from '../../utils/maskPhone'
+import { parseApiError } from '../../utils/apiError'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -36,11 +42,10 @@ function localDateStr(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-const todayStr     = localDateStr(new Date())
-const yesterdayStr = localDateStr(new Date(Date.now() - 86_400_000))
-const dayBeforeStr = localDateStr(new Date(Date.now() - 2 * 86_400_000))
-
 function labelForDate(d: string): string {
+  const todayStr     = localDateStr(new Date())
+  const yesterdayStr = localDateStr(new Date(Date.now() - 86_400_000))
+  const dayBeforeStr = localDateStr(new Date(Date.now() - 2 * 86_400_000))
   if (d === todayStr)     return 'Today'
   if (d === yesterdayStr) return 'Yesterday'
   if (d === dayBeforeStr) return 'Day Before Yesterday'
@@ -63,7 +68,7 @@ export default function ShiftsPage() {
   const [showOpenModal,  setShowOpenModal]  = useState(false)
   const [shiftToClose,   setShiftToClose]   = useState<Shift | null>(null)
   const [shiftForCredit, setShiftForCredit] = useState<Shift | null>(null)
-  const [historyOpen,    setHistoryOpen]    = useState(false)
+  const [historyOpen,    setHistoryOpen]    = useState(true)
   const [historyTab,     setHistoryTab]     = useState<'day' | 'all'>('day')
 
   const { data: rawPumps = [] } = useQuery({
@@ -77,7 +82,7 @@ export default function ShiftsPage() {
 
   const pumpId = selectedPumpId
 
-  const { data: activeShifts = [], isLoading: activeLoading } = useQuery({
+  const { data: activeShifts = [], isLoading: activeLoading, isFetching: activeFetching, dataUpdatedAt: activeUpdatedAt } = useQuery({
     queryKey:      ['activeShifts', pumpId],
     queryFn:       () => shiftApi.getActiveShifts(pumpId!),
     enabled:       !!pumpId,
@@ -125,6 +130,7 @@ export default function ShiftsPage() {
     <div className="ui-page ui-page--narrow space-y-6">
 
       {/* Page title */}
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
           <p className="ui-section-kicker">Shift control</p>
@@ -138,6 +144,7 @@ export default function ShiftsPage() {
           </div>
         </div>
       </div>
+      </Reveal>
 
       {!pumpId ? (
         <div className="ui-card text-center text-sm text-slate-400">
@@ -148,12 +155,13 @@ export default function ShiftsPage() {
           {/* ── Active Shifts ──────────────────────────────────────────────── */}
           <div className="ui-card overflow-hidden p-0">
             <div className="ui-toolbar">
-              <div>
+              <div className="flex items-center gap-2.5">
                 <h2 className="ui-toolbar-title">Active Shifts</h2>
-                {selectedPump && (
-                  <p className="text-xs text-slate-400 mt-0.5">{selectedPump.name}</p>
-                )}
+                <RefreshIndicator isFetching={activeFetching} dataUpdatedAt={activeUpdatedAt ?? 0} />
               </div>
+              {selectedPump && (
+                <p className="text-xs text-slate-400">{selectedPump.name}</p>
+              )}
               <button
                 onClick={() => setShowOpenModal(true)}
                 className="ui-btn ui-btn-primary ml-auto"
@@ -163,7 +171,7 @@ export default function ShiftsPage() {
             </div>
 
             {activeLoading ? (
-              <div className="ui-empty p-6">Loading...</div>
+              <div className="px-5 py-4"><SkeletonRows count={3} /></div>
             ) : activeShifts.length === 0 ? (
               <div className="ui-empty p-6">
                 No active shifts. Click "+ Open Shift" to start one.
@@ -205,11 +213,11 @@ export default function ShiftsPage() {
               className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
             >
               <span className="text-base font-semibold text-slate-800">Shift History</span>
-              <span className="text-slate-400 text-sm">{historyOpen ? '▲ Hide' : '▼ Show'}</span>
+              <span className={`ui-accordion-arrow ${historyOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
             </button>
 
             {historyOpen && (
-              <>
+              <div className="ui-accordion-content">
                 {/* Tab row */}
                 <div className="ui-tabbar">
                   {(['day', 'all'] as const).map((tab) => (
@@ -223,16 +231,18 @@ export default function ShiftsPage() {
                   ))}
                 </div>
 
-                {historyLoading ? (
-                  <div className="ui-empty p-6">Loading history...</div>
-                ) : historyShifts.length === 0 ? (
-                  <div className="ui-empty p-6">No shift history yet.</div>
-                ) : historyTab === 'day' ? (
-                  <DayViewHistory shifts={historyShifts} />
-                ) : (
-                  <AllShiftsHistory shifts={historyShifts} />
-                )}
-              </>
+                <div key={historyLoading ? 'loading' : historyTab} className="ui-tab-content">
+                  {historyLoading ? (
+                    <div className="px-5 py-4"><SkeletonRows count={4} /></div>
+                  ) : historyShifts.length === 0 ? (
+                    <div className="ui-empty p-6">No shift history yet.</div>
+                  ) : historyTab === 'day' ? (
+                    <DayViewHistory shifts={historyShifts} />
+                  ) : (
+                    <AllShiftsHistory shifts={historyShifts} />
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </>
@@ -261,6 +271,10 @@ export default function ShiftsPage() {
 // ── Day View ──────────────────────────────────────────────────────────────────
 
 function DayViewHistory({ shifts }: { shifts: Shift[] }) {
+  const [todayStr]     = useState(() => localDateStr(new Date()))
+  const [yesterdayStr] = useState(() => localDateStr(new Date(Date.now() - 86_400_000)))
+  const [dayBeforeStr] = useState(() => localDateStr(new Date(Date.now() - 2 * 86_400_000)))
+
   // Group by shiftDate
   const grouped = shifts.reduce<Record<string, Shift[]>>((acc, s) => {
     ;(acc[s.shiftDate] ??= []).push(s)
@@ -322,12 +336,12 @@ function DayViewHistory({ shifts }: { shifts: Shift[] }) {
                   </span>
                 )}
               </div>
-              <span className="text-xs text-slate-400">{isOpen ? '▲' : '▼'}</span>
+              <span className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
             </button>
 
             {/* Day shift table */}
             {isOpen && (
-              <div className="overflow-x-auto border-t border-slate-100 bg-slate-50/40">
+              <div className="ui-accordion-content overflow-x-auto border-t border-slate-100 bg-slate-50/40">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 text-xs text-slate-500">
@@ -361,8 +375,8 @@ function DayViewHistory({ shifts }: { shifts: Shift[] }) {
 
 function AllShiftsHistory({ shifts }: { shifts: Shift[] }) {
   const [page,     setPage]     = useState(0)
-  const [fromDate, setFromDate] = useState(yesterdayStr)
-  const [toDate,   setToDate]   = useState(todayStr)
+  const [fromDate, setFromDate] = useState(() => localDateStr(new Date(Date.now() - 86_400_000)))
+  const [toDate,   setToDate]   = useState(() => localDateStr(new Date()))
 
   const filtered = shifts.filter((s) => {
     if (fromDate && s.shiftDate < fromDate) return false
@@ -724,6 +738,7 @@ function CreditEntriesModal({
   return (
     <tr>
       <td colSpan={8} className="p-0">
+        <ModalPortal>
         <div
           className="ui-modal-backdrop"
           onClick={onClose}
@@ -810,6 +825,7 @@ function CreditEntriesModal({
             </div>
           </div>
         </div>
+        </ModalPortal>
       </td>
     </tr>
   )
@@ -836,7 +852,7 @@ function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onClose: ()
       qc.invalidateQueries({ queryKey: ['shiftHistory', shift.pumpId] })
       onClose()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to resolve discrepancy'),
+    onError: (err: unknown) => setError(parseApiError(err, 'Failed to resolve discrepancy. Please try again.')),
   })
 
   const handleSubmit = () => {
@@ -854,6 +870,7 @@ function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onClose: ()
   return (
     <tr>
       <td colSpan={8} className="p-0">
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={onClose}>
           <div className="ui-modal-panel w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
 
@@ -905,6 +922,7 @@ function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onClose: ()
             </div>
           </div>
         </div>
+        </ModalPortal>
       </td>
     </tr>
   )
@@ -951,7 +969,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
       qc.invalidateQueries({ queryKey: ['activeShifts', shift.pumpId] })
       onClose()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to save entry'),
+    onError: (err: unknown) => setError(parseApiError(err, 'Failed to save credit entry. Please try again.')),
   })
 
   const voidMutation = useMutation({
@@ -961,7 +979,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
       qc.invalidateQueries({ queryKey: ['activeShifts', shift.pumpId] })
       setVoidTargetId(null); setVoidReason(''); setVoidError(null)
     },
-    onError: (err: any) => setVoidError(err?.response?.data?.message ?? 'Failed to void entry'),
+    onError: (err: unknown) => setVoidError(parseApiError(err, 'Failed to delete entry. Please try again.')),
   })
 
   const rootClients = creditClients.filter(c => c.parentClientId === null)
@@ -995,6 +1013,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel w-full max-w-md overflow-hidden">
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--warning">
@@ -1114,7 +1133,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
                             has sub-accounts
                           </span>
                         )}
-                        {c.phone && <span className="text-xs text-slate-400">{c.phone}</span>}
+                        {c.phone && <span className="text-xs text-slate-400">{maskPhone(c.phone)}</span>}
                       </div>
                     </button>
                   ))
@@ -1258,5 +1277,6 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }

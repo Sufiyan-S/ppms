@@ -4,6 +4,8 @@ import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { documentApi } from '../../api/documentApi'
 import type { PumpDocument, UpsertDocumentRequest, DocumentStatus } from '../../api/documentApi'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
 import { formatIstDate } from '../../utils/date'
 
 const STATUS_STYLES: Record<DocumentStatus, string> = {
@@ -77,6 +79,7 @@ export default function DocumentsPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-page-header">
         <div>
           <h1 className="ui-title-sm">Compliance Documents</h1>
@@ -89,9 +92,11 @@ export default function DocumentsPage() {
           {showForm ? 'Cancel' : '+ Add Document'}
         </button>
       </div>
+      </Reveal>
 
       {/* ── Alert strip ── */}
       {(expiredCount > 0 || expiringSoonCount > 0) && (
+        <Reveal delay={120}>
         <div className="ui-alert ui-alert-danger">
           <p className="text-sm font-semibold text-red-700">Compliance attention needed</p>
           <p className="text-xs text-red-500 mt-0.5">
@@ -99,6 +104,7 @@ export default function DocumentsPage() {
             {expiringSoonCount > 0 && `${expiringSoonCount} document${expiringSoonCount !== 1 ? 's' : ''} expiring within 30 days.`}
           </p>
         </div>
+        </Reveal>
       )}
 
       {/* ── Add/edit form ── */}
@@ -172,13 +178,14 @@ export default function DocumentsPage() {
       )}
 
       {/* ── Document list ── */}
+      <Reveal delay={180}>
       <div className="ui-card p-0 overflow-hidden">
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">All Documents ({docs.length})</p>
         </div>
 
         {isLoading ? (
-          <p className="ui-empty px-5 py-6">Loading…</p>
+          <div className="px-5 py-4"><SkeletonRows count={4} /></div>
         ) : docs.length === 0 ? (
           <p className="ui-empty px-5 py-6">No documents added yet. Add your licences and permits to track their expiry.</p>
         ) : (
@@ -221,6 +228,7 @@ export default function DocumentsPage() {
           </div>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

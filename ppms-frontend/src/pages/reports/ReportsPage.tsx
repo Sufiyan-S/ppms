@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Reveal } from '../../components/Reveal'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { userApi } from '../../api/userApi'
@@ -97,6 +98,7 @@ export default function ReportsPage() {
 
   return (
     <div className="ui-page ui-page--narrow space-y-5">
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
           <p className="ui-section-kicker">Analysis</p>
@@ -119,6 +121,7 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+      </Reveal>
 
       {!pumpId ? (
         <div className="ui-empty">
@@ -144,7 +147,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Tab content */}
-          <div className="p-5">
+          <div key={tab} className="p-5 ui-tab-content">
             {tab === 'pl'          && <ProfitLossTab          pumpId={pumpId} />}
             {tab === 'duty'        && <OperatorDutyTab        pumpId={pumpId} />}
             {tab === 'discrepancy' && <DiscrepancyTab         pumpId={pumpId} />}

@@ -1,7 +1,9 @@
 package com.ppms.auth;
 
 import com.ppms.user.User;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -22,6 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AuthController {
 
+    private static final String COOKIE_NAME = "ppms_jwt";
     private static final String PASSWORD_POLICY_REGEX =
             "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,}$";
     private static final String PASSWORD_POLICY_MESSAGE =
@@ -31,71 +34,97 @@ public class AuthController {
     private final JwtService jwtService;
     private final TokenRevocationService tokenRevocationService;
 
-    /**
-     * Comma-separated list of proxy IPs that are allowed to set X-Forwarded-For.
-     * Defaults to loopback addresses for local dev. Override with TRUSTED_PROXY_IPS in prod.
-     */
     @Value("${ppms.security.trusted-proxy-ips:127.0.0.1,::1}")
     private String trustedProxyIpsRaw;
 
+    @Value("${ppms.cookie.secure:false}")
+    private boolean cookieSecure;
+
+    @Value("${JWT_EXPIRY_MS:86400000}")
+    private long jwtExpiryMs;
+
     /**
      * POST /api/auth/login
-     * Authenticates user credentials and returns a signed JWT.
-     * Rate-limited: 5 failed attempts per 15-minute window per phone number.
+     * Authenticates credentials. The JWT is returned as an httpOnly cookie, NOT in the
+     * response body — this prevents JavaScript from reading the token, eliminating the
+     * XSS token-theft vector. The response body carries only the user profile fields.
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
-            HttpServletRequest httpRequest) {
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
         String ipAddress = extractClientIp(httpRequest);
-        return ResponseEntity.ok(authService.login(request, ipAddress));
+        LoginResult result = authService.login(request, ipAddress);
+        setJwtCookie(httpResponse, result.token());
+        return ResponseEntity.ok(result.loginResponse());
     }
 
     /**
      * POST /api/auth/logout
-     * Revokes the caller's current JWT. The token is added to the blacklist and will
-     * be rejected on all subsequent requests, even if it has not expired yet.
-     * This endpoint requires an authenticated (valid) token — you cannot log out with
-     * an already-expired or already-revoked token.
+     * Revokes the JWT and clears the httpOnly cookie.
      */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
-            @RequestHeader("Authorization") String authHeader,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse,
             @AuthenticationPrincipal User currentUser) {
-
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String jwt = authHeader.substring(7);
+        String jwt = extractJwtFromCookie(httpRequest);
+        if (jwt != null) {
             tokenRevocationService.revoke(jwt, currentUser.getId(), jwtService.extractExpiration(jwt));
         }
+        clearJwtCookie(httpResponse);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/change-password")
     public ResponseEntity<Map<String, String>> changePassword(
             @Valid @RequestBody ChangePasswordRequest request,
-            @RequestHeader("Authorization") String authHeader,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse,
             @AuthenticationPrincipal User currentUser) {
 
         authService.changePassword(currentUser, request.getCurrentPassword(), request.getNewPassword());
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String jwt = authHeader.substring(7);
+        String jwt = extractJwtFromCookie(httpRequest);
+        if (jwt != null) {
             tokenRevocationService.revoke(jwt, currentUser.getId(), jwtService.extractExpiration(jwt));
         }
-
+        clearJwtCookie(httpResponse);
         return ResponseEntity.ok(Map.of("message", "Password updated successfully. Please sign in again."));
     }
 
-    /**
-     * Extracts the real client IP address from the request.
-     *
-     * X-Forwarded-For is only trusted when the direct connection comes from a
-     * configured trusted proxy IP (e.g. nginx, AWS ELB). Trusting this header from
-     * arbitrary IPs would allow an attacker to spoof their IP and bypass rate limiting
-     * by submitting a fake X-Forwarded-For header.
-     *
-     * In production, set TRUSTED_PROXY_IPS to the IP(s) of your load balancer(s).
-     */
+    // ── Cookie helpers ────────────────────────────────────────────────────────
+
+    private void setJwtCookie(HttpServletResponse response, String token) {
+        // Use Set-Cookie header directly to set SameSite=Strict, which Jakarta Cookie API does not support.
+        // SameSite=Strict prevents the cookie from being sent on cross-site requests (CSRF protection).
+        response.setHeader("Set-Cookie",
+                String.format("%s=%s; HttpOnly; %sPath=/api; Max-Age=%d; SameSite=Strict",
+                        COOKIE_NAME, token,
+                        cookieSecure ? "Secure; " : "",
+                        (int) (jwtExpiryMs / 1000)));
+    }
+
+    private void clearJwtCookie(HttpServletResponse response) {
+        response.setHeader("Set-Cookie",
+                String.format("%s=; HttpOnly; %sPath=/api; Max-Age=0; SameSite=Strict",
+                        COOKIE_NAME,
+                        cookieSecure ? "Secure; " : ""));
+    }
+
+    private String extractJwtFromCookie(HttpServletRequest request) {
+        if (request.getCookies() == null) return null;
+        for (Cookie cookie : request.getCookies()) {
+            if (COOKIE_NAME.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
+    }
+
+    // ── IP extraction ─────────────────────────────────────────────────────────
+
     private String extractClientIp(HttpServletRequest request) {
         String remoteAddr = request.getRemoteAddr();
         Set<String> trustedIps = Arrays.stream(trustedProxyIpsRaw.split(","))
@@ -105,7 +134,6 @@ public class AuthController {
         if (trustedIps.contains(remoteAddr)) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
-                // Take the first IP in the chain — that is the original client IP
                 return forwarded.split(",")[0].trim();
             }
         }

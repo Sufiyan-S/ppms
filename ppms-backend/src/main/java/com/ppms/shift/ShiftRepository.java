@@ -87,6 +87,18 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             """)
     List<Shift> findClosedShiftsByDateRange(Long pumpId, LocalDate from, LocalDate to);
 
+    /**
+     * All shifts (open and closed) for a pump within a date range.
+     * Used by attendance tracking to include operators who have opened but not yet closed a shift.
+     */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate BETWEEN :from AND :to
+            ORDER BY s.shiftDate ASC, s.actualStartTime ASC
+            """)
+    List<Shift> findAllShiftsByDateRange(Long pumpId, LocalDate from, LocalDate to);
+
     /** Shifts for a specific operator on a pump within a date range. Used by operator duty report. */
     @Query("""
             SELECT s FROM Shift s

@@ -35,5 +35,5 @@ export const shiftApi = {
     client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/discrepancy-resolution`, req).then((r) => r.data),
 
   voidCreditEntry: (pumpId: number, shiftId: number, entryId: number, voidReason: string) =>
-    client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/credit-entries/${entryId}/void`, null, { params: { voidReason } }).then((r) => r.data),
+    client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/credit-entries/${entryId}/void`, { voidReason }).then((r) => r.data),
 }

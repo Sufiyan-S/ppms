@@ -9,6 +9,7 @@ import { useAuthStore } from '../../store/authStore'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -214,7 +215,7 @@ export default function InventoryPage() {
                 {selectedPump && (
                   <span className="text-xs text-slate-400">{selectedPump.name}</span>
                 )}
-                <span className="text-slate-400 text-xs ml-1">{stockOpen ? '▲' : '▼'}</span>
+                <span className={`ui-accordion-arrow ml-1 ${stockOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
               </button>
               {isOwnerOrAdmin && (
                 <button
@@ -227,7 +228,7 @@ export default function InventoryPage() {
             </div>
 
             {stockOpen && (
-              <div className="border-t border-slate-100">
+              <div className="ui-accordion-content border-t border-slate-100">
                 {tanksLoading ? (
                   <div className="p-6 text-sm text-slate-500">Loading stock levels...</div>
                 ) : tanks.length === 0 ? (
@@ -263,10 +264,10 @@ export default function InventoryPage() {
               className="ui-accordion-trigger"
             >
               <span className="ui-accordion-title">Tanker Delivery History</span>
-              <span className="ui-accordion-meta">{deliveryHistOpen ? '▲ Hide' : '▼ Show'}</span>
+              <span className={`ui-accordion-arrow ${deliveryHistOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
             </button>
             {deliveryHistOpen && (
-              <div className="border-t border-slate-100">
+              <div className="ui-accordion-content border-t border-slate-100">
                 <div className="ui-toolbar">
                   <p className="ui-toolbar-title">Filter Deliveries</p>
                   <div className="ui-toolbar-actions">
@@ -364,12 +365,12 @@ export default function InventoryPage() {
                                   <span className="text-sm font-bold text-slate-800">
                                     ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                   </span>
-                                  <span className="text-xs text-slate-400 ml-1">{isCollapsed ? '▼' : '▲'}</span>
+                                  <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
                                 </div>
                               </button>
 
                               {!isCollapsed && (
-                                <div className="ui-card p-0 overflow-hidden">
+                                <div className="ui-accordion-content ui-card p-0 overflow-hidden">
                                   <div className="px-4 py-3">
                                     <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                                       <span>Tank</span>
@@ -412,10 +413,10 @@ export default function InventoryPage() {
               className="ui-accordion-trigger"
             >
               <span className="ui-accordion-title">DIP Check History</span>
-              <span className="ui-accordion-meta">{dipHistOpen ? '▲ Hide' : '▼ Show'}</span>
+              <span className={`ui-accordion-arrow ${dipHistOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
             </button>
             {dipHistOpen && (
-              <div className="border-t border-slate-100">
+              <div className="ui-accordion-content border-t border-slate-100">
                 <div className="ui-toolbar">
                   <p className="ui-toolbar-title">Filter DIP Checks</p>
                   <div className="ui-toolbar-actions">
@@ -514,10 +515,10 @@ export default function InventoryPage() {
                                   Variance Detected
                                 </span>
                               )}
-                              <span className="text-xs text-slate-400 ml-1">{isCollapsed ? '▼' : '▲'}</span>
+                              <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
                             </button>
                             {!isCollapsed && (
-                              <div className="space-y-1.5">
+                              <div className="ui-accordion-content space-y-1.5">
                                 {rows.map(d => (
                                   <DipItem
                                     key={d.id}
@@ -689,6 +690,7 @@ function FuelLotsDialog({
   const cols = FUEL_COLORS[tank.fuelType] ?? FUEL_COLORS.PETROL
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop px-4">
       <div className="ui-modal-panel ui-modal-panel--lg w-full max-w-2xl max-h-[85vh] flex flex-col">
 
@@ -770,6 +772,7 @@ function FuelLotsDialog({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -1030,6 +1033,7 @@ function RecordDeliveryModal({
   }))
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop" onClick={onClose}>
       <div
         className="ui-modal-panel"
@@ -1292,6 +1296,7 @@ function RecordDeliveryModal({
           if (!items) return null
 
           return (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={() => setReviewOpen(false)}>
           <div
             className="ui-modal-panel ui-modal-panel--lg"
@@ -1388,12 +1393,14 @@ function RecordDeliveryModal({
             </div>
           </div>
         </div>
+        </ModalPortal>
           )
         } catch {
           return null
         }
       })()}
     </div>
+    </ModalPortal>
   )
 }
 
@@ -1450,6 +1457,7 @@ function DipCheckModal({
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop" onClick={onClose}>
       <div className="ui-modal-panel w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--neutral">
@@ -1574,5 +1582,6 @@ function DipCheckModal({
         </form>
       </div>
     </div>
+    </ModalPortal>
   )
 }

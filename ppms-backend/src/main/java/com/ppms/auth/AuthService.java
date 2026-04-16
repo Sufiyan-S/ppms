@@ -35,7 +35,7 @@ public class AuthService {
      * @param request   Login credentials.
      * @param ipAddress The caller's IP address — used for rate-limit tracking and audit. May be null.
      */
-    public LoginResponse login(LoginRequest request, String ipAddress) {
+    public LoginResult login(LoginRequest request, String ipAddress) {
         // Check rate limit BEFORE authenticating — avoids burning bcrypt CPU on blocked callers
         if (rateLimiterService.isBlocked(request.getPhoneNumber())) {
             throw new BusinessException(
@@ -62,14 +62,15 @@ public class AuthService {
 
             authLoginEventService.onLoginSuccess(user, ipAddress);
 
-            return LoginResponse.builder()
-                    .token(token)
+            LoginResponse loginResponse = LoginResponse.builder()
                     .userId(user.getId())
                     .fullName(user.getFullName())
                     .phoneNumber(user.getPhoneNumber())
                     .role(user.getRole())
                     .assignedPumpId(user.getAssignedPumpId())
                     .build();
+
+            return new LoginResult(token, loginResponse);
 
         } catch (AuthenticationException ex) {
             authLoginEventService.onLoginFailure(request.getPhoneNumber(), ipAddress);

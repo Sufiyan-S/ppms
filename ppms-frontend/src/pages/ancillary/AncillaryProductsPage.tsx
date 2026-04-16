@@ -18,6 +18,12 @@ import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import type { PagedResponse } from '../../types/paged'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { SkeletonTable } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,6 +75,7 @@ export default function AncillaryProductsPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Page heading ── */}
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
         <p className="ui-section-kicker">Counter inventory</p>
@@ -88,6 +95,7 @@ export default function AncillaryProductsPage() {
           </div>
         </div>
       </div>
+      </Reveal>
 
       {!pumpId ? (
         <div className="ui-empty">
@@ -96,6 +104,7 @@ export default function AncillaryProductsPage() {
       ) : (
         <>
           {/* ── Tab bar ── */}
+          <Reveal delay={130}>
           <div className="ui-tabbar w-fit">
             {(['products', 'stockin', 'sales'] as Tab[]).map(tab => (
               <button
@@ -107,31 +116,36 @@ export default function AncillaryProductsPage() {
               </button>
             ))}
           </div>
+          </Reveal>
 
           {/* ── Tab content ── */}
-          {activeTab === 'products' && (
-            <ProductsTab
-              pumpId={pumpId}
-              products={products}
-              loading={productsLoading}
-              isOwnerOrAdmin={isOwnerOrAdmin}
-              isManagerOrAbove={isManagerOrAbove}
-              onRefresh={() => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })}
-            />
-          )}
-          {activeTab === 'stockin' && (
-            <StockInTab
-              pumpId={pumpId}
-              products={products.filter(p => p.status === 'ACTIVE')}
-              isManagerOrAbove={isManagerOrAbove}
-              onRefresh={() => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })}
-            />
-          )}
-          {activeTab === 'sales' && (
-            <SalesTab
-              pumpId={pumpId}
-            />
-          )}
+          <Reveal delay={200}>
+          <div key={activeTab} className="ui-tab-content">
+            {activeTab === 'products' && (
+              <ProductsTab
+                pumpId={pumpId}
+                products={products}
+                loading={productsLoading}
+                isOwnerOrAdmin={isOwnerOrAdmin}
+                isManagerOrAbove={isManagerOrAbove}
+                onRefresh={() => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })}
+              />
+            )}
+            {activeTab === 'stockin' && (
+              <StockInTab
+                pumpId={pumpId}
+                products={products.filter(p => p.status === 'ACTIVE')}
+                isManagerOrAbove={isManagerOrAbove}
+                onRefresh={() => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })}
+              />
+            )}
+            {activeTab === 'sales' && (
+              <SalesTab
+                pumpId={pumpId}
+              />
+            )}
+          </div>
+          </Reveal>
         </>
       )}
     </div>
@@ -151,6 +165,7 @@ function ProductsTab({
   onRefresh: () => void
 }) {
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
   const [showAddForm, setShowAddForm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [productsPage, setProductsPage] = useState(0)
@@ -164,7 +179,11 @@ function ProductsTab({
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'ACTIVE' | 'INACTIVE' }) =>
       ancillaryApi.setProductStatus(pumpId, id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] }),
+    onSuccess: (_, { status }) => {
+      qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })
+      addToast(status === 'ACTIVE' ? 'Product enabled' : 'Product disabled', 'success')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update product status', 'error'),
   })
 
   const stockBadge = (p: AncillaryProduct) => {
@@ -243,11 +262,13 @@ function ProductsTab({
 
       {/* Product grid */}
       {loading ? (
-        <div className="ui-empty py-8">Loading products…</div>
+        <div className="py-4"><SkeletonTable rows={3} cols={3} /></div>
       ) : sortedProducts.length === 0 ? (
-        <div className="ui-empty">
-          {searchQuery ? `No products match "${searchQuery}".` : 'No products configured yet. Add your first product above.'}
-        </div>
+        <EmptyState
+          icon="generic"
+          title={searchQuery ? `No products match "${searchQuery}"` : 'No products configured yet'}
+          subtitle={searchQuery ? 'Try a different search term.' : 'Add your first product using the button above.'}
+        />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
           {pagedProducts.map(product => (
@@ -382,6 +403,7 @@ function AddProductDialog({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { addToast } = useToastStore()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<CreateProductRequest>({
     name: '', brand: '', variant: '',
@@ -391,9 +413,14 @@ function AddProductDialog({
 
   const createMutation = useMutation({
     mutationFn: (data: CreateProductRequest) => ancillaryApi.createProduct(pumpId, data),
-    onSuccess,
+    onSuccess: () => {
+      addToast('Product created successfully', 'success')
+      onSuccess()
+    },
     onError: (err: any) => {
-      setError(err?.response?.data?.message ?? 'Failed to create product')
+      const msg = err?.response?.data?.message ?? 'Failed to create product'
+      setError(msg)
+      addToast(msg, 'error')
     },
   })
 
@@ -435,6 +462,7 @@ function AddProductDialog({
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop px-4" onClick={onClose}>
       <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
@@ -558,13 +586,16 @@ function AddProductDialog({
                 disabled={createMutation.isPending}
                 className="ui-btn ui-btn-primary"
               >
-                {createMutation.isPending ? 'Creating…' : 'Create Product'}
+                {createMutation.isPending
+                  ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Creating…</span>
+                  : 'Create Product'}
               </button>
             </>
           )}
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -609,6 +640,7 @@ function SellDialog({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { addToast } = useToastStore()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<RecordAncillarySaleRequest>({
     productId: product.id,
@@ -626,9 +658,14 @@ function SellDialog({
 
   const saleMutation = useMutation({
     mutationFn: (data: RecordAncillarySaleRequest) => ancillaryApi.recordSale(pumpId, data),
-    onSuccess: () => onSuccess(),
+    onSuccess: () => {
+      addToast('Sale recorded successfully', 'success')
+      onSuccess()
+    },
     onError: (err: any) => {
-      setError(err?.response?.data?.message ?? 'Failed to record sale')
+      const msg = err?.response?.data?.message ?? 'Failed to record sale'
+      setError(msg)
+      addToast(msg, 'error')
     },
   })
 
@@ -666,6 +703,7 @@ function SellDialog({
   const selectedClient = creditClients.find(c => c.id === form.clientId)
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop px-4">
       <div className="ui-modal-panel w-full max-w-md">
 
@@ -844,13 +882,16 @@ function SellDialog({
                 disabled={saleMutation.isPending}
                 className="ui-btn ui-btn-primary disabled:opacity-50"
               >
-                {saleMutation.isPending ? 'Recording…' : 'Confirm Sale'}
+                {saleMutation.isPending
+                  ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Recording…</span>
+                  : 'Confirm Sale'}
               </button>
             </div>
           </div>
         )}
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -880,6 +921,7 @@ function StockLotsDialog({
   onUpdated: () => void
 }) {
   const qc = useQueryClient()
+  const { addToast } = useToastStore()
   const [editingLotId, setEditingLotId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<{ costPricePerUnit: string; remainingQuantity: string }>({
     costPricePerUnit: '',
@@ -899,9 +941,14 @@ function StockLotsDialog({
       setEditingLotId(null)
       setEditError(null)
       qc.invalidateQueries({ queryKey: ['ancillaryLots', pumpId, product.id] })
+      addToast('Lot updated successfully', 'success')
       onUpdated()
     },
-    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to update lot'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to update lot'
+      setEditError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const startEdit = (lot: AncillaryLotDetail) => {
@@ -929,6 +976,7 @@ function StockLotsDialog({
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel ui-modal-panel--lg w-full max-w-2xl max-h-[85vh] flex flex-col">
 
@@ -1053,6 +1101,7 @@ function StockLotsDialog({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -1116,7 +1165,7 @@ function StockInTab({
           <h3 className="text-sm font-semibold text-slate-700">Recent Deliveries</h3>
         </div>
         {deliveries.length === 0 ? (
-          <p className="ui-empty py-6">No deliveries recorded yet.</p>
+          <EmptyState icon="generic" title="No deliveries recorded yet" subtitle="Record stock deliveries using the button above." />
         ) : (
           <>
           <div className="overflow-x-auto">
@@ -1179,6 +1228,7 @@ function StockInDialog({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { addToast } = useToastStore()
   const today = localDateInputValue()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<RecordStockDeliveryRequest & { productId: number | '' }>({
@@ -1193,9 +1243,14 @@ function StockInDialog({
   const deliveryMutation = useMutation({
     mutationFn: (data: { productId: number; req: RecordStockDeliveryRequest }) =>
       ancillaryApi.recordDelivery(pumpId, data.productId, data.req),
-    onSuccess,
+    onSuccess: () => {
+      addToast('Stock delivery recorded successfully', 'success')
+      onSuccess()
+    },
     onError: (err: any) => {
-      setError(err?.response?.data?.message ?? 'Failed to record delivery')
+      const msg = err?.response?.data?.message ?? 'Failed to record delivery'
+      setError(msg)
+      addToast(msg, 'error')
     },
   })
 
@@ -1240,6 +1295,7 @@ function StockInDialog({
   }
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop px-4" onClick={onClose}>
       <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
@@ -1367,6 +1423,7 @@ function StockInDialog({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -1401,7 +1458,7 @@ function SalesTab({
         <h3 className="text-sm font-semibold text-slate-700">Sales History</h3>
       </div>
       {sales.length === 0 ? (
-        <p className="ui-empty py-6">No sales recorded yet.</p>
+        <EmptyState icon="transactions" title="No sales recorded yet" subtitle="Sales will appear here after you record them." />
       ) : (
         <>
           <div className="overflow-x-auto">

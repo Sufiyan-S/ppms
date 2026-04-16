@@ -4,6 +4,8 @@ import { auditApi } from '../../api/auditApi'
 import { usePumpStore } from '../../store/usePumpStore'
 import type { AuditAction } from '../../api/auditApi'
 import { Pagination } from '../../components/Pagination'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
 import { formatIstDateTime, localDateInputValue } from '../../utils/date'
 
 const ACTION_STYLES: Partial<Record<AuditAction, string>> = {
@@ -62,12 +64,9 @@ function fmtDateTime(d: string) {
   })
 }
 
-const today = localDateInputValue()
-const yesterday = localDateInputValue(-1)
-
 export default function AuditLogPage() {
-  const [from, setFrom]       = useState(yesterday)
-  const [to, setTo]           = useState(today)
+  const [from, setFrom]       = useState(() => localDateInputValue(-1))
+  const [to, setTo]           = useState(() => localDateInputValue())
   const [page, setPage]       = useState(0)
   const [pageSize, setPageSize] = useState(10)
 
@@ -118,6 +117,7 @@ export default function AuditLogPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-page-header">
         <div>
         <h1 className="ui-title-sm">Audit Log</h1>
@@ -126,8 +126,10 @@ export default function AuditLogPage() {
         </p>
         </div>
       </div>
+      </Reveal>
 
       {/* ── Filters row ── */}
+      <Reveal delay={130}>
       <div className="ui-card ui-form-shell [grid-template-columns:repeat(3,minmax(0,1fr))_auto] items-end">
         <div className="flex flex-col gap-1">
           <label className="ui-label mb-0">From</label>
@@ -168,8 +170,10 @@ export default function AuditLogPage() {
           Clear filter
         </button>
       </div>
+      </Reveal>
 
       {/* ── Log list ── */}
+      <Reveal delay={200}>
       <div className="ui-card p-0 overflow-hidden">
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">
@@ -183,7 +187,7 @@ export default function AuditLogPage() {
         </div>
 
         {isLoading ? (
-          <p className="ui-empty px-5 py-6">Loading…</p>
+          <div className="px-5 py-4"><SkeletonRows count={5} /></div>
         ) : logs.length === 0 ? (
           <p className="ui-empty px-5 py-6">
             No audit events found{from || to ? ' for the selected date range' : ''}.
@@ -235,6 +239,7 @@ export default function AuditLogPage() {
           </div>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

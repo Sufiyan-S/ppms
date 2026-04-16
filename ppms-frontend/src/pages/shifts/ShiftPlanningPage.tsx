@@ -7,7 +7,10 @@ import type { ShiftPlanEntry } from '../../api/shiftPlanApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import { useAuthStore } from '../../store/authStore'
 import { SearchableSelect } from '../../components/SearchableSelect'
+import { SkeletonTable } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
 import { formatIstDate } from '../../utils/date'
+import { ModalPortal } from '../../components/ModalPortal'
 
 // Cyclic color palette for shift rows — index into this by (sortOrder - 1)
 const SHIFT_ROW_COLORS = [
@@ -100,6 +103,7 @@ export default function ShiftPlanningPage() {
     queryKey: ['actualAttendance', pumpId, weekStart],
     queryFn: () => shiftPlanApi.getActualAttendance(pumpId!, weekStart, weekEnd),
     enabled: !!pumpId,
+    refetchInterval: 60_000, // refresh every 60s so today's shifts reflect live status
   })
 
   const { data: shiftDefinitions = [] } = useQuery({
@@ -198,16 +202,19 @@ export default function ShiftPlanningPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* Page title */}
+      <Reveal delay={60}>
       <div>
         <h2 className="ui-title-sm">Shift Planning</h2>
         <p className="ui-subtitle">
           Plan weekly operator schedules. Published plans pre-fill shift opening.
         </p>
       </div>
+      </Reveal>
 
       {pumpId && (
         <>
           {/* Week navigator + actions */}
+          <Reveal delay={130}>
           <div className="ui-card flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <button onClick={prevWeek}
@@ -256,9 +263,11 @@ export default function ShiftPlanningPage() {
               )}
             </div>
           </div>
+          </Reveal>
 
           {/* Auto-generate modal */}
           {showGenerate && (
+            <ModalPortal>
             <div className="ui-modal-backdrop">
               <div className="ui-modal-panel w-full max-w-sm">
                 <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
@@ -308,13 +317,13 @@ export default function ShiftPlanningPage() {
                 </div>
               </div>
             </div>
+            </ModalPortal>
           )}
 
           {/* Planning grid */}
+          <Reveal delay={200}>
           {planLoading ? (
-            <div className="ui-empty">
-              Loading plan…
-            </div>
+            <div className="ui-card px-5 py-4"><SkeletonTable rows={4} cols={7} /></div>
           ) : (
             <>
               {/* No-plan notice for future weeks */}
@@ -363,9 +372,10 @@ export default function ShiftPlanningPage() {
                             </div>
                           </td>
                           {days.map(day => {
-                            const isPast = day < today
                             const slotEntries = entryMap[day]?.[def.id] ?? []
                             const actualOpIds = actualMap[day]?.[def.id] ?? []
+                            // Show actual attendance for past days, or for today's slots where a shift has already started
+                            const isPast = day < today || (day === today && actualOpIds.length > 0)
                             const isEditing = isEditingSlot(day, def.id)
                             const availableToAdd = operatorStaff.filter(
                               s => !slotEntries.some(e => e.operatorUserId === s.id)
@@ -488,8 +498,10 @@ export default function ShiftPlanningPage() {
               </div>
             </>
           )}
+          </Reveal>
 
           {/* Legend */}
+          <Reveal delay={270}>
           <div className="flex flex-wrap gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" /> Planned
@@ -501,6 +513,7 @@ export default function ShiftPlanningPage() {
               <span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Absent (didn't show)
             </span>
           </div>
+          </Reveal>
         </>
       )}
     </div>

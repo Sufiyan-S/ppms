@@ -152,8 +152,8 @@ public class ShiftController {
             @PathVariable Long pumpId,
             @PathVariable Long shiftId,
             @PathVariable Long entryId,
-            @RequestParam String voidReason,
+            @Valid @RequestBody VoidCreditEntryRequest request,
             @AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(shiftService.voidCreditEntry(shiftId, entryId, voidReason, currentUser));
+        return ResponseEntity.ok(shiftService.voidCreditEntry(shiftId, entryId, request.voidReason(), currentUser));
     }
 }

@@ -3,23 +3,16 @@ import { useAuthStore } from '../store/authStore'
 
 // All requests go to /api/* — Vite proxy forwards them to Spring Boot in dev.
 // In production, both frontend and backend run on the same server, same origin.
+// withCredentials: true is required so the browser sends the httpOnly JWT cookie
+// automatically on every request — axios does not do this by default.
 const apiClient = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 
-// Attach JWT to every request — read from Zustand store (single source of truth)
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// If the server returns 401 and we are still authenticated, the token has expired.
-// Checking isAuthenticated prevents repeated redirects from concurrent 401 responses
-// and also means this guard self-resets whenever the user logs back in.
+// If the server returns 401 and we are still authenticated, the session has expired.
+// Checking isAuthenticated prevents repeated redirects from concurrent 401 responses.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {

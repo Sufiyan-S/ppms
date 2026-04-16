@@ -41,7 +41,7 @@ export default function LoginPage() {
         role: response.role,
         assignedPumpId: response.assignedPumpId,
       }
-      setAuth(user, response.token)
+      setAuth(user)
       navigate(response.role === 'SUPER_ADMIN' ? '/super-admin' : '/dashboard')
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } }

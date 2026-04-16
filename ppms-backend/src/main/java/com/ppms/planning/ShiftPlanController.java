@@ -170,8 +170,10 @@ public class ShiftPlanController {
     }
 
     /**
-     * Actual operator attendance for past dates, derived from real closed Shift records.
-     * Returns one entry per distinct (shiftDate, shiftWindow, operator) combination.
+     * Actual operator attendance for a date range, derived from real Shift records.
+     * Includes both open and closed shifts so that operators who have started but not yet
+     * closed their shift still appear as confirmed (green) on the planning grid.
+     * Returns one entry per distinct (shiftDate, shiftDefinitionId, operator) combination.
      */
     @GetMapping("/{pumpId}/shift-plans/actual-attendance")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -179,7 +181,7 @@ public class ShiftPlanController {
             @PathVariable Long pumpId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return shiftRepository.findClosedShiftsByDateRange(pumpId, from, to)
+        return shiftRepository.findAllShiftsByDateRange(pumpId, from, to)
                 .stream()
                 .map(s -> new ActualSlotDto(s.getShiftDate(), s.getShiftDefinitionId(), s.getOperatorId()))
                 .distinct()

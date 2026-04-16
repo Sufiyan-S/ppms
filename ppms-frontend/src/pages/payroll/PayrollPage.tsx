@@ -7,6 +7,12 @@ import type { GeneratePayrollRequest, PayrollRecord, PayrollStatus } from '../..
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { SkeletonTable } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 const STATUS_STYLES: Record<PayrollStatus, string> = {
   DRAFT:    'bg-amber-100 text-amber-700',
@@ -103,12 +109,12 @@ function PayrollGroup({
           </span>
           <span className="text-sm font-semibold text-slate-700">{fmtAmt(totalAmount)}</span>
         </div>
-        <span className="text-slate-400 text-sm">{isOpen ? '▲' : '▼'}</span>
+        <span className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
       </button>
 
       {/* Records — shown only when expanded */}
       {isOpen && (
-        <div className="border-t border-slate-100">
+        <div className="ui-accordion-content border-t border-slate-100">
         <div className="divide-y divide-slate-100">
           {records.map(r => {
             const staffMember = staff.find((s: any) => s.id === r.userId)
@@ -276,6 +282,7 @@ function PayrollGroup({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function PayrollPage() {
+  const { addToast } = useToastStore()
   const qc = useQueryClient()
 
   const { selectedPumpId: pumpId } = usePumpStore()
@@ -346,21 +353,32 @@ export default function PayrollPage() {
       setFormError(null)
       setReviewOpen(false)
       setOpenGroup('DRAFT')
+      addToast('Payroll draft generated', 'success')
     },
-    onError: (err: any) => setFormError(err?.response?.data?.message ?? 'Failed to generate payroll'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to generate payroll'
+      setFormError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (recordId: number) => payrollApi.deletePayroll(pumpId!, recordId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payroll', pumpId] }),
-    onError: (err: any) => alert(err?.response?.data?.message ?? 'Failed to delete payroll'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payroll', pumpId] })
+      addToast('Payroll record deleted', 'success')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete payroll', 'error'),
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ recordId, status }: { recordId: number; status: PayrollStatus }) =>
       payrollApi.updateStatus(pumpId!, recordId, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payroll', pumpId] }),
-    onError: (err: any) => alert(err?.response?.data?.message ?? 'Failed to update status'),
+    onSuccess: (_, { status }) => {
+      qc.invalidateQueries({ queryKey: ['payroll', pumpId] })
+      addToast(`Status updated to ${status}`, 'success')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update status', 'error'),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -377,14 +395,17 @@ export default function PayrollPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-page-header">
         <div>
         <h1 className="ui-title-sm">Payroll</h1>
         <p className="ui-subtitle">Calculate and track staff salary payments based on shift history</p>
         </div>
       </div>
+      </Reveal>
 
       {/* ── Generate form ── */}
+      <Reveal delay={130}>
       <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
         <div className="ui-form-shell__head">
           <div>
@@ -452,11 +473,15 @@ export default function PayrollPage() {
           disabled={generateMutation.isPending}
           className="ui-btn ui-btn-primary"
         >
-          {generateMutation.isPending ? 'Calculating…' : 'Review Payroll'}
+          {generateMutation.isPending
+            ? <span className="flex items-center gap-1.5"><Spinner />Calculating…</span>
+            : 'Review Payroll'}
         </button>
       </form>
+      </Reveal>
 
       {reviewOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={() => setReviewOpen(false)}>
           <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
@@ -496,14 +521,18 @@ export default function PayrollPage() {
                 disabled={generateMutation.isPending}
                 className="ui-btn ui-btn-primary"
               >
-                {generateMutation.isPending ? 'Generating…' : 'Generate Payroll'}
+                {generateMutation.isPending
+                  ? <span className="flex items-center gap-1.5"><Spinner />Generating…</span>
+                  : 'Generate Payroll'}
               </button>
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ── Payroll records ── */}
+      <Reveal delay={210}>
       <div className="space-y-3">
         {/* Section header + month filter */}
         <div className="flex items-center justify-between gap-3">
@@ -535,16 +564,16 @@ export default function PayrollPage() {
         </div>
 
         {isLoading ? (
-          <div className="ui-card">
-            <p className="ui-empty">Loading…</p>
+          <div className="ui-card px-5 py-4">
+            <SkeletonTable rows={4} cols={3} />
           </div>
         ) : filtered.length === 0 ? (
           <div className="ui-card">
-            <p className="ui-empty">
-              {records.length === 0
-                ? 'No payroll records yet.'
-                : 'No records for the selected month.'}
-            </p>
+            <EmptyState
+              icon="payroll"
+              title={records.length === 0 ? 'No payroll records yet' : 'No records for this month'}
+              subtitle={records.length === 0 ? 'Generate your first payroll draft above.' : 'Try selecting a different month.'}
+            />
           </div>
         ) : (
           /* One collapsible group per status — only renders groups that have records */
@@ -594,6 +623,7 @@ export default function PayrollPage() {
           </div>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

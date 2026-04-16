@@ -7,6 +7,12 @@ import type { LogCalibrationRequest, NozzleCalibrationLog } from '../../api/cali
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, formatIstDateTime, localDateInputValue } from '../../utils/date'
+import { SkeletonRows } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 function fmtDate(d: string) {
   return formatIstDate(d)
@@ -59,6 +65,8 @@ export default function CalibrationPage() {
   })
   const [formError, setFormError] = useState<string | null>(null)
 
+  const { addToast } = useToastStore()
+
   const createMutation = useMutation({
     mutationFn: (data: LogCalibrationRequest) =>
       calibrationApi.recordCalibration(pumpId!, selectedNozzleId, data),
@@ -69,8 +77,13 @@ export default function CalibrationPage() {
       setForm({ calibrationDate: localDateInputValue(), nextCalibrationDue: null, calibratedBy: null, certificateReference: null, notes: null })
       setFormError(null)
       setReviewOpen(false)
+      addToast('Calibration recorded successfully', 'success')
     },
-    onError: (err: any) => setFormError(err?.response?.data?.message ?? 'Failed to record calibration'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to record calibration'
+      setFormError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -111,6 +124,7 @@ export default function CalibrationPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
           <p className="ui-section-kicker">Compliance</p>
@@ -128,8 +142,10 @@ export default function CalibrationPage() {
           </div>
         </div>
       </div>
+      </Reveal>
 
       {/* ── Record form ── */}
+      <Reveal delay={130}>
       <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
         <div className="ui-form-shell__head">
           <div>
@@ -215,11 +231,15 @@ export default function CalibrationPage() {
           disabled={createMutation.isPending}
           className="ui-btn ui-btn-primary"
         >
-          {createMutation.isPending ? 'Saving…' : 'Review Calibration'}
+          {createMutation.isPending
+          ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Saving…</span>
+          : 'Review Calibration'}
         </button>
       </form>
+      </Reveal>
 
       {reviewOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={() => setReviewOpen(false)}>
           <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
@@ -259,9 +279,11 @@ export default function CalibrationPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ── Calibration history ── */}
+      <Reveal delay={200}>
       <div className="ui-card p-0 overflow-hidden">
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">
@@ -295,11 +317,13 @@ export default function CalibrationPage() {
         </div>
 
         {isLoading ? (
-          <p className="ui-empty px-5 py-6">Loading…</p>
+          <div className="px-5 py-4"><SkeletonRows count={4} /></div>
         ) : calibrations.length === 0 ? (
-          <p className="ui-empty px-5 py-6">
-            {historyNozzleId ? 'No calibration records for this nozzle yet.' : 'No calibration records found yet.'}
-          </p>
+          <EmptyState
+            icon="generic"
+            title="No calibration records yet"
+            subtitle={historyNozzleId ? 'No calibration records for this nozzle yet.' : 'Use the form above to record your first calibration.'}
+          />
         ) : (
           <>
             <div className="ui-record-list">
@@ -346,6 +370,7 @@ export default function CalibrationPage() {
           </>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

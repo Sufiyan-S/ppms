@@ -2,6 +2,7 @@ package com.ppms.auth;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import io.jsonwebtoken.JwtException;
@@ -20,8 +21,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Runs once per request. Extracts the JWT from the Authorization header,
+ * Runs once per request. Extracts the JWT from the httpOnly cookie named "ppms_jwt",
  * validates it, and sets the authenticated user in the Spring Security context.
+ *
+ * The token is read from a cookie (not the Authorization header) to prevent XSS attacks
+ * from stealing it — httpOnly cookies cannot be accessed by JavaScript.
  *
  * Validation steps (in order):
  *   1. JWT signature and expiry (JwtService.isTokenValid)
@@ -31,6 +35,8 @@ import java.io.IOException;
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final String COOKIE_NAME = "ppms_jwt";
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
@@ -43,23 +49,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
+        final String jwt = extractJwtFromCookie(request);
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (jwt == null) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        final String jwt = authHeader.substring(7);
         final String phoneNumber;
         try {
             phoneNumber = jwtService.extractUsername(jwt);
         } catch (JwtException e) {
-            // Token is expired, malformed, or has an invalid signature.
-            // Return 401 immediately so the frontend can redirect to login.
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write("{\"message\":\"Token expired or invalid. Please log in again.\"}");
+            response.getWriter().write("{\"message\":\"Session expired. Please log in again.\"}");
             return;
         }
 
@@ -68,17 +71,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 userDetails = userDetailsService.loadUserByUsername(phoneNumber);
             } catch (UsernameNotFoundException e) {
-                // Token references a user that no longer exists (e.g. DB wiped, user deleted).
-                // Treat as unauthenticated — Spring Security will enforce access rules downstream.
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            // Step 1: signature + expiry
             if (jwtService.isTokenValid(jwt, userDetails)
-                    // Step 2: not explicitly revoked (logout / forced sign-out)
                     && !tokenRevocationService.isRevoked(jwt)
-                    // Step 3: account still active (user may have been deactivated after login)
                     && userDetails.isEnabled()
                     && userDetails.isAccountNonLocked()) {
 
@@ -91,5 +89,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String extractJwtFromCookie(HttpServletRequest request) {
+        if (request.getCookies() == null) return null;
+        for (Cookie cookie : request.getCookies()) {
+            if (COOKIE_NAME.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 }

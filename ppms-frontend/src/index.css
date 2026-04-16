@@ -1047,19 +1047,23 @@ a:focus-visible {
   inset: 0;
   z-index: 50;
   display: flex;
-  align-items: center;
+  /* flex-start so the panel anchors at padding-top and never floats up
+     behind the topbar — overflow-y:auto handles panels taller than viewport */
+  align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  overflow-y: auto;
+  /* 4rem clears the dashboard topbar (~3.3rem rendered height) with headroom */
+  padding: 4rem 1rem 1.5rem;
   background: rgba(15, 23, 42, 0.58);
   backdrop-filter: blur(4px);
 }
 
 .ui-modal-panel {
   width: min(100%, 640px);
-  max-height: min(88vh, 900px);
-  overflow: hidden;
+  max-height: 50vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(216, 225, 236, 0.9);
   border-radius: 20px;
@@ -1077,6 +1081,7 @@ a:focus-visible {
   gap: 0.9rem;
   padding: 1.1rem 1.35rem;
   border-bottom: 1px solid #e7edf4;
+  flex-shrink: 0;
 }
 
 .ui-modal-header--themed {
@@ -1154,7 +1159,9 @@ a:focus-visible {
 
 .ui-modal-body {
   padding: 1.25rem 1.35rem;
-  overflow: auto;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* critical: lets flex child shrink below its content size so the body actually scrolls */
 }
 
 .ui-modal-footer {
@@ -1163,6 +1170,7 @@ a:focus-visible {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .ui-table-wrap {
@@ -2263,8 +2271,169 @@ a:focus-visible {
   .ui-modal-panel,
   .ui-modal-panel--lg {
     width: 100%;
-    max-height: 92vh;
+    max-height: 50vh;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 1 — UI POLISH
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Page fade-in on mount ─────────────────────────────────── */
+@keyframes ppms-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ui-page {
+  animation: ppms-fade-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Card hover lift ───────────────────────────────────────── */
+.ui-card,
+.ui-card-plain {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ui-card:hover,
+.ui-card-plain:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.11);
+}
+
+.ui-dashboard-stat {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ui-dashboard-stat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.11);
+}
+
+/* ── Button press feel ─────────────────────────────────────── */
+.ui-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(37, 99, 235, 0.26);
+}
+
+.ui-btn-warning:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(234, 88, 12, 0.26);
+}
+
+.ui-btn-primary:active:not(:disabled),
+.ui-btn-warning:active:not(:disabled),
+.ui-btn-secondary:active:not(:disabled),
+.ui-btn-danger:active:not(:disabled) {
+  transform: translateY(0);
+  transition-duration: 0.06s;
+}
+
+/* ── Table row hover ───────────────────────────────────────── */
+.ui-table-wrap tbody tr {
+  transition: background-color 0.14s ease;
+}
+
+.ui-table-wrap tbody tr:hover {
+  background-color: rgba(241, 245, 249, 0.75);
+}
+
+/* ── Record row hover ──────────────────────────────────────── */
+.ui-record-row {
+  transition: background-color 0.14s ease;
+}
+
+.ui-record-row:hover {
+  background-color: rgba(248, 250, 252, 0.92);
+}
+
+/* ── Modal entrance animation ──────────────────────────────── */
+@keyframes ppms-modal-in {
+  from { opacity: 0; transform: scale(0.97) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+.ui-modal-panel {
+  animation: ppms-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Skeleton shimmer ──────────────────────────────────────── */
+@keyframes ppms-shimmer {
+  from { background-position: -600px 0; }
+  to   { background-position:  600px 0; }
+}
+
+.ui-skeleton {
+  display: block;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 40%, #f1f5f9 80%);
+  background-size: 1200px 100%;
+  animation: ppms-shimmer 1.6s ease-in-out infinite;
+}
+
+.ui-skeleton--circle {
+  border-radius: 999px;
+}
+
+/* ── Custom scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 2 — ANIMATIONS
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Scroll reveal ─────────────────────────────────────────── */
+.ui-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ui-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Page route fade ───────────────────────────────────────── */
+@keyframes ppms-route-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ui-route-fade {
+  animation: ppms-route-fade 0.25s ease both;
+}
+
+/* ── Tab / accordion content fade-in ──────────────────────── */
+@keyframes ppms-content-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ui-tab-content {
+  animation: ppms-content-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ui-accordion-content {
+  animation: ppms-content-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Accordion arrow rotation ──────────────────────────────── */
+.ui-accordion-arrow {
+  display: inline-block;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #94a3b8;
+  font-size: 0.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ui-accordion-arrow--open {
+  transform: rotate(180deg);
 }
 
 @media print {
@@ -2408,4 +2577,104 @@ a:focus-visible {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PHASE 4 — TOASTS, SPINNER, CHART
+───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Toast stack ─────────────────────────────────────────────────────────── */
+
+.ui-toast-stack {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+  max-width: 22rem;
+  width: calc(100vw - 2.5rem);
+}
+
+.ui-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: white;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-left: 4px solid;
+  animation: ppms-toast-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes ppms-toast-in {
+  from { opacity: 0; transform: translateX(1.5rem) scale(0.95); }
+  to   { opacity: 1; transform: translateX(0)      scale(1); }
+}
+
+.ui-toast-icon {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.ui-toast-msg {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #1e293b;
+  line-height: 1.45;
+}
+
+.ui-toast-close {
+  flex-shrink: 0;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  border: none;
+  background: none;
+  padding: 0;
+  transition: color 0.15s;
+  margin-left: 0.25rem;
+}
+
+.ui-toast-close:hover { color: #475569; }
+
+/* ── Revenue chart container ─────────────────────────────────────────────── */
+
+.ui-chart-wrap {
+  padding: 1rem 0.5rem 0.5rem;
+}
+
+.ui-chart-days-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.ui-chart-day-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ui-chart-day-btn:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.ui-chart-day-btn--active {
+  background: #eff6ff;
+  color: #2563eb;
 }

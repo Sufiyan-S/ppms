@@ -7,6 +7,12 @@ import type { ExpenseCategory, CreateExpenseRequest, ApproveExpenseRequest, Expe
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
+import { SkeletonTable } from '../../components/Skeleton'
+import { Reveal } from '../../components/Reveal'
+import { EmptyState } from '../../components/EmptyState'
+import { Spinner } from '../../components/Spinner'
+import { useToastStore } from '../../store/toastStore'
+import { ModalPortal } from '../../components/ModalPortal'
 
 const CATEGORIES: ExpenseCategory[] = ['FUEL', 'MAINTENANCE', 'SALARY', 'UTILITIES', 'EQUIPMENT', 'OTHER']
 
@@ -59,6 +65,7 @@ export default function ExpensesPage() {
     expenseDate: localDateInputValue(),
     saveDraft: false,
   })
+  const { addToast } = useToastStore()
   const [formError, setFormError] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
 
@@ -69,18 +76,31 @@ export default function ExpensesPage() {
       setForm({ category: 'MAINTENANCE', amount: 0, description: '', expenseDate: localDateInputValue(), saveDraft: false })
       setFormError(null)
       setReviewOpen(false)
+      addToast('Expense recorded successfully', 'success')
     },
-    onError: (err: any) => setFormError(err?.response?.data?.message ?? 'Failed to record expense'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to record expense'
+      setFormError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   const submitMutation = useMutation({
     mutationFn: (expenseId: number) => expenseApi.submitExpense(pumpId!, expenseId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses', pumpId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
+      addToast('Expense submitted for approval', 'success')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to submit expense', 'error'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (expenseId: number) => expenseApi.deleteExpense(pumpId!, expenseId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses', pumpId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
+      addToast('Expense deleted', 'success')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete expense', 'error'),
   })
 
   const validateForm = () => {
@@ -105,7 +125,11 @@ export default function ExpensesPage() {
   const approveMutation = useMutation({
     mutationFn: ({ expenseId, data }: { expenseId: number; data: ApproveExpenseRequest }) =>
       expenseApi.approveExpense(pumpId!, expenseId, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses', pumpId] }),
+    onSuccess: (_, { data }) => {
+      qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
+      addToast(`Expense ${data.action === 'APPROVED' ? 'approved' : 'rejected'}`, data.action === 'APPROVED' ? 'success' : 'warning')
+    },
+    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update expense', 'error'),
   })
 
   // Note: totalExpenses and pendingCount reflect the current page only.
@@ -122,6 +146,7 @@ export default function ExpensesPage() {
     <div className="ui-page ui-page--narrow space-y-5">
 
       {/* ── Header ── */}
+      <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
           <p className="ui-section-kicker">Cost tracking</p>
@@ -140,8 +165,11 @@ export default function ExpensesPage() {
         </div>
       </div>
 
+      </Reveal>
+
       {/* ── Summary strip ── */}
       {!isLoading && (
+        <Reveal delay={120}>
         <div className="ui-summary-strip">
           <div className="ui-summary-strip__item">
             <span className="ui-summary-strip__label">Approved Total</span>
@@ -158,10 +186,11 @@ export default function ExpensesPage() {
             </div>
           )}
         </div>
+        </Reveal>
       )}
 
       {/* ── Add expense form — hidden for ACCOUNTANT (read-only role) ── */}
-      {!isAccountant && <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
+      {!isAccountant && <Reveal delay={180}><form onSubmit={handleSubmit} className="ui-card ui-form-shell">
         <div className="ui-form-shell__head">
           <div>
             <p className="ui-section-kicker mb-2">Expense Intake</p>
@@ -235,11 +264,14 @@ export default function ExpensesPage() {
           disabled={createMutation.isPending}
           className="ui-btn ui-btn-primary"
         >
-          {createMutation.isPending ? 'Saving…' : 'Review Expense'}
+          {createMutation.isPending
+            ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span>
+            : 'Review Expense'}
         </button>
-      </form>}
+      </form></Reveal>}
 
       {reviewOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={() => setReviewOpen(false)}>
           <div className="ui-modal-panel w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="ui-modal-header ui-modal-header--themed ui-modal-header--warning">
@@ -278,22 +310,24 @@ export default function ExpensesPage() {
               </button>
               <button
                 onClick={() => {
-                  if (!validateForm()) {
-                    return
-                  }
+                  if (!validateForm()) return
                   createMutation.mutate(form)
                 }}
                 disabled={createMutation.isPending}
                 className="ui-btn ui-btn-primary"
               >
-                {createMutation.isPending ? 'Saving…' : 'Add Expense'}
+                {createMutation.isPending
+                  ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span>
+                  : 'Add Expense'}
               </button>
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* ── Expense list ── */}
+      <Reveal delay={240}>
       <div className="ui-card p-0 overflow-hidden">
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">All Expenses</p>
@@ -342,9 +376,13 @@ export default function ExpensesPage() {
         )}
 
         {isLoading ? (
-          <p className="ui-empty px-5 py-6">Loading…</p>
+          <div className="px-5 py-4"><SkeletonTable rows={4} cols={3} /></div>
         ) : expenses.length === 0 ? (
-          <p className="ui-empty px-5 py-6">No expenses recorded yet.</p>
+          <EmptyState
+            icon="expenses"
+            title="No expenses recorded yet"
+            subtitle={isAccountant ? 'No records to display.' : 'Use the form above to record your first expense.'}
+          />
         ) : (
           <>
           <div className="divide-y divide-slate-100">
@@ -442,6 +480,7 @@ export default function ExpensesPage() {
           </>
         )}
       </div>
+      </Reveal>
     </div>
   )
 }

@@ -4,29 +4,27 @@ import type { AuthUser } from '../types/auth'
 
 interface AuthState {
   user: AuthUser | null
-  token: string | null
   isAuthenticated: boolean
-  setAuth: (user: AuthUser, token: string) => void
+  setAuth: (user: AuthUser) => void
   clearAuth: () => void
   updateUser: (patch: Partial<AuthUser>) => void
 }
 
-// Persists auth state to localStorage so the user stays logged in on page refresh.
-// The token lives exclusively in Zustand's persisted state (key: ppms_user) —
-// client.ts reads it via useAuthStore.getState().token, not from localStorage directly.
+// Persists only the user profile to localStorage (NOT the token).
+// The JWT lives in an httpOnly cookie managed by the browser — it cannot be
+// read by JavaScript, which eliminates the XSS token-theft vector.
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      token: null,
       isAuthenticated: false,
 
-      setAuth: (user, token) => {
-        set({ user, token, isAuthenticated: true })
+      setAuth: (user) => {
+        set({ user, isAuthenticated: true })
       },
 
       clearAuth: () => {
-        set({ user: null, token: null, isAuthenticated: false })
+        set({ user: null, isAuthenticated: false })
       },
 
       updateUser: (patch) =>
@@ -36,7 +34,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'ppms_user',
-      partialize: (state) => ({ user: state.user, token: state.token, isAuthenticated: state.isAuthenticated }),
+      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
     }
   )
 )

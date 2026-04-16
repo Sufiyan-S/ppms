@@ -4,6 +4,7 @@ import { shiftApi } from '../../api/shiftApi'
 import { userApi } from '../../api/userApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { DUOption, NozzleDetail, OpenShiftRequest, Shift } from '../../types/shift'
+import { ModalPortal } from '../../components/ModalPortal'
 
 /** Returns true if the given "HH:MM:SS" time window (possibly crossing midnight) contains `nowHHMM`. */
 function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boolean, nowHHMM: string): boolean {
@@ -130,6 +131,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
     : []
 
   return (
+    <ModalPortal>
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel w-full max-w-lg overflow-hidden">
 
@@ -379,5 +381,6 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
         </form>
       </div>
     </div>
+    </ModalPortal>
   )
 }

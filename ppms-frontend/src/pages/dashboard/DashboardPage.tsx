@@ -7,9 +7,11 @@ import { usePumpStore } from '../../store/usePumpStore'
 import { userApi } from '../../api/userApi'
 import { pumpApi } from '../../api/pumpApi'
 import NotificationBell from '../../components/NotificationBell'
+import { ToastContainer } from '../../components/Toast'
 import { canAccessPage } from '../../permissions/permissions'
 import { formatIstDateTime } from '../../utils/date'
 import { PasswordInput } from '../../components/PasswordInput'
+import { ModalPortal } from '../../components/ModalPortal'
 
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
@@ -311,7 +313,7 @@ export default function DashboardPage() {
       </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0" style={{ overflow: 'clip' }}>
 
         {/* ── Sidebar ── */}
         <nav className="ui-dashboard-sidebar print:hidden">
@@ -354,11 +356,16 @@ export default function DashboardPage() {
 
         {/* ── Main content ── */}
         <main className="flex-1 min-w-0 overflow-y-auto">
-          <Outlet />
+          <div key={location.pathname} className="ui-route-fade">
+            <Outlet />
+          </div>
         </main>
       </div>
 
+      <ToastContainer />
+
       {passwordModalOpen && (
+        <ModalPortal>
         <div className="ui-modal-backdrop" onClick={clearPasswordForm}>
           <div
             className="ui-modal-panel"
@@ -427,6 +434,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   )
