@@ -609,11 +609,11 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
                             {a.adjustmentType === 'RESET' ? 'Reset to 0' : 'Custom'}
                           </span>
                         </Td>
-                        <Td right><span className="font-mono text-slate-600">{a.previousReading.toFixed(3)}</span></Td>
-                        <Td right><span className="font-mono text-slate-700 font-medium">{a.newReading.toFixed(3)}</span></Td>
+                        <Td right><span className="font-mono text-slate-600">{a.previousReading.toFixed(2)}</span></Td>
+                        <Td right><span className="font-mono text-slate-700 font-medium">{a.newReading.toFixed(2)}</span></Td>
                         <Td right>
                           <span className={`font-medium ${deltaColor}`}>
-                            {a.delta > 0 ? '+' : ''}{a.delta.toFixed(3)}
+                            {a.delta > 0 ? '+' : ''}{a.delta.toFixed(2)}
                           </span>
                         </Td>
                         <Td><span className="text-xs text-slate-500">{a.reason}</span></Td>
@@ -682,7 +682,7 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
                         </Td>
                         <Td right>
                           <span className={`font-mono ${litresColor}`}>
-                            {entry.type === 'DIP_CHECK' && entry.litres > 0 ? '+' : ''}{entry.litres.toFixed(3)} L
+                            {entry.type === 'DIP_CHECK' && entry.litres > 0 ? '+' : ''}{entry.litres.toFixed(2)} L
                           </span>
                         </Td>
                         <Td right>

@@ -1192,7 +1192,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
                   <button type="button"
                     onClick={() => {
                       const price = priceForFuelType(fuelType)
-                      const initLiters = price && amount ? (parseFloat(amount) / price).toFixed(3) : ''
+                      const initLiters = price && amount ? (parseFloat(amount) / price).toFixed(2) : ''
                       setInputMode('liters')
                       setLiters(initLiters)
                     }}
@@ -1214,28 +1214,28 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
                     const litersCalc = price && amount ? (parseFloat(amount) / price) : null
                     return litersCalc ? (
                       <p className="text-xs text-slate-400 mt-1">
-                        {litersCalc.toFixed(3)} {unit} × ₹{price} = ₹{parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {litersCalc.toFixed(2)} {unit} × ₹{price} = ₹{parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     ) : null
                   })()}
                 </>
               ) : (
                 <>
-                  <input type="number" step="0.001" min="0.001" value={liters}
+                  <input type="number" step="0.01" min="0.01" value={liters}
                     onChange={(e) => {
                       const price = priceForFuelType(fuelType)
                       const amt = price && e.target.value ? (parseFloat(e.target.value) * price).toFixed(2) : ''
                       setLiters(e.target.value)
                       setAmount(amt)
                     }}
-                    placeholder="0.000"
+                    placeholder="0.00"
                     className="text-sm" />
                   {liters && amount && (() => {
                     const price = priceForFuelType(fuelType)
                     const unit = fuelType === 'CNG' ? 'kg' : 'L'
                     return price ? (
                       <p className="text-xs text-emerald-600 mt-1 font-medium">
-                        {parseFloat(liters).toFixed(3)} {unit} × ₹{price} = ₹{parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {parseFloat(liters).toFixed(2)} {unit} × ₹{price} = ₹{parseFloat(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     ) : null
                   })()}

@@ -319,7 +319,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="ui-modal-body space-y-5" style={{ maxHeight: 'calc(100vh - 15rem)' }}>
+          <div className="ui-modal-body space-y-5">
 
             {/* ── Step 1: End Readings ──────────────────────────────────── */}
             <Section label="1" title="End Meter Readings">
@@ -402,7 +402,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                 </div>
                                 {liters && price ? (
                                   <p className="text-xs text-slate-400 mt-0.5">
-                                    {liters.toFixed(3)} {unit} × ₹{price} =&nbsp;
+                                    {liters.toFixed(2)} {unit} × ₹{price} =&nbsp;
                                     <span className="font-semibold text-emerald-700">₹{fmt(e.amount)}</span>
                                   </p>
                                 ) : (
@@ -718,7 +718,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                         onClick={() => {
                                           const price = priceForFuelType(row.fuelType)
                                           const initLiters = price && row.amount
-                                            ? (parseFloat(row.amount) / price).toFixed(3)
+                                            ? (parseFloat(row.amount) / price).toFixed(2)
                                             : ''
                                           updateRowMulti(row.id, { inputMode: 'liters', liters: initLiters })
                                         }}
@@ -740,14 +740,14 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                         const litersCalc = price && row.amount ? (parseFloat(row.amount) / price) : null
                                         return litersCalc ? (
                                           <p className="text-xs text-slate-400 mt-1">
-                                            {litersCalc.toFixed(3)} {unit} × ₹{price} = ₹{parseFloat(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {litersCalc.toFixed(2)} {unit} × ₹{price} = ₹{parseFloat(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                           </p>
                                         ) : null
                                       })()}
                                     </>
                                   ) : (
                                     <>
-                                      <input type="number" step="0.001" min="0.001" value={row.liters}
+                                      <input type="number" step="0.01" min="0.01" value={row.liters}
                                         onChange={(e) => {
                                           const price = priceForFuelType(row.fuelType)
                                           const raw = parseFloat(e.target.value)
@@ -756,14 +756,14 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                             : ''
                                           updateRowMulti(row.id, { liters: e.target.value, amount: amt })
                                         }}
-                                        placeholder="0.000"
+                                        placeholder="0.00"
                                         className="ui-input-compact focus:outline-none focus:ring-1 focus:ring-orange-400" />
                                       {row.liters && row.amount && (() => {
                                         const price = priceForFuelType(row.fuelType)
                                         const unit = FUEL_UNIT[row.fuelType] ?? 'L'
                                         return price ? (
                                           <p className="text-xs text-emerald-600 mt-1 font-medium">
-                                            {parseFloat(row.liters).toFixed(3)} {unit} × ₹{price} = ₹{parseFloat(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {parseFloat(row.liters).toFixed(2)} {unit} × ₹{price} = ₹{parseFloat(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                           </p>
                                         ) : null
                                       })()}
@@ -942,19 +942,19 @@ function ReadingField({ label, startValue, soldUnits, pricePerUnit, value, onCha
             {' − '}
             <span className="font-medium">{startValue}</span>
             {' = '}
-            <span className="font-semibold text-emerald-600">{soldUnits.toFixed(3)} {unitLabel}</span>
+            <span className="font-semibold text-emerald-600">{soldUnits.toFixed(2)} {unitLabel}</span>
           </span>
         )}
         {soldUnits > 0 && (
           <span className="text-blue-500 font-medium">
-            {soldUnits.toFixed(3)} {unitLabel} × ₹{pricePerUnit}
+            {soldUnits.toFixed(2)} {unitLabel} × ₹{pricePerUnit}
             {saleValue != null && (
               <span className="text-emerald-600"> = ₹{saleValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             )}
           </span>
         )}
       </div>
-      <input type="number" step="0.001" min="0" required value={value}
+      <input type="number" step="0.01" min="0" required value={value}
         onChange={(e) => onChange(e.target.value)}
         className={`text-sm ${
           isInvalid

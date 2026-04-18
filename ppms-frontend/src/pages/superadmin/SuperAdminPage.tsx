@@ -53,7 +53,10 @@ export default function SuperAdminPage() {
   const queryClient = useQueryClient()
   const { user, clearAuth } = useAuthStore()
 
-  const [createdOwner, setCreatedOwner] = useState<(OnboardOwnerResponse & { password: string }) | null>(null)
+  const [createdOwner, setCreatedOwner] = useState<OnboardOwnerResponse | null>(null)
+  // Password is stored in a ref — not in React state — so it never appears in
+  // React DevTools. It is wiped immediately after the super admin copies it.
+  const createdPasswordRef = useRef<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
@@ -93,10 +96,14 @@ export default function SuperAdminPage() {
     queryFn: () => client.get('/super-admin/analytics').then(r => r.data),
   })
 
-  // Auto-clear the credential panel after 5 minutes to limit plaintext password exposure
+  // Auto-clear the credential panel after 2 minutes to limit plaintext password exposure
   useEffect(() => {
     if (!createdOwner) return
-    const timer = setTimeout(() => setCreatedOwner(null), 5 * 60 * 1000)
+    const timer = setTimeout(() => {
+      setCreatedOwner(null)
+      createdPasswordRef.current = null
+      setShowPassword(false)
+    }, 2 * 60 * 1000)
     return () => clearTimeout(timer)
   }, [createdOwner])
 
@@ -104,7 +111,8 @@ export default function SuperAdminPage() {
   const onboardMutation = useMutation({
     mutationFn: superAdminApi.onboardOwner,
     onSuccess: (data, variables) => {
-      setCreatedOwner({ ...data, password: variables.password })
+      createdPasswordRef.current = variables.password
+      setCreatedOwner(data)
       setShowPassword(false)
       setServerError(null)
       reset()
@@ -184,7 +192,7 @@ export default function SuperAdminPage() {
     onSuccess: (data) => {
       clearPasswordForm()
       clearAuth()
-      navigate('/login', { state: { message: data.message } })
+      navigate('/login', { state: { message: 'Password updated successfully. Please log in with your new password.' } })
     },
     onError: (err: any) => {
       setPasswordError(err?.response?.data?.message ?? 'Failed to update password.')
@@ -293,9 +301,13 @@ export default function SuperAdminPage() {
   }
 
   const handleCopyCredentials = () => {
-    if (!createdOwner) return
-    const text = `PPMS Login Credentials\nPhone: ${createdOwner.phoneNumber}\nPassword: ${createdOwner.password}\nPump: ${createdOwner.pumpName}`
+    if (!createdOwner || !createdPasswordRef.current) return
+    const text = `PPMS Login Credentials\nPhone: ${createdOwner.phoneNumber}\nPassword: ${createdPasswordRef.current}\nPump: ${createdOwner.pumpName}`
     navigator.clipboard.writeText(text)
+    // Wipe the password from memory immediately after copying — one-time copy only
+    createdPasswordRef.current = null
+    setShowPassword(false)
+    setCreatedOwner(null)
   }
 
   return (
@@ -408,7 +420,7 @@ export default function SuperAdminPage() {
                           </button>
                         </div>
                         <p className="text-sm font-semibold text-slate-800 font-mono break-all">
-                          {showPassword ? createdOwner.password : '••••••••'}
+                          {showPassword ? (createdPasswordRef.current ?? '••••••••') : '••••••••'}
                         </p>
                       </div>
                       <CredentialField label="Pump" value={createdOwner.pumpName} />
@@ -424,7 +436,7 @@ export default function SuperAdminPage() {
                     Copy
                   </button>
                   <button
-                    onClick={() => setCreatedOwner(null)}
+                    onClick={() => { setCreatedOwner(null); createdPasswordRef.current = null; setShowPassword(false) }}
                     className="ui-btn ui-btn-ghost text-xs"
                   >
                     ✕

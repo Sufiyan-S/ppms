@@ -516,6 +516,15 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
     onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to update DU limit'; setIncreaseError(msg); addToast(msg, 'error') },
   })
 
+  // Per-DU collapse state — all collapsed by default
+  const [expandedDuIds, setExpandedDuIds] = useState<Set<number>>(new Set())
+  const toggleDU = (duId: number) =>
+    setExpandedDuIds((prev) => {
+      const next = new Set(prev)
+      next.has(duId) ? next.delete(duId) : next.add(duId)
+      return next
+    })
+
   // Per-DU inline "Add Nozzle" state
   const [addNozzleDuId, setAddNozzleDuId] = useState<number | null>(null)
   const [inlineNozzleNumber, setInlineNozzleNumber] = useState('')
@@ -628,11 +637,16 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
         <div className="space-y-3">
           {allDUs.map((du) => {
             const isDUInactive = du.status === 'INACTIVE'
+            const isExpanded = expandedDuIds.has(du.id)
             return (
               <div key={du.id} className={`border rounded-xl bg-white transition-opacity ${isDUInactive ? 'border-slate-100 opacity-60' : 'border-slate-200'}`}>
-                {/* DU header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-t-xl border-b border-slate-100">
+                {/* DU header — click to expand/collapse */}
+                <div
+                  className={`flex items-center justify-between px-4 py-3 bg-slate-50 border-slate-100 cursor-pointer select-none ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'}`}
+                  onClick={() => toggleDU(du.id)}
+                >
                   <div className="flex items-center gap-2">
+                    <span className={`text-xs transition-transform duration-200 text-slate-400 ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                     <span className="text-xs font-bold text-slate-400">DU #{du.duNumber}</span>
                     <span className="text-sm font-bold text-slate-700">{du.name}</span>
                     {isDUInactive && (
@@ -641,25 +655,11 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400">{du.nozzles.filter((n) => n.status === 'ACTIVE').length} active nozzle(s)</span>
-                    {!isDUInactive && du.nozzles.length < 9 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddNozzleDuId(addNozzleDuId === du.id ? null : du.id)
-                          setInlineNozzleNumber(String(du.nozzles.length + 1))
-                          setInlineFuelType(''); setInlineReading(''); setInlineError(null)
-                        }}
-                        className="text-xs font-medium text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-2 py-0.5 rounded-md transition-colors"
-                      >
-                        {addNozzleDuId === du.id ? 'Cancel' : '+ Add Nozzle'}
-                      </button>
-                    )}
-                  </div>
+                  <span className="text-xs text-slate-400">{du.nozzles.filter((n) => n.status === 'ACTIVE').length} active nozzle(s)</span>
                 </div>
 
-                {/* Nozzle rows inside this DU */}
+                {/* Nozzle rows + inline add form — only when expanded */}
+                {isExpanded && (<>
                 <div className="divide-y divide-slate-50">
                   {du.nozzles.map((nozzle) => {
                     const isInactive = nozzle.status === 'INACTIVE'
@@ -876,7 +876,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                   </label>
                                   <input
                                     type="number"
-                                    step="0.001"
+                                    step="0.01"
                                     min="0"
                                     value={adjustReading}
                                     onChange={(e) => setAdjustReading(e.target.value)}
@@ -889,7 +889,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                 <div className="ui-reading-editor__section">
                                   <div className="ui-alert ui-alert-danger">
                                     <p className="text-xs text-red-700">
-                                      This will reset the meter on nozzle #{nozzle.nozzleNumber} to <strong>0.000</strong>. This action is logged and cannot be undone.
+                                      This will reset the meter on nozzle #{nozzle.nozzleNumber} to <strong>0.00</strong>. This action is logged and cannot be undone.
                                     </p>
                                   </div>
                                 </div>
@@ -950,7 +950,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                   <label className="ui-label">Litres Removed</label>
                                   <input
                                     type="number"
-                                    step="0.001"
+                                    step="0.01"
                                     min="0.001"
                                     value={dipLitres}
                                     onChange={(e) => setDipLitres(e.target.value)}
@@ -1009,6 +1009,22 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                   })}
                 </div>
 
+                {/* Add Nozzle action row */}
+                {!isDUInactive && du.nozzles.length < 9 && addNozzleDuId !== du.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddNozzleDuId(du.id)
+                      setInlineNozzleNumber(String(du.nozzles.length + 1))
+                      setInlineFuelType(''); setInlineReading(''); setInlineError(null)
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-400 hover:text-blue-600 hover:bg-blue-50 border-t border-dashed border-slate-200 transition-colors rounded-b-xl"
+                  >
+                    <span className="text-base leading-none">+</span>
+                    Add Nozzle
+                  </button>
+                )}
+
                 {/* Inline add-nozzle form */}
                 {addNozzleDuId === du.id && (
                   <div className="px-4 py-3 border-t border-blue-100 bg-blue-50/40 rounded-b-xl">
@@ -1036,24 +1052,34 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                       <div className="w-32">
                         <label className="ui-label mb-1 text-[10px]">Start Reading</label>
                         <input
-                          type="number" step="0.001" min="0"
+                          type="number" step="0.01" min="0"
                           value={inlineReading}
                           onChange={(e) => setInlineReading(e.target.value)}
                           placeholder="0"
                           className="text-xs w-full"
                         />
                       </div>
-                      <button
-                        type="submit"
-                        disabled={addNozzleMutation.isPending}
-                        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs"
-                      >
-                        {addNozzleMutation.isPending ? 'Adding…' : 'Add'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={addNozzleMutation.isPending}
+                          className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs"
+                        >
+                          {addNozzleMutation.isPending ? 'Adding…' : 'Add'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddNozzleDuId(null); setInlineError(null) }}
+                          className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-slate-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </form>
                     {inlineError && <p className="ui-error-text mt-2">{inlineError}</p>}
                   </div>
                 )}
+                </>)}
               </div>
             )
           })}
@@ -1175,7 +1201,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                     <label className="ui-label mb-1 text-[10px]">Start Reading</label>
                     <input
                       type="number"
-                      step="0.001"
+                      step="0.01"
                       min="0"
                       value={row.initialReading}
                       onChange={(e) => setDuNozzles((prev) => prev.map((r, i) => i === idx ? { ...r, initialReading: e.target.value } : r))}
@@ -1266,6 +1292,25 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
     } catch { /* error already set by onError */ }
   }
 
+  // Confirms prices are unchanged from yesterday — re-saves current prices for today
+  // so the stale alert is dismissed without requiring manual re-entry.
+  const [confirmingUnchanged, setConfirmingUnchanged] = useState(false)
+  const confirmUnchanged = async () => {
+    setError(null); setSuccess(false); setOpenShiftsWarning(null); setConfirmingUnchanged(true)
+    const tasks = currentPrices.map((p) =>
+      mutation.mutateAsync({ pumpId: pump.id, fuelType: p.fuelType as FuelType, pricePerUnit: parseFloat(p.pricePerUnit) })
+    )
+    try {
+      const results = await Promise.all(tasks)
+      queryClient.invalidateQueries({ queryKey: ['fuelPrices', pump.id] })
+      setSuccess(true); setTimeout(() => setSuccess(false), 3000)
+      addToast('Prices confirmed for today', 'success')
+      const warning = results.find((r) => r.openShiftsWarning)?.openShiftsWarning ?? null
+      setOpenShiftsWarning(warning)
+    } catch { /* error already set by onError */ }
+    finally { setConfirmingUnchanged(false) }
+  }
+
   const confirmDeviation = async () => {
     if (!deviationWarning) return
     setDeviationWarning(null); setError(null)
@@ -1299,18 +1344,26 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
         const lastUpdatedOn = currentPrices.reduce((latest, p) =>
           p.effectiveFrom > latest ? p.effectiveFrom : latest, currentPrices[0].effectiveFrom)
         return (
-          <div className="flex items-start gap-2.5 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
-            <span className="text-red-500 mt-0.5 text-base leading-none">⚠️</span>
-            <div>
-              <p className="text-sm font-semibold text-red-700">Fuel prices not updated today</p>
-              <p className="text-xs text-red-500 mt-0.5">
-                Last updated on{' '}
-                <span className="font-medium">
-                  {formatIstDate(lastUpdatedOn)}
-                </span>
-                . Please enter today's prices below.
-              </p>
+          <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+            <div className="flex items-start gap-2.5">
+              <span className="text-red-500 mt-0.5 text-base leading-none">⚠️</span>
+              <div>
+                <p className="text-sm font-semibold text-red-700">Fuel prices not updated today</p>
+                <p className="text-xs text-red-500 mt-0.5">
+                  Last updated on{' '}
+                  <span className="font-medium">{formatIstDate(lastUpdatedOn)}</span>
+                  . Enter new prices below, or confirm they are unchanged.
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={confirmUnchanged}
+              disabled={confirmingUnchanged || mutation.isPending}
+              className="shrink-0 text-xs font-medium text-red-700 border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+            >
+              {confirmingUnchanged ? 'Confirming…' : 'Same prices ✓'}
+            </button>
           </div>
         )
       })()}
@@ -2272,7 +2325,7 @@ function TanksContent({ pump }: { pump: PumpSummary }) {
                         <label className="ui-label">
                           Capacity ({FUEL_UNIT[tank.fuelType] ?? 'L'})
                         </label>
-                        <input type="number" step="0.001" min="1" value={editCapacity}
+                        <input type="number" step="0.01" min="1" value={editCapacity}
                           onChange={(e) => setEditCapacity(e.target.value)}
                           className="w-36 text-xs min-h-10"
                           placeholder="e.g. 25000" />
@@ -2352,7 +2405,7 @@ function TanksContent({ pump }: { pump: PumpSummary }) {
               <label className="ui-label">
                 Capacity ({FUEL_UNIT[createFuelType]}) <span className="text-red-500">*</span>
               </label>
-              <input required type="number" step="0.001" min="1" value={createCapacity}
+              <input required type="number" step="0.01" min="1" value={createCapacity}
                 onChange={(e) => setCreateCapacity(e.target.value)}
                 placeholder="e.g. 25000"
                 className="w-32 text-sm" />
@@ -2361,7 +2414,7 @@ function TanksContent({ pump }: { pump: PumpSummary }) {
               <label className="ui-label">
                 DIP Tolerance ({FUEL_UNIT[createFuelType]}) <span className="text-slate-400">(optional)</span>
               </label>
-              <input type="number" step="0.001" min="0" value={createDipTol}
+              <input type="number" step="0.01" min="0" value={createDipTol}
                 onChange={(e) => setCreateDipTol(e.target.value)}
                 placeholder="e.g. 50"
                 className="w-28 text-sm" />

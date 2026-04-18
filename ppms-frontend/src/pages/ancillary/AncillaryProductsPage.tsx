@@ -516,8 +516,8 @@ function AddProductDialog({
                   <label className="ui-label">Package Size *</label>
                   <input
                     type="number"
-                    min="0.001"
-                    step="0.001"
+                    min="0.01"
+                    step="0.01"
                     className="text-sm"
                     value={form.packageSize}
                     onChange={e => setForm(f => ({ ...f, packageSize: parseFloat(e.target.value) || 0 }))}

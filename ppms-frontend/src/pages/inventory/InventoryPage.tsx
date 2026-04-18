@@ -1174,8 +1174,8 @@ function RecordDeliveryModal({
                           </label>
                           <input
                             type="number"
-                            step="0.001"
-                            min="0.001"
+                            step="0.01"
+                            min="0.01"
                             value={row.qty}
                             onChange={e => updateRow(row.id, 'qty', e.target.value)}
                             placeholder="e.g. 5000"
@@ -1188,8 +1188,8 @@ function RecordDeliveryModal({
                           </label>
                           <input
                             type="number"
-                            step="0.0001"
-                            min="0.0001"
+                            step="0.01"
+                            min="0.01"
                             value={row.costPrice}
                             onChange={e => updateRow(row.id, 'costPrice', e.target.value)}
                             placeholder="e.g. 88.50"
@@ -1487,7 +1487,7 @@ function DipCheckModal({
             <input
               required
               type="number"
-              step="0.001"
+              step="0.01"
               min="0"
               value={measured}
               onChange={e => setMeasured(e.target.value)}

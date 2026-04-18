@@ -19,7 +19,7 @@ function fmtAmt(n: number) {
 }
 
 function fmtQty(n: number) {
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' L'
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' L'
 }
 
 function todayIso()     { return localDateInputValue() }
@@ -658,7 +658,7 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                         <td className="px-4 py-2 text-slate-500">{c.sourceType.replace(/_/g, ' ')}</td>
                         <td className="px-4 py-2 text-slate-500">{c.shiftName ?? '—'}</td>
                         <td className="px-4 py-2 text-right text-slate-700">
-                          {c.quantityConsumed.toLocaleString('en-IN', { minimumFractionDigits: 3 })}
+                          {c.quantityConsumed.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-2 text-right text-slate-600">₹{c.costPricePerUnit}</td>
                         <td className="px-4 py-2 text-right font-medium text-slate-700">{fmtAmt(c.totalCost)}</td>
@@ -717,7 +717,7 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                         </td>
                         <td className="px-3 py-1.5 text-slate-500">{c.sourceType.replace(/_/g, ' ')}</td>
                         <td className="px-3 py-1.5 text-slate-500">{c.shiftName ?? '—'}</td>
-                        <td className="px-3 py-1.5 text-right text-slate-700">{c.quantityConsumed.toLocaleString('en-IN', { minimumFractionDigits: 3 })}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-700">{c.quantityConsumed.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td className="px-3 py-1.5 text-right text-slate-600">₹{c.costPricePerUnit}</td>
                         <td className="px-3 py-1.5 text-right font-medium text-slate-700">{fmtAmt(c.totalCost)}</td>
                       </tr>

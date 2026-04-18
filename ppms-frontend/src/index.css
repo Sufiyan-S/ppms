@@ -1060,7 +1060,7 @@ a:focus-visible {
 
 .ui-modal-panel {
   width: min(100%, 640px);
-  max-height: 50vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1160,6 +1160,7 @@ a:focus-visible {
 .ui-modal-body {
   padding: 1.25rem 1.35rem;
   overflow-y: auto;
+  overscroll-behavior: contain; /* prevents scroll from chaining to the page when body reaches its limit */
   flex: 1;
   min-height: 0; /* critical: lets flex child shrink below its content size so the body actually scrolls */
 }

@@ -333,7 +333,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                       Nozzle #{nozzle.nozzleNumber} — {FUEL_ABBR[nozzle.fuelType] ?? nozzle.fuelType} ({FUEL_UNIT[nozzle.fuelType] ?? 'L'})
                     </p>
                     <p className="text-base font-semibold text-slate-800">
-                      {nozzle.lastReading.toLocaleString('en-IN', { minimumFractionDigits: 3 })}
+                      {nozzle.lastReading.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                 ))}
