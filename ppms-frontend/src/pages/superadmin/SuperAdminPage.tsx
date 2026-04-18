@@ -189,7 +189,7 @@ export default function SuperAdminPage() {
   const changePasswordMutation = useMutation({
     mutationFn: ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) =>
       authApi.changePassword(currentPassword, newPassword),
-    onSuccess: (data) => {
+    onSuccess: () => {
       clearPasswordForm()
       clearAuth()
       navigate('/login', { state: { message: 'Password updated successfully. Please log in with your new password.' } })
