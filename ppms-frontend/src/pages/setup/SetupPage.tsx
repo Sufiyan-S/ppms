@@ -1360,9 +1360,12 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
               type="button"
               onClick={confirmUnchanged}
               disabled={confirmingUnchanged || mutation.isPending}
-              className="shrink-0 text-xs font-medium text-red-700 border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+              className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 px-3 py-1.5 rounded-lg shadow-sm transition-colors disabled:opacity-60 whitespace-nowrap"
             >
-              {confirmingUnchanged ? 'Confirming…' : 'Same prices ✓'}
+              {confirmingUnchanged
+                ? <><Spinner className="w-3.5 h-3.5" /><span>Confirming…</span></>
+                : <><span>Same prices</span><span className="text-emerald-500">✓</span></>
+              }
             </button>
           </div>
         )

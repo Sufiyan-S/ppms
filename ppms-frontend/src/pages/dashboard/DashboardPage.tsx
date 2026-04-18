@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { authApi } from '../../api/authApi'
@@ -41,9 +41,10 @@ export default function DashboardPage() {
   const location  = useLocation()
   const { user, clearAuth, updateUser } = useAuthStore()
 
-  const { data: pumps = [] } = useQuery({ queryKey: ['myPumps'], queryFn: pumpApi.getMyPumps })
-  const sortedPumps = [...pumps].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  const { data: pumps = [] } = useQuery({ queryKey: ['myPumps'], queryFn: pumpApi.getMyPumps, staleTime: 5 * 60_000 })
+  const sortedPumps = useMemo(
+    () => [...pumps].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    [pumps]
   )
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
 

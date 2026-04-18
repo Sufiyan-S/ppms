@@ -35,6 +35,7 @@ const queryClient = new QueryClient({
         return failureCount < 1
       },
       staleTime: 30_000,
+      gcTime: 10 * 60_000, // keep cached data for 10 min after component unmounts
     },
   },
 })
