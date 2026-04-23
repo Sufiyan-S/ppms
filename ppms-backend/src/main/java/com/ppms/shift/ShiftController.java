@@ -66,6 +66,32 @@ public class ShiftController {
     }
 
     /**
+     * POST /api/pumps/{pumpId}/shifts/backfill
+     * Enters a historical closed shift for a pump. Admin and Owner only.
+     *
+     * Used when a pump is onboarded and the owner wants to enter past shift data.
+     * The resulting shift is stored as CLOSED_BALANCED or CLOSED_DISCREPANCY_PENDING
+     * with isBackfilled=true. The shift date must be within the last 365 days.
+     *
+     * Prerequisite: historical tanker deliveries must be recorded in Inventory first,
+     * as the FIFO deduction runs exactly as it does during a normal shift close.
+     */
+    @PostMapping("/backfill")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    public ResponseEntity<ShiftResponse> backfillShift(
+            @PathVariable Long pumpId,
+            @Valid @RequestBody BackfillShiftRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        ShiftResponse response = shiftService.backfillShift(pumpId, request, currentUser);
+        auditService.log(response.getPumpId(), AuditAction.SHIFT_BACKFILLED,
+                "Shift", response.getId().toString(),
+                "Historical shift backfilled for " + response.getShiftDate() + " (" + response.getShiftWindow() +
+                ") by " + currentUser.getFullName(),
+                currentUser);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /**
      * POST /api/pumps/{pumpId}/shifts/open
      * Opens a new shift. The authenticated user becomes the "opened by" user.
      */

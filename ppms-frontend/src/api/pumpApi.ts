@@ -8,7 +8,14 @@ export interface PumpSummary {
   maxDuCount: number
   ownerId: number
   createdAt: string
+  discrepancyEscalationThreshold: number | null
+  expenseApprovalThreshold: number | null
   dus: DUOption[]
+}
+
+export interface UpdatePumpSettingsRequest {
+  discrepancyEscalationThreshold?: number | null
+  expenseApprovalThreshold?: number | null
 }
 
 export interface CreatePumpRequest {
@@ -154,6 +161,10 @@ export const pumpApi = {
   /** Increases the maximum number of DUs allowed on a pump. */
   updateMaxDuCount: (pumpId: number, maxDuCount: number) =>
     client.patch<PumpSummary>(`/pumps/${pumpId}/max-dus`, { maxDuCount }).then((r) => r.data),
+
+  /** Updates configurable pump thresholds (discrepancy escalation, expense approval). */
+  updatePumpSettings: (pumpId: number, req: UpdatePumpSettingsRequest) =>
+    client.patch<PumpSummary>(`/pumps/${pumpId}/settings`, req).then((r) => r.data),
 
   // ── Tanks ──────────────────────────────────────────────────────────────────
 

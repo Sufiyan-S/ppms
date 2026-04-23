@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Fuel, BarChart2, ShieldCheck, AlertTriangle } from 'lucide-react'
 import { authApi } from '../../api/authApi'
 import { useAuthStore } from '../../store/authStore'
 import type { AuthUser } from '../../types/auth'
@@ -58,7 +59,7 @@ export default function LoginPage() {
       <div className="ui-auth-frame">
         <section className="ui-auth-hero">
           <div className="ui-auth-badge">
-            <span>⛽</span>
+            <Fuel size={13} strokeWidth={2.2} />
             <span>Operations Console</span>
           </div>
           <div className="space-y-4">
@@ -79,14 +80,18 @@ export default function LoginPage() {
           </div>
           <div className="ui-auth-points">
             <div className="ui-auth-point">
-              <span className="ui-auth-point-icon">📊</span>
+              <span className="ui-auth-point-icon">
+                <BarChart2 size={17} strokeWidth={2} className="text-blue-200" />
+              </span>
               <div>
                 <p className="ui-auth-point-title">Daily control</p>
                 <p className="ui-auth-point-copy">Keep dips, deliveries, and sales aligned across the site.</p>
               </div>
             </div>
             <div className="ui-auth-point">
-              <span className="ui-auth-point-icon">🛡️</span>
+              <span className="ui-auth-point-icon">
+                <ShieldCheck size={17} strokeWidth={2} className="text-blue-200" />
+              </span>
               <div>
                 <p className="ui-auth-point-title">Secure access</p>
                 <p className="ui-auth-point-copy">Role-based workflows for operators, managers, owners, and admins.</p>
@@ -104,7 +109,7 @@ export default function LoginPage() {
 
           {sessionExpired && (
             <div className="ui-alert ui-alert-warning flex items-start gap-2.5">
-              <span className="text-amber-500 text-base mt-0.5">⚠</span>
+              <AlertTriangle size={16} strokeWidth={2} className="text-amber-500 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-amber-800">Session expired</p>
                 <p className="text-xs text-amber-600 mt-0.5">You were signed out because your session timed out. Please sign in again.</p>

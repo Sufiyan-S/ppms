@@ -272,6 +272,50 @@ public class PumpController {
         return ResponseEntity.ok(toPumpResponse(pump));
     }
 
+    /**
+     * PATCH /api/pumps/{pumpId}/settings
+     * Updates configurable pump thresholds (discrepancy escalation, expense approval).
+     * Owner/Admin only.
+     */
+    @PatchMapping("/{pumpId}/settings")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<PumpResponse> updatePumpSettings(
+            @PathVariable Long pumpId,
+            @RequestBody UpdatePumpSettingsRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        PumpLocation pump = pumpLocationRepository.findById(pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+
+        if (request.discrepancyEscalationThreshold() != null) {
+            if (request.discrepancyEscalationThreshold().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("Discrepancy escalation threshold cannot be negative.");
+            }
+            pump.setDiscrepancyEscalationThreshold(
+                    request.discrepancyEscalationThreshold().compareTo(BigDecimal.ZERO) == 0
+                    ? null
+                    : request.discrepancyEscalationThreshold().setScale(2, RoundingMode.HALF_UP));
+        }
+
+        if (request.expenseApprovalThreshold() != null) {
+            if (request.expenseApprovalThreshold().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("Expense approval threshold cannot be negative.");
+            }
+            pump.setExpenseApprovalThreshold(
+                    request.expenseApprovalThreshold().compareTo(BigDecimal.ZERO) == 0
+                    ? null
+                    : request.expenseApprovalThreshold().setScale(2, RoundingMode.HALF_UP));
+        }
+
+        pumpLocationRepository.save(pump);
+        log.info("Pump {} settings updated by user={}: escalationThreshold={}, expenseApprovalThreshold={}",
+                pumpId, currentUser.getId(),
+                pump.getDiscrepancyEscalationThreshold(), pump.getExpenseApprovalThreshold());
+
+        return ResponseEntity.ok(toPumpResponse(pump));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // SHIFT DEFINITIONS
     // ─────────────────────────────────────────────────────────────────────────
@@ -284,6 +328,18 @@ public class PumpController {
     @GetMapping("/{pumpId}/shift-definitions/active")
     public ResponseEntity<List<ShiftDefinitionResponse>> getActiveShiftDefinitions(@PathVariable Long pumpId) {
         return ResponseEntity.ok(shiftDefinitionService.getActiveForPump(pumpId));
+    }
+
+    /**
+     * GET /api/pumps/{pumpId}/shift-definitions/for-date?date=YYYY-MM-DD
+     * Returns the shift definitions that were active for a pump on a given historical date.
+     * Used by the backfill modal to populate the shift window selector.
+     */
+    @GetMapping("/{pumpId}/shift-definitions/for-date")
+    public ResponseEntity<List<ShiftDefinitionResponse>> getShiftDefinitionsForDate(
+            @PathVariable Long pumpId,
+            @RequestParam LocalDate date) {
+        return ResponseEntity.ok(shiftDefinitionService.getForPumpOnDate(pumpId, date));
     }
 
     @PostMapping("/{pumpId}/shift-definitions")
@@ -350,6 +406,8 @@ public class PumpController {
                 .maxDuCount(pump.getMaxDuCount())
                 .ownerId(pump.getOwnerId())
                 .createdAt(pump.getCreatedAt())
+                .discrepancyEscalationThreshold(pump.getDiscrepancyEscalationThreshold())
+                .expenseApprovalThreshold(pump.getExpenseApprovalThreshold())
                 .dus(activeDUs)
                 .build();
     }

@@ -1,6 +1,11 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
+import {
+  Fuel, AlertTriangle, Zap, IndianRupee, Gauge,
+  Database, Settings, BarChart2, ReceiptText, Landmark,
+  type LucideIcon,
+} from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { pumpApi } from '../../api/pumpApi'
 import { shiftApi } from '../../api/shiftApi'
@@ -173,7 +178,7 @@ export default function OverviewPage() {
       <div className="ui-dashboard-hero">
         <div className="ui-dashboard-hero-copy">
           <div className="ui-dashboard-chip">
-            <span>⛽</span>
+            <Fuel size={11} strokeWidth={2.2} />
             <span>Live operations snapshot</span>
           </div>
           <div>
@@ -202,7 +207,7 @@ export default function OverviewPage() {
       {priceIsStale && selectedPump && (
         <Link to="/dashboard/setup" className="block">
         <div className="ui-alert ui-alert-danger flex items-center gap-3 hover:bg-red-100 transition-colors">
-            <span className="text-red-500 text-xl leading-none flex-shrink-0">⚠️</span>
+            <AlertTriangle size={18} className="text-red-500 flex-shrink-0" strokeWidth={2} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-red-700">Fuel prices not updated today</p>
               <p className="text-xs text-red-500 mt-0.5 truncate">
@@ -230,7 +235,7 @@ export default function OverviewPage() {
               value={activeCount}
               sub={activeCount === 0 ? 'No open shifts' : `at ${selectedPump?.name ?? 'selected pump'}`}
               color="bg-emerald-500"
-              icon="⚡"
+              icon={Zap}
             />
             <StatCard
               label="Today's Revenue"
@@ -238,14 +243,14 @@ export default function OverviewPage() {
               format={fmtAmt}
               sub={`${closedShiftCountToday} closed shift${closedShiftCountToday !== 1 ? 's' : ''} today`}
               color="bg-blue-500"
-              icon="₹"
+              icon={IndianRupee}
             />
             <StatCard
               label="Low Stock Tanks"
               value={lowStockTanks.length}
               sub={lowStockTanks.length === 0 ? 'All tanks OK' : 'Need attention'}
               color={lowStockTanks.length > 0 ? 'bg-red-500' : 'bg-slate-400'}
-              icon="🛢"
+              icon={Gauge}
               alert={lowStockTanks.length > 0}
             />
           </>
@@ -455,30 +460,48 @@ export default function OverviewPage() {
 
       {/* ── Module navigation cards ── */}
       <Reveal delay={335}>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <ModuleCard
           to="/dashboard/shifts"
-          icon="⚡"
+          icon={Zap}
           title="Shifts"
           description="Open / close operator shifts, record meter readings and payment collection."
           color="from-emerald-500 to-emerald-600"
-          active
         />
         <ModuleCard
           to="/dashboard/inventory"
-          icon="🛢"
+          icon={Database}
           title="Inventory"
           description="Log tanker deliveries, track FIFO stock levels, and record DIP checks."
           color="from-blue-500 to-blue-600"
-          active
+        />
+        <ModuleCard
+          to="/dashboard/balance-sheets"
+          icon={BarChart2}
+          title="Balance Sheets"
+          description="View daily and shift-level P&L, revenue, COGS, and net profit."
+          color="from-violet-500 to-violet-600"
+        />
+        <ModuleCard
+          to="/dashboard/expenses"
+          icon={ReceiptText}
+          title="Expenses"
+          description="Track operational expenses and analyse cost trends by category."
+          color="from-orange-500 to-orange-600"
+        />
+        <ModuleCard
+          to="/dashboard/settlements"
+          icon={Landmark}
+          title="Settlements"
+          description="Manage payment settlements and track partial payment collections."
+          color="from-teal-500 to-teal-600"
         />
         <ModuleCard
           to="/dashboard/setup"
-          icon="⚙️"
+          icon={Settings}
           title="Setup"
           description="Configure pump locations, nozzles, fuel prices, staff, and credit clients."
           color="from-slate-500 to-slate-600"
-          active
         />
       </div>
       </Reveal>
@@ -489,13 +512,13 @@ export default function OverviewPage() {
 // ── Stat card ──────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, color, icon, alert, format,
+  label, value, sub, color, icon: Icon, alert, format,
 }: {
   label: string
   value: number
   sub: string
   color: string
-  icon: string
+  icon: LucideIcon
   alert?: boolean
   format?: (n: number) => string
 }) {
@@ -506,8 +529,8 @@ function StatCard({
     <div className={`ui-dashboard-stat ${alert ? 'ui-dashboard-stat--alert' : ''}`}>
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</span>
-        <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center text-white text-sm shadow-sm`}>
-          {icon}
+        <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center text-white shadow-sm`}>
+          <Icon size={18} strokeWidth={2} />
         </div>
       </div>
       <p className={`text-3xl font-bold tracking-tight tabular-nums ${alert ? 'text-red-600' : 'text-slate-900'}`}>
@@ -565,44 +588,29 @@ function ShiftStatusRow({ shift }: { shift: Shift }) {
 // ── Module navigation card ─────────────────────────────────────────────────────
 
 function ModuleCard({
-  to, icon, title, description, color, active,
+  to, icon: Icon, title, description, color,
 }: {
   to: string
-  icon: string
+  icon: LucideIcon
   title: string
   description: string
   color: string
-  active?: boolean
 }) {
-  const inner = (
-    <div className={`ui-dashboard-module overflow-hidden transition-all duration-200 ${
-      active
-        ? 'border-slate-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer'
-        : 'border-slate-100 opacity-50 cursor-not-allowed'
-    }`}>
-      <div className={`bg-gradient-to-r ${color} px-4 py-3.5 flex items-center gap-3`}>
-        <span className="text-xl text-white">{icon}</span>
-        <div className="flex flex-col">
+  return (
+    <Link to={to}>
+      <div className="ui-dashboard-module overflow-hidden transition-all duration-200 border-slate-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer">
+        <div className={`bg-gradient-to-r ${color} px-4 py-3.5 flex items-center gap-3`}>
+          <Icon size={18} className="text-white flex-shrink-0" strokeWidth={2} />
           <span className="text-sm font-bold text-white">{title}</span>
-          <span className="text-[11px] uppercase tracking-[0.14em] text-white/70">Module</span>
         </div>
-        {!active && (
-          <span className="ml-auto text-xs text-white/70 bg-white/20 px-2 py-0.5 rounded-full">
-            Coming soon
-          </span>
-        )}
-      </div>
-      <div className="bg-white px-4 py-3.5">
-        <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
-        {active && (
+        <div className="bg-white px-4 py-3.5">
+          <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
           <div className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-600">
             <span>Open module</span>
             <span>→</span>
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </Link>
   )
-
-  return active ? <Link to={to}>{inner}</Link> : <div>{inner}</div>
 }

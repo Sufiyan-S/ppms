@@ -122,6 +122,25 @@ export interface ExpenseSummary {
   }>
 }
 
+export interface SettlementLine {
+  id: number
+  paymentType: 'UPI' | 'CARD' | 'FLEET_CARD'
+  amountReceived: number
+  notes: string | null
+  recordedByUserName: string
+  createdAt: string
+}
+
+export interface SettlementSummary {
+  upiSettledOnDate: number
+  cardSettledOnDate: number
+  fleetCardSettledOnDate: number
+  walletUpiPending: number
+  walletCardPending: number
+  walletFleetCardPending: number
+  settlementsOnDate: SettlementLine[]
+}
+
 export interface BalanceSheetDetail {
   id: number
   pumpId: number
@@ -157,6 +176,14 @@ export interface BalanceSheetDetail {
   productSales: ProductSalesSummary | null
   /** Approved operational expenses for the report date. Only present for DAY reports. */
   expenses: ExpenseSummary | null
+  /**
+   * Settlement status for UPI, Card, and Fleet Card on the report date.
+   * Shows amounts settled (arrived in bank) on that date and the cumulative wallet balance.
+   * Only present for DAY reports.
+   */
+  settlementSummary: SettlementSummary | null
+  /** Distinct shift definition names included in this DAY report. Null for SHIFT reports. */
+  includedShiftNames: string[] | null
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────

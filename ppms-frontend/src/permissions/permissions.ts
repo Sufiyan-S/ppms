@@ -29,6 +29,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   balanceSheets:   ['OWNER', 'ADMIN', 'MANAGER'],
   reports:         ['OWNER', 'ADMIN', 'MANAGER'],
   setup:           ['OWNER', 'ADMIN'],
+  settlements:     ['OWNER', 'ADMIN', 'MANAGER'],
 }
 
 // ─── Action-Level Permissions ───────────────────────────────────────────────
@@ -86,6 +87,10 @@ export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
 
   // Balance Sheets & Reports
   'balanceSheet:delete':           ['OWNER', 'ADMIN'],
+
+  // Payment Settlements
+  'settlement:write':              ['OWNER', 'ADMIN'],
+  'settlement:configure':          ['OWNER', 'ADMIN'],
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

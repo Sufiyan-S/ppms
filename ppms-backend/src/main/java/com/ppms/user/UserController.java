@@ -200,10 +200,6 @@ public class UserController {
         }
 
         if (status == UserStatus.INACTIVE) {
-            if (shiftRepository.hasOpenShift(userId)) {
-                throw new BusinessException(
-                        user.getFullName() + " has an open shift. Close the shift before deactivating this operator (Business Rule 45).");
-            }
             if (shiftRepository.hasUnresolvedDiscrepancy(userId)) {
                 throw new BusinessException(
                         user.getFullName() + " has unresolved shift discrepancies. Resolve all pending discrepancies before deactivating (Business Rule 30).");

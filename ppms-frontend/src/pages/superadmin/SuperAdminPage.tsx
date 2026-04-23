@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCountUp } from '../../hooks/useCountUp'
+import { Fuel, Check, X, Eye, EyeOff, Users, Plus } from 'lucide-react'
 import { PasswordInput } from '../../components/PasswordInput'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -316,8 +317,8 @@ export default function SuperAdminPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-500/20 border border-indigo-400/30 rounded-xl flex items-center justify-center text-2xl select-none">
-            ⛽
+          <div className="w-10 h-10 bg-indigo-500/20 border border-indigo-400/30 rounded-xl flex items-center justify-center select-none">
+            <Fuel size={20} strokeWidth={1.8} className="text-indigo-300" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -398,7 +399,7 @@ export default function SuperAdminPage() {
             <div className="mb-6 ui-alert ui-alert-success p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
-                  <span className="text-green-600 text-xl mt-0.5">✓</span>
+                  <Check size={18} strokeWidth={2.5} className="text-green-600 mt-0.5 shrink-0" />
                   <div>
                     <p className="text-sm font-semibold text-green-800 mb-1">
                       Owner account created — share these login details
@@ -416,7 +417,7 @@ export default function SuperAdminPage() {
                             className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-green-600 hover:text-green-800"
                             title={showPassword ? 'Hide password' : 'Reveal password'}
                           >
-                            {showPassword ? '🙈 Hide' : '👁 Show'}
+                            {showPassword ? <span className="inline-flex items-center gap-1"><EyeOff size={12} strokeWidth={2} />Hide</span> : <span className="inline-flex items-center gap-1"><Eye size={12} strokeWidth={2} />Show</span>}
                           </button>
                         </div>
                         <p className="text-sm font-semibold text-slate-800 font-mono break-all">
@@ -437,9 +438,9 @@ export default function SuperAdminPage() {
                   </button>
                   <button
                     onClick={() => { setCreatedOwner(null); createdPasswordRef.current = null; setShowPassword(false) }}
-                    className="ui-btn ui-btn-ghost text-xs"
+                    className="ui-btn ui-btn-ghost p-1"
                   >
-                    ✕
+                    <X size={14} strokeWidth={2} />
                   </button>
                 </div>
               </div>
@@ -609,7 +610,7 @@ export default function SuperAdminPage() {
                                       {/* Pump count summary */}
                                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                         <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
-                                          ⛽ {owner.pumps.length} pump{owner.pumps.length !== 1 ? 's' : ''}
+                                          <Fuel size={11} strokeWidth={2} />{owner.pumps.length} pump{owner.pumps.length !== 1 ? 's' : ''}
                                           {owner.pumps.length > enabledPumps && (
                                             <span className="text-red-400">· {owner.pumps.length - enabledPumps} disabled</span>
                                           )}
@@ -626,7 +627,7 @@ export default function SuperAdminPage() {
                           : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50'
                       }`}
                     >
-                                      {isPumpFormOpen ? '✕ Cancel' : '+ Add Pump'}
+                                      {isPumpFormOpen ? <span className="inline-flex items-center gap-1"><X size={12} strokeWidth={2} />Cancel</span> : <span className="inline-flex items-center gap-1"><Plus size={12} strokeWidth={2.5} />Add Pump</span>}
                                     </button>
                                   </div>
                                 </div>
@@ -642,7 +643,7 @@ export default function SuperAdminPage() {
                                         }`}>
                                           <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-start gap-2 text-xs min-w-0">
-                                              <span className="text-slate-400 mt-0.5 flex-shrink-0">⛽</span>
+                                              <Fuel size={12} strokeWidth={1.8} className="text-slate-400 mt-0.5 flex-shrink-0" />
                                               <div className="min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                   <span className={`font-semibold ${!pump.enabled ? 'line-through text-slate-400' : 'text-slate-700'}`}>
@@ -657,7 +658,7 @@ export default function SuperAdminPage() {
                                                 <p className="text-slate-400 mt-0.5">{pump.pumpAddress}</p>
                                                 {/* Staff count badge */}
                                                 <span className="inline-flex items-center gap-1 mt-1 text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                                                  👤 {pump.staffCount} staff
+                                                  <Users size={11} strokeWidth={2} />{pump.staffCount} staff
                                                 </span>
                                               </div>
                                             </div>
@@ -670,7 +671,7 @@ export default function SuperAdminPage() {
                                                     : 'border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50'
                                                 }`}
                                               >
-                                                {isEditOpen ? '✕' : 'Edit'}
+                                                {isEditOpen ? <X size={12} strokeWidth={2} /> : 'Edit'}
                                               </button>
                                               <button
                                                 onClick={() => togglePumpEnabled(pump)}

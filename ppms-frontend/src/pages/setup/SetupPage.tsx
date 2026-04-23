@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ChevronDown, ChevronRight, Plus, AlertTriangle, Check, X,
+  Gauge, Database, IndianRupee, Users, UserCheck, Clock,
+  Wrench, Ruler, CircleOff, Settings, CalendarDays, RotateCcw,
+} from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { userApi } from '../../api/userApi'
 import { shiftPlanApi } from '../../api/shiftPlanApi'
@@ -66,12 +71,12 @@ export default function SetupPage() {
             className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0">
-                +
-              </span>
+              <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center shrink-0">
+                <Plus size={12} strokeWidth={3} className="text-white" />
+              </div>
               <span className="text-sm font-semibold text-slate-700">Create a New Pump Location</span>
             </div>
-            <span className="text-slate-400 text-sm">{createOpen ? '▲' : '▼'}</span>
+            <ChevronDown size={14} strokeWidth={2} className={`text-slate-400 transition-transform duration-200 ${createOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {createOpen && (
@@ -104,7 +109,7 @@ export default function SetupPage() {
 
 // ── Pump management accordion panel ──────────────────────────────────────────
 
-type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'clients' | 'shifts'
+type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'clients' | 'shifts' | 'settings'
 
 function PumpManagementPanel({
   pump,
@@ -167,7 +172,7 @@ function PumpManagementPanel({
           sectionKey="nozzles"
           open={openSection === 'nozzles'}
           onToggle={() => toggle('nozzles')}
-          icon="⚙️"
+          icon={<div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center shrink-0"><Gauge size={14} strokeWidth={2} className="text-slate-600" /></div>}
           title="Dispensary Units"
           summary={`${pump.dus.length} of ${pump.maxDuCount} DUs configured`}
           badgeColor="bg-slate-100 text-slate-600"
@@ -180,7 +185,7 @@ function PumpManagementPanel({
           sectionKey="tanks"
           open={openSection === 'tanks'}
           onToggle={() => toggle('tanks')}
-          icon="🛢"
+          icon={<div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0"><Database size={14} strokeWidth={2} className="text-blue-600" /></div>}
           title="Underground Tanks"
           summary={pump.dus.length > 0 ? 'Tap to configure capacity' : 'Add a DU first'}
           badgeColor="bg-blue-50 text-blue-700"
@@ -193,7 +198,7 @@ function PumpManagementPanel({
           sectionKey="prices"
           open={openSection === 'prices'}
           onToggle={() => toggle('prices')}
-          icon="💰"
+          icon={<div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0"><IndianRupee size={14} strokeWidth={2} className="text-emerald-600" /></div>}
           title="Fuel Prices"
           summary={priceSummary}
           badgeColor="bg-emerald-50 text-emerald-700"
@@ -206,7 +211,7 @@ function PumpManagementPanel({
           sectionKey="staff"
           open={openSection === 'staff'}
           onToggle={() => toggle('staff')}
-          icon="👥"
+          icon={<div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0"><Users size={14} strokeWidth={2} className="text-indigo-600" /></div>}
           title="Staff"
           summary={staff.length > 0 ? `${staff.length} member${staff.length !== 1 ? 's' : ''}` : 'None added'}
           badgeColor="bg-blue-50 text-blue-700"
@@ -219,7 +224,7 @@ function PumpManagementPanel({
           sectionKey="clients"
           open={openSection === 'clients'}
           onToggle={() => toggle('clients')}
-          icon="🤝"
+          icon={<div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0"><UserCheck size={14} strokeWidth={2} className="text-orange-600" /></div>}
           title="Credit Clients"
           summary={rootClientCount > 0 ? `${rootClientCount} client${rootClientCount !== 1 ? 's' : ''}` : 'None added'}
           badgeColor="bg-orange-50 text-orange-700"
@@ -232,7 +237,7 @@ function PumpManagementPanel({
           sectionKey="shifts"
           open={openSection === 'shifts'}
           onToggle={() => toggle('shifts')}
-          icon="🕐"
+          icon={<div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0"><Clock size={14} strokeWidth={2} className="text-violet-600" /></div>}
           title="Shift Definitions"
           summary={(() => {
             const groupCount = new Set(shiftDefs.map(d => `${d.effectiveFrom}|${d.effectiveTo ?? 'open'}`)).size
@@ -241,6 +246,19 @@ function PumpManagementPanel({
           badgeColor="bg-violet-50 text-violet-700"
         >
           <ShiftDefinitionsContent pumpId={pump.id} />
+        </AccordionSection>
+
+        {/* ── Pump Settings ── */}
+        <AccordionSection
+          sectionKey="settings"
+          open={openSection === 'settings'}
+          onToggle={() => toggle('settings')}
+          icon={<div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0"><Settings size={14} strokeWidth={2} className="text-amber-600" /></div>}
+          title="Thresholds & Rules"
+          summary={pump.discrepancyEscalationThreshold ? `Escalation: ₹${pump.discrepancyEscalationThreshold}` : 'Not configured'}
+          badgeColor="bg-amber-50 text-amber-700"
+        >
+          <PumpSettingsContent pump={pump} onUpdated={onPumpUpdated} />
         </AccordionSection>
 
       </div>
@@ -262,7 +280,7 @@ function AccordionSection({
   sectionKey: SectionKey
   open: boolean
   onToggle: () => void
-  icon: string
+  icon: React.ReactNode
   title: string
   summary: string
   badgeColor: string
@@ -276,15 +294,13 @@ function AccordionSection({
         className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors text-left"
       >
         <div className="flex items-center gap-3">
-          <span className="text-base">{icon}</span>
+          {icon}
           <span className="text-sm font-semibold text-slate-700">{title}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor}`}>
             {summary}
           </span>
         </div>
-        <span className={`text-slate-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>
-          ▼
-        </span>
+        <ChevronDown size={14} strokeWidth={2} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -646,7 +662,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                   onClick={() => toggleDU(du.id)}
                 >
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs transition-transform duration-200 text-slate-400 ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                    <ChevronRight size={14} strokeWidth={2} className={`transition-transform duration-200 text-slate-400 ${isExpanded ? 'rotate-90' : ''}`} />
                     <span className="text-xs font-bold text-slate-400">DU #{du.duNumber}</span>
                     <span className="text-sm font-bold text-slate-700">{du.name}</span>
                     {isDUInactive && (
@@ -683,7 +699,10 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                               </span>
                             )}
                             {!isInactive && nozzle.tankId == null && (
-                              <span className="text-xs text-amber-600 font-medium">⚠ tank not mapped</span>
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">
+                                <AlertTriangle size={11} strokeWidth={2} />
+                                tank not mapped
+                              </span>
                             )}
                           </div>
 
@@ -713,11 +732,11 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                     <div className="absolute right-0 top-full z-[6] mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur">
                                       {(
                                         [
-                                          { label: 'Map Tank', description: 'Assign the supply tank', icon: '🛢', panel: 'mapTank'  as NozzlePanel, color: 'text-emerald-700 hover:bg-emerald-50' },
-                                          { label: 'Adjust Reading', description: 'Correct stored meter value', icon: '🔧', panel: 'reading'  as NozzlePanel, color: 'text-blue-600 hover:bg-blue-50' },
-                                          { label: 'Record Dip', description: 'Log a manual dip check', icon: '📏', panel: 'dip'      as NozzlePanel, color: 'text-orange-600 hover:bg-orange-50' },
-                                          { label: 'Disable for Maintenance', description: 'Temporarily take nozzle offline', icon: '⛔', panel: 'disable' as NozzlePanel, color: 'text-red-600 hover:bg-red-50' },
-                                        ] as const
+                                          { label: 'Map Tank', description: 'Assign the supply tank', icon: <Database size={14} strokeWidth={2} />, panel: 'mapTank'  as NozzlePanel, color: 'text-emerald-700 hover:bg-emerald-50' },
+                                          { label: 'Adjust Reading', description: 'Correct stored meter value', icon: <Wrench size={14} strokeWidth={2} />, panel: 'reading'  as NozzlePanel, color: 'text-blue-600 hover:bg-blue-50' },
+                                          { label: 'Record Dip', description: 'Log a manual dip check', icon: <Ruler size={14} strokeWidth={2} />, panel: 'dip'      as NozzlePanel, color: 'text-orange-600 hover:bg-orange-50' },
+                                          { label: 'Disable for Maintenance', description: 'Temporarily take nozzle offline', icon: <CircleOff size={14} strokeWidth={2} />, panel: 'disable' as NozzlePanel, color: 'text-red-600 hover:bg-red-50' },
+                                        ]
                                       ).map(({ label, description, icon, panel, color }) => (
                                         <button
                                           key={panel}
@@ -728,7 +747,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                           }}
                                           className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${color}`}
                                         >
-                                          <span className="mt-0.5 shrink-0 text-sm leading-none">{icon}</span>
+                                          <span className="mt-0.5 shrink-0 leading-none">{icon}</span>
                                           <span className="min-w-0">
                                             <span className="block text-xs font-semibold leading-5">{label}</span>
                                             <span className="block text-[11px] leading-4 text-slate-400">{description}</span>
@@ -1213,9 +1232,9 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                     <button
                       type="button"
                       onClick={() => setDuNozzles((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-xs text-red-500 hover:text-red-700 pb-1"
+                      className="text-red-500 hover:text-red-700 p-0.5 pb-1"
                     >
-                      ✕
+                      <X size={12} strokeWidth={2} />
                     </button>
                   )}
                 </div>
@@ -1346,7 +1365,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
         return (
           <div className="flex items-start justify-between gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
             <div className="flex items-start gap-2.5">
-              <span className="text-red-500 mt-0.5 text-base leading-none">⚠️</span>
+              <AlertTriangle size={16} strokeWidth={2} className="text-red-500 mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-red-700">Fuel prices not updated today</p>
                 <p className="text-xs text-red-500 mt-0.5">
@@ -1364,7 +1383,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
             >
               {confirmingUnchanged
                 ? <><Spinner className="w-3.5 h-3.5" /><span>Confirming…</span></>
-                : <><span>Same prices</span><span className="text-emerald-500">✓</span></>
+                : <><span>Same prices</span><Check size={13} strokeWidth={2.5} className="text-emerald-500" /></>
               }
             </button>
           </div>
@@ -1414,7 +1433,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
       {/* P2.3 — Open-shifts warning after price change */}
       {openShiftsWarning && (
         <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3">
-          <span className="text-amber-500 mt-0.5 text-base leading-none shrink-0">⚠</span>
+          <AlertTriangle size={16} strokeWidth={2} className="text-amber-500 mt-0.5 shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-amber-800">Open Shifts Detected</p>
             <p className="text-xs text-amber-700 mt-0.5">{openShiftsWarning}</p>
@@ -1431,7 +1450,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
             <div className="ui-modal-header ui-modal-header--themed ui-modal-header--warning">
               <div className="ui-modal-heading flex items-start gap-3">
                 <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                  <span className="text-amber-600 text-base">⚠</span>
+                  <AlertTriangle size={18} strokeWidth={2} className="text-amber-600" />
                 </div>
                 <div>
                   <p className="ui-modal-title">Large Price Change Detected</p>
@@ -1724,7 +1743,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                                     isPrefOpen ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
                                   }`}
                                 >
-                                  <span className="mt-0.5 shrink-0 text-sm leading-none">⚙</span>
+                                  <span className="mt-0.5 shrink-0 leading-none"><Settings size={14} strokeWidth={2} /></span>
                                   <span className="min-w-0">
                                     <span className="block text-xs font-semibold leading-5">Shift Preferences</span>
                                     <span className="block text-[11px] leading-4 text-slate-400">Set preferred shift and weekly day off</span>
@@ -1738,7 +1757,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                                   isLeaveOpen ? 'bg-amber-50 text-amber-700' : 'text-slate-700 hover:bg-amber-50 hover:text-amber-700'
                                 }`}
                               >
-                                <span className="mt-0.5 shrink-0 text-sm leading-none">📅</span>
+                                <span className="mt-0.5 shrink-0 leading-none"><CalendarDays size={14} strokeWidth={2} /></span>
                                 <span className="min-w-0">
                                   <span className="block text-xs font-semibold leading-5">Manage Leave</span>
                                   <span className="block text-[11px] leading-4 text-slate-400">Add or remove leave dates for this staff member</span>
@@ -1774,7 +1793,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                                   isInactive ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'
                                 }`}
                               >
-                                <span className="mt-0.5 shrink-0 text-sm leading-none">{isInactive ? '↺' : '⛔'}</span>
+                                <span className="mt-0.5 shrink-0 leading-none">{isInactive ? <RotateCcw size={14} strokeWidth={2} /> : <CircleOff size={14} strokeWidth={2} />}</span>
                                 <span className="min-w-0">
                                   <span className="block text-xs font-semibold leading-5">{isInactive ? 'Activate Staff' : 'Deactivate Staff'}</span>
                                   <span className="block text-[11px] leading-4 text-slate-400">
@@ -1939,10 +1958,10 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                                 type="button"
                                 onClick={() => removeLeaveMutation.mutate({ leaveId: lv.id })}
                                 disabled={removeLeaveMutation.isPending}
-                                className="ui-btn ui-btn-ghost min-h-0 ml-auto px-0 py-0 text-xs font-bold text-slate-300 hover:text-red-500 disabled:opacity-40"
+                                className="ui-btn ui-btn-ghost min-h-0 ml-auto p-1 text-slate-300 hover:text-red-500 disabled:opacity-40"
                                 title="Remove leave"
                               >
-                                ✕
+                                <X size={12} strokeWidth={2} />
                               </button>
                             </div>
                           ))}
@@ -3100,7 +3119,10 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
               onClick={() => toggleCollapsed(groupKey)}
             >
               <div className="flex items-center gap-2">
-                <span className="text-slate-400 text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                {isCollapsed
+                  ? <ChevronRight size={14} strokeWidth={2} className="text-slate-400" />
+                  : <ChevronDown size={14} strokeWidth={2} className="text-slate-400" />
+                }
                 <span className="text-xs font-semibold text-slate-700">
                   {effectiveFromDate}
                   {defs[0]?.effectiveTo ? ` – ${defs[0].effectiveTo}` : ' onwards'}
@@ -3367,6 +3389,70 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
           + Add new shift schedule
         </button>
       )}
+    </div>
+  )
+}
+
+// ── Pump Settings Content ─────────────────────────────────────────────────────
+
+function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; onUpdated: () => void }) {
+  const { addToast } = useToastStore()
+  const [threshold, setThreshold] = useState(pump.discrepancyEscalationThreshold?.toString() ?? '')
+  const [error, setError]         = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: (val: number | null) =>
+      pumpApi.updatePumpSettings(pump.id, { discrepancyEscalationThreshold: val }),
+    onSuccess: () => {
+      addToast('Settings saved', 'success')
+      setError(null)
+      onUpdated()
+    },
+    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to save settings'),
+  })
+
+  const handleSave = () => {
+    const val = threshold.trim()
+    if (val === '') {
+      mutation.mutate(null)
+      return
+    }
+    const num = parseFloat(val)
+    if (isNaN(num) || num < 0) {
+      setError('Enter a valid positive amount, or leave blank to disable escalation.')
+      return
+    }
+    mutation.mutate(num)
+  }
+
+  return (
+    <div className="space-y-5 pt-2">
+      <div className="ui-alert bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+        When a shift closes with a discrepancy above this amount, only Owner or Admin can resolve it.
+        Managers will see it as locked. Leave blank to disable escalation.
+      </div>
+
+      <div className="max-w-xs">
+        <label className="ui-label">Discrepancy Escalation Threshold (₹)</label>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={threshold}
+          onChange={(e) => setThreshold(e.target.value)}
+          placeholder="e.g. 500 — blank to disable"
+          className="text-sm"
+        />
+        {error && <p className="ui-error-text mt-1">{error}</p>}
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={mutation.isPending}
+        className="ui-btn ui-btn-primary"
+      >
+        {mutation.isPending ? 'Saving…' : 'Save Settings'}
+      </button>
     </div>
   )
 }

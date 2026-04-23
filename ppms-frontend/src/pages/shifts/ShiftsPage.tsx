@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { ChevronDown, Plus, History, Printer } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
 import type { ResolveDiscrepancyRequest } from '../../api/shiftApi'
 import { pumpApi } from '../../api/pumpApi'
@@ -9,6 +10,7 @@ import { useAuthStore } from '../../store/authStore'
 import type { Shift, CreditEntry, CreditEntryInput } from '../../types/shift'
 import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
+import BackfillShiftModal from './BackfillShiftModal'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { SkeletonRows } from '../../components/Skeleton'
 import { Reveal } from '../../components/Reveal'
@@ -21,12 +23,13 @@ import { ModalPortal } from '../../components/ModalPortal'
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  OPEN:                          { label: 'Open',        color: 'bg-green-100 text-green-700' },
-  OPEN_OVERDUE:                  { label: 'Overdue',     color: 'bg-amber-100 text-amber-700' },
-  AUTO_CLOSED_OVERDUE:           { label: 'Auto-closed', color: 'bg-red-100 text-red-700' },
-  CLOSED_BALANCED:               { label: 'Balanced',    color: 'bg-slate-100 text-slate-600' },
-  CLOSED_DISCREPANCY_PENDING:    { label: 'Discrepancy', color: 'bg-red-100 text-red-700' },
-  CLOSED_DISCREPANCY_RESOLVED:   { label: 'Resolved',    color: 'bg-slate-100 text-slate-600' },
+  OPEN:                                    { label: 'Open',             color: 'bg-green-100 text-green-700' },
+  OPEN_OVERDUE:                            { label: 'Overdue',          color: 'bg-amber-100 text-amber-700' },
+  AUTO_CLOSED_OVERDUE:                     { label: 'Auto-closed',      color: 'bg-red-100 text-red-700' },
+  CLOSED_BALANCED:                         { label: 'Balanced',         color: 'bg-slate-100 text-slate-600' },
+  CLOSED_DISCREPANCY_PENDING:              { label: 'Discrepancy',      color: 'bg-red-100 text-red-700' },
+  CLOSED_DISCREPANCY_PENDING_APPROVAL:     { label: 'Needs Approval',   color: 'bg-orange-100 text-orange-700' },
+  CLOSED_DISCREPANCY_RESOLVED:             { label: 'Resolved',         color: 'bg-slate-100 text-slate-600' },
 }
 
 const PAGE_SIZE = 10
@@ -65,9 +68,10 @@ export default function ShiftsPage() {
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
 
   const { selectedPumpId } = usePumpStore()
-  const [showOpenModal,  setShowOpenModal]  = useState(false)
-  const [shiftToClose,   setShiftToClose]   = useState<Shift | null>(null)
-  const [shiftForCredit, setShiftForCredit] = useState<Shift | null>(null)
+  const [showOpenModal,     setShowOpenModal]     = useState(false)
+  const [showBackfillModal, setShowBackfillModal] = useState(false)
+  const [shiftToClose,      setShiftToClose]      = useState<Shift | null>(null)
+  const [shiftForCredit,    setShiftForCredit]    = useState<Shift | null>(null)
   const [historyOpen,    setHistoryOpen]    = useState(true)
   const [historyTab,     setHistoryTab]     = useState<'day' | 'all'>('day')
 
@@ -162,12 +166,25 @@ export default function ShiftsPage() {
               {selectedPump && (
                 <p className="text-xs text-slate-400">{selectedPump.name}</p>
               )}
-              <button
-                onClick={() => setShowOpenModal(true)}
-                className="ui-btn ui-btn-primary ml-auto"
-              >
-                + Open Shift
-              </button>
+              <div className="flex items-center gap-2 ml-auto">
+                {isOwnerOrAdmin && (
+                  <button
+                    onClick={() => setShowBackfillModal(true)}
+                    className="ui-btn ui-btn-secondary inline-flex items-center gap-1.5"
+                    title="Enter historical shift data for past dates"
+                  >
+                    <History size={14} strokeWidth={2} />
+                    Backfill Shift
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowOpenModal(true)}
+                  className="ui-btn ui-btn-primary inline-flex items-center gap-1.5"
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                  Open Shift
+                </button>
+              </div>
             </div>
 
             {activeLoading ? (
@@ -183,9 +200,9 @@ export default function ShiftsPage() {
                     <tr className="border-b border-slate-100 text-xs text-slate-500">
                       <th className="text-left px-6 py-3 font-medium">Nozzle</th>
                       <th className="text-left px-6 py-3 font-medium">Operator</th>
-                      <th className="text-left px-6 py-3 font-medium">Window</th>
-                      <th className="text-left px-6 py-3 font-medium">Started</th>
-                      <th className="text-left px-6 py-3 font-medium">Prices (₹)</th>
+                      <th className="text-left px-6 py-3 font-medium hidden md:table-cell">Window</th>
+                      <th className="text-left px-6 py-3 font-medium hidden md:table-cell">Started</th>
+                      <th className="text-left px-6 py-3 font-medium hidden md:table-cell">Prices (₹)</th>
                       <th className="text-left px-6 py-3 font-medium">Status</th>
                       <th className="px-6 py-3" />
                     </tr>
@@ -213,7 +230,7 @@ export default function ShiftsPage() {
               className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
             >
               <span className="text-base font-semibold text-slate-800">Shift History</span>
-              <span className={`ui-accordion-arrow ${historyOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+              <ChevronDown size={14} strokeWidth={2} className={`ui-accordion-arrow ${historyOpen ? 'ui-accordion-arrow--open' : ''}`} />
             </button>
 
             {historyOpen && (
@@ -253,6 +270,12 @@ export default function ShiftsPage() {
           pumpId={pumpId}
           activeShifts={activeShifts}
           onClose={() => setShowOpenModal(false)}
+        />
+      )}
+      {showBackfillModal && pumpId && (
+        <BackfillShiftModal
+          pumpId={pumpId}
+          onClose={() => setShowBackfillModal(false)}
         />
       )}
       {shiftToClose && (
@@ -336,7 +359,7 @@ function DayViewHistory({ shifts }: { shifts: Shift[] }) {
                   </span>
                 )}
               </div>
-              <span className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+              <ChevronDown size={14} strokeWidth={2} className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`} />
             </button>
 
             {/* Day shift table */}
@@ -345,14 +368,14 @@ function DayViewHistory({ shifts }: { shifts: Shift[] }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 text-xs text-slate-500">
-                      <th className="text-left px-5 py-2.5 font-medium">ID</th>
+                      <th className="text-left px-5 py-2.5 font-medium hidden md:table-cell">ID</th>
                       <th className="text-left px-5 py-2.5 font-medium">Nozzle</th>
-                      <th className="text-left px-5 py-2.5 font-medium">Shift</th>
+                      <th className="text-left px-5 py-2.5 font-medium hidden md:table-cell">Shift</th>
                       <th className="text-left px-5 py-2.5 font-medium">Operator</th>
                       <th className="text-left px-5 py-2.5 font-medium">Date</th>
                       <th className="text-left px-5 py-2.5 font-medium">Amount Due</th>
                       <th className="text-left px-5 py-2.5 font-medium">Status</th>
-                      <th className="text-left px-5 py-2.5 font-medium">Discrepancy</th>
+                      <th className="text-left px-5 py-2.5 font-medium hidden md:table-cell">Discrepancy</th>
                       <th className="px-4 py-2.5" />
                     </tr>
                   </thead>
@@ -430,14 +453,14 @@ function AllShiftsHistory({ shifts }: { shifts: Shift[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-xs text-slate-500">
-              <th className="text-left px-5 py-3 font-medium">ID</th>
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">ID</th>
               <th className="text-left px-5 py-3 font-medium">Nozzle</th>
-              <th className="text-left px-5 py-3 font-medium">Shift</th>
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">Shift</th>
               <th className="text-left px-5 py-3 font-medium">Operator</th>
               <th className="text-left px-5 py-3 font-medium">Date</th>
               <th className="text-left px-5 py-3 font-medium">Amount Due</th>
               <th className="text-left px-5 py-3 font-medium">Status</th>
-              <th className="text-left px-5 py-3 font-medium">Discrepancy</th>
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">Discrepancy</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -537,9 +560,9 @@ function ShiftRow({ shift, onClose, onAddCredit }: { shift: Shift; onClose: () =
         {shift.nozzles.map((n) => `#${n.nozzleNumber} ${n.fuelType}`).join(', ')}
       </td>
       <td className="px-6 py-3 text-slate-600">{shift.operatorName}</td>
-      <td className="px-6 py-3 text-slate-500">{shift.shiftWindow}</td>
-      <td className="px-6 py-3 text-slate-500">{startTime}</td>
-      <td className="px-6 py-3 text-slate-500 text-xs">{prices || '—'}</td>
+      <td className="px-6 py-3 text-slate-500 hidden md:table-cell">{shift.shiftWindow}</td>
+      <td className="px-6 py-3 text-slate-500 hidden md:table-cell">{startTime}</td>
+      <td className="px-6 py-3 text-slate-500 text-xs hidden md:table-cell">{prices || '—'}</td>
       <td className="px-6 py-3">
         <span className={`text-xs font-medium px-2 py-1 rounded-full ${badge.color}`}>{badge.label}</span>
       </td>
@@ -549,7 +572,7 @@ function ShiftRow({ shift, onClose, onAddCredit }: { shift: Shift; onClose: () =
             onClick={onAddCredit}
             className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100"
           >
-            <span className="text-sm leading-none">+</span>
+            <Plus size={12} strokeWidth={2.5} />
             <span>Credit</span>
           </button>
           <button
@@ -570,23 +593,29 @@ function ShiftRow({ shift, onClose, onAddCredit }: { shift: Shift; onClose: () =
 
 function HistoryRow({ shift }: { shift: Shift }) {
   const { user } = useAuthStore()
-  const canResolve = user?.role === 'OWNER' || user?.role === 'ADMIN' || user?.role === 'MANAGER'
+
+  const isOwnerOrAdmin      = user?.role === 'OWNER' || user?.role === 'ADMIN'
+  const isManagerOrAbove    = isOwnerOrAdmin || user?.role === 'MANAGER'
+  const isPendingResolution = shift.status === 'CLOSED_DISCREPANCY_PENDING'
+  const isPendingApproval   = shift.status === 'CLOSED_DISCREPANCY_PENDING_APPROVAL'
+  const canResolve          = isPendingResolution && isManagerOrAbove
+  const canResolveApproval  = isPendingApproval && isOwnerOrAdmin
 
   const [creditModalOpen,    setCreditModalOpen]    = useState(false)
   const [resolveModalOpen,   setResolveModalOpen]   = useState(false)
+  const [handoverOpen,       setHandoverOpen]       = useState(false)
 
   const badge            = STATUS_LABELS[shift.status] ?? { label: shift.status, color: 'bg-slate-100 text-slate-600' }
   const isClosed         = shift.totalAmountDue != null
   const digitalTotal     = (shift.upiCollected ?? 0) + (shift.cardCollected ?? 0)
   const hasCreditEntries = (shift.creditEntries?.length ?? 0) > 0
   const creditAmt        = shift.creditTotal ?? 0
-  const isPendingResolution = shift.status === 'CLOSED_DISCREPANCY_PENDING'
 
   return (
     <>
       {/* ── Main data row ─────────────────────────────────────────────────── */}
       <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-        <td className="px-5 py-3 text-slate-400 text-xs font-mono">{shift.id}</td>
+        <td className="px-5 py-3 text-slate-400 text-xs font-mono hidden md:table-cell">{shift.id}</td>
         <td className="px-5 py-3">
           <span className="text-xs text-slate-400 block">
             {shift.duName ?? `DU #${shift.duNumber}`}
@@ -595,7 +624,7 @@ function HistoryRow({ shift }: { shift: Shift }) {
             {shift.nozzles.map((n) => `#${n.nozzleNumber} ${n.fuelType}`).join(', ')}
           </span>
         </td>
-        <td className="px-5 py-3">
+        <td className="px-5 py-3 hidden md:table-cell">
           {shift.shiftWindow ? (
             <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
               {shift.shiftWindow}
@@ -610,11 +639,18 @@ function HistoryRow({ shift }: { shift: Shift }) {
           {fmtAmt(shift.totalAmountDue)}
         </td>
         <td className="px-5 py-3">
-          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badge.color}`}>
-            {badge.label}
-          </span>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badge.color}`}>
+              {badge.label}
+            </span>
+            {shift.isBackfilled && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                Backfilled
+              </span>
+            )}
+          </div>
         </td>
-        <td className="px-5 py-3">
+        <td className="px-5 py-3 hidden md:table-cell">
           {shift.discrepancyAmount != null ? (
             <span className={`text-xs font-semibold ${
               shift.discrepancyType === 'SHORT' ? 'text-red-600' : 'text-amber-600'
@@ -626,17 +662,33 @@ function HistoryRow({ shift }: { shift: Shift }) {
           )}
         </td>
         <td className="px-4 py-3 text-right">
-          {isPendingResolution && canResolve && (
-            <button
-              onClick={() => setResolveModalOpen(true)}
-              className="ui-btn ui-btn-danger min-h-0 px-3 py-1.5 text-xs"
-            >
-              Resolve
-            </button>
-          )}
-          {shift.discrepancyResolution && (
-            <span className="text-xs text-slate-400">{shift.discrepancyResolution.replace(/_/g, ' ')}</span>
-          )}
+          <div className="flex items-center justify-end gap-2">
+            {canResolve && (
+              <button onClick={() => setResolveModalOpen(true)} className="ui-btn ui-btn-danger min-h-0 px-3 py-1.5 text-xs">
+                Resolve
+              </button>
+            )}
+            {canResolveApproval && (
+              <button onClick={() => setResolveModalOpen(true)} className="ui-btn ui-btn-warning min-h-0 px-3 py-1.5 text-xs">
+                Approve
+              </button>
+            )}
+            {isPendingApproval && !isOwnerOrAdmin && (
+              <span className="text-xs text-orange-600 font-medium">Owner approval needed</span>
+            )}
+            {shift.discrepancyResolution && (
+              <span className="text-xs text-slate-400">{shift.discrepancyResolution.replace(/_/g, ' ')}</span>
+            )}
+            {isClosed && (
+              <button
+                onClick={() => setHandoverOpen(true)}
+                title="Print handover report"
+                className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+              >
+                <Printer size={14} strokeWidth={2} />
+              </button>
+            )}
+          </div>
         </td>
       </tr>
 
@@ -717,6 +769,11 @@ function HistoryRow({ shift }: { shift: Shift }) {
           shift={shift}
           onClose={() => setResolveModalOpen(false)}
         />
+      )}
+
+      {/* ── Handover print modal ──────────────────────────────────────────── */}
+      {handoverOpen && (
+        <HandoverModal shift={shift} onClose={() => setHandoverOpen(false)} />
       )}
     </>
   )
@@ -1277,6 +1334,146 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
         </div>
       </div>
     </div>
+    </ModalPortal>
+  )
+}
+
+// ── Handover Report Modal ─────────────────────────────────────────────────────
+
+function HandoverModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  const fmtAmt = (v: number | null | undefined) =>
+    v != null ? `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
+
+  return (
+    <ModalPortal>
+      <div className="ui-modal-backdrop" onClick={onClose} />
+      <div className="ui-modal-panel max-w-xl w-full print:shadow-none print:max-w-full">
+
+        {/* Screen header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 print:hidden">
+          <h2 className="ui-modal-title">Shift Handover Report</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={() => window.print()} className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
+              <Printer size={13} strokeWidth={2} className="mr-1" /> Print
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+              <span className="text-lg leading-none">×</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Report body */}
+        <div className="p-6 space-y-5 text-sm">
+
+          {/* Title for print */}
+          <div className="hidden print:block text-center mb-4">
+            <h1 className="text-xl font-bold">Shift Handover Report</h1>
+            <p className="text-slate-500 text-xs mt-1">Shift #{shift.id}</p>
+          </div>
+
+          {/* Shift info */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Operator</p>
+              <p className="font-semibold text-slate-800">{shift.operatorName}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Date</p>
+              <p className="font-semibold text-slate-800">{shift.shiftDate}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">DU</p>
+              <p className="font-semibold text-slate-800">{shift.duName ?? `DU #${shift.duNumber}`}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Shift Window</p>
+              <p className="font-semibold text-slate-800">{shift.shiftWindow ?? '—'}</p>
+            </div>
+          </div>
+
+          {/* Nozzle readings */}
+          {shift.fuelReadings && shift.fuelReadings.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Meter Readings</p>
+              <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500">
+                    <th className="px-3 py-2 text-left">Nozzle</th>
+                    <th className="px-3 py-2 text-right">Opening</th>
+                    <th className="px-3 py-2 text-right">Closing</th>
+                    <th className="px-3 py-2 text-right">Litres Sold</th>
+                    <th className="px-3 py-2 text-right">Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {shift.fuelReadings.map((r, i) => {
+                    const nozzle = shift.nozzles.find(n => n.id === r.nozzleId)
+                    return (
+                      <tr key={i}>
+                        <td className="px-3 py-2 font-medium">
+                          {nozzle ? `#${nozzle.nozzleNumber} ${r.fuelType}` : r.fuelType}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">{r.startReading ?? '—'}</td>
+                        <td className="px-3 py-2 text-right font-mono">{r.endReading ?? '—'}</td>
+                        <td className="px-3 py-2 text-right font-semibold">{r.unitsSold != null ? `${Number(r.unitsSold).toFixed(3)} L` : '—'}</td>
+                        <td className="px-3 py-2 text-right text-slate-500">{r.priceSnapshot != null ? `₹${r.priceSnapshot}` : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Payment breakdown */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Collections</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Cash',       val: shift.cashCollected },
+                { label: 'UPI',        val: shift.upiCollected },
+                { label: 'Card',       val: shift.cardCollected },
+                { label: 'Fleet Card', val: shift.fleetCardCollected },
+                { label: 'Credit',     val: shift.creditTotal },
+              ].map(({ label, val }) => (
+                <div key={label} className="flex justify-between bg-slate-50 rounded px-3 py-2">
+                  <span className="text-slate-500">{label}</span>
+                  <span className="font-semibold text-slate-800">{fmtAmt(val)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between bg-slate-100 rounded px-3 py-2 col-span-2">
+                <span className="font-semibold text-slate-700">Total Due</span>
+                <span className="font-bold text-slate-900">{fmtAmt(shift.totalAmountDue)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Discrepancy */}
+          {shift.discrepancyAmount != null && (
+            <div className={`rounded-lg p-3 ${shift.discrepancyType === 'SHORT' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-1 text-slate-600">Discrepancy</p>
+              <p className={`font-bold text-sm ${shift.discrepancyType === 'SHORT' ? 'text-red-700' : 'text-amber-700'}`}>
+                {shift.discrepancyType}: {fmtAmt(shift.discrepancyAmount)}
+              </p>
+              {shift.discrepancyReason && (
+                <p className="text-xs text-slate-500 mt-1">Reason: {shift.discrepancyReason}</p>
+              )}
+            </div>
+          )}
+
+          {/* Signature line for print */}
+          <div className="hidden print:grid grid-cols-2 gap-10 pt-8">
+            <div>
+              <div className="border-b border-slate-400 mb-1" />
+              <p className="text-xs text-slate-500">Operator Signature</p>
+            </div>
+            <div>
+              <div className="border-b border-slate-400 mb-1" />
+              <p className="text-xs text-slate-500">Supervisor Signature</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </ModalPortal>
   )
 }

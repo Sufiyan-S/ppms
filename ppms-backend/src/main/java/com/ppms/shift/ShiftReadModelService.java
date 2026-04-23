@@ -4,11 +4,16 @@ import com.ppms.pump.DispensaryUnit;
 import com.ppms.pump.DispensaryUnitRepository;
 import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleRepository;
+import com.ppms.pump.PumpShiftDefinitionRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -21,6 +26,7 @@ public class ShiftReadModelService {
     private final ShiftFuelReadingRepository fuelReadingRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
     private final ShiftNozzleRepository shiftNozzleRepository;
+    private final PumpShiftDefinitionRepository shiftDefinitionRepository;
 
     public ShiftResponse toResponseWithLookups(Shift shift) {
         List<Long> nozzleIds = shiftNozzleRepository.findNozzleIdsByShiftId(shift.getId());
@@ -81,6 +87,7 @@ public class ShiftReadModelService {
                 .shiftDate(shift.getShiftDate())
                 .actualStartTime(shift.getActualStartTime())
                 .actualEndTime(shift.getActualEndTime())
+                .scheduledEndTime(computeScheduledEndTime(shift))
                 .fuelReadings(fuelReadingResponses)
                 .totalAmountDue(shift.getTotalAmountDue())
                 .cashCollected(shift.getCashCollected())
@@ -94,7 +101,26 @@ public class ShiftReadModelService {
                 .discrepancyResolution(shift.getDiscrepancyResolution() != null ? shift.getDiscrepancyResolution().name() : null)
                 .discrepancyResolutionNote(shift.getDiscrepancyResolutionNote())
                 .status(shift.getStatus().name())
+                .isBackfilled(shift.isBackfilled())
                 .creditEntries(creditEntryResponses)
                 .build();
+    }
+
+    /**
+     * Derives the shift's scheduled end time from its linked definition.
+     * Cross-midnight shifts (e.g. 22:00–09:00) end on shiftDate + 1.
+     * Returns null if no definition is linked (legacy data) or if the definition no longer exists.
+     */
+    private OffsetDateTime computeScheduledEndTime(Shift shift) {
+        if (shift.getShiftDefinitionId() == null) return null;
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        return shiftDefinitionRepository.findById(shift.getShiftDefinitionId())
+                .map(def -> {
+                    LocalDate endDate = def.isCrossesMidnight()
+                            ? shift.getShiftDate().plusDays(1)
+                            : shift.getShiftDate();
+                    return LocalDateTime.of(endDate, def.getEndTime()).atZone(ist).toOffsetDateTime();
+                })
+                .orElse(null);
     }
 }

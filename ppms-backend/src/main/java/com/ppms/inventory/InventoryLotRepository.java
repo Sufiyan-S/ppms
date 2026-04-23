@@ -5,8 +5,10 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Repository
@@ -55,6 +57,43 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             ORDER BY l.deliveryDate ASC, l.id ASC
             """)
     List<InventoryLot> findActiveLotsByTankFifo(Long tankId);
+
+    // ── Backfill-specific queries (historically accurate: deliveryDate ≤ asOf) ──────────────────
+
+    /**
+     * FIFO lots for pump + fuelType whose delivery arrived on or before the backfill shift date.
+     * Prevents consuming stock from tankers delivered AFTER the historical shift date.
+     * Used by backfillShift() for both pre-validation and FIFO deduction.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT l FROM InventoryLot l
+            WHERE l.pumpId = :pumpId AND l.fuelType = :fuelType AND l.status = 'ACTIVE'
+                  AND l.deliveryDate <= :asOf
+                  AND l.tankId NOT IN (
+                      SELECT t.id FROM UndergroundTank t WHERE t.status = 'INACTIVE'
+                  )
+            ORDER BY l.deliveryDate ASC, l.id ASC
+            """)
+    List<InventoryLot> findActiveLotsByPumpAndFuelTypeAvailableAsOf(
+            @Param("pumpId") Long pumpId,
+            @Param("fuelType") FuelType fuelType,
+            @Param("asOf") OffsetDateTime asOf);
+
+    /**
+     * FIFO lots for a specific tank whose delivery arrived on or before the backfill shift date.
+     * Used by backfillShift() for both pre-validation and FIFO deduction when tankId is set.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT l FROM InventoryLot l
+            WHERE l.tankId = :tankId AND l.status = 'ACTIVE'
+                  AND l.deliveryDate <= :asOf
+            ORDER BY l.deliveryDate ASC, l.id ASC
+            """)
+    List<InventoryLot> findActiveLotsByTankAvailableAsOf(
+            @Param("tankId") Long tankId,
+            @Param("asOf") OffsetDateTime asOf);
 
     /** All lots for a tank (all statuses) ordered by delivery date. Used by inventory lots report. */
     @Query("""

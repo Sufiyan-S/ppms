@@ -1,5 +1,6 @@
 package com.ppms.ancillary;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Data;
 
@@ -27,5 +28,7 @@ public class AncillarySaleResponse {
     private String notes;
     private Long   soldByUserId;
     private LocalDate saleDate;
+    @JsonProperty("isBackfilled")
+    private boolean isBackfilled;
     private OffsetDateTime createdAt;
 }

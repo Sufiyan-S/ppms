@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Check } from 'lucide-react'
 import { authApi } from '../../api/authApi'
 
 export default function ForgotPasswordPage() {
@@ -27,7 +28,7 @@ export default function ForgotPasswordPage() {
       <div className="ui-auth-shell">
         <div className="ui-auth-card text-center space-y-4">
           <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-            <span className="text-emerald-600 text-2xl">✓</span>
+            <Check size={28} strokeWidth={2.5} className="text-emerald-600" />
           </div>
           <h1 className="ui-title-sm">Check your email</h1>
           <p className="ui-subtitle">

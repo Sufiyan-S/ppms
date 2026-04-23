@@ -3,6 +3,7 @@ package com.ppms.pump;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -16,6 +17,8 @@ public class PumpResponse {
     private Integer maxDuCount;
     private Long ownerId;
     private OffsetDateTime createdAt;
+    private BigDecimal discrepancyEscalationThreshold;
+    private BigDecimal expenseApprovalThreshold;
     /** Active Dispensary Units with their nozzles. */
     private List<DUResponse> dus;
 }

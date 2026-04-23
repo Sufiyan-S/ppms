@@ -997,6 +997,7 @@ a:focus-visible {
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
   font-weight: 600;
+  cursor: pointer;
   transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
@@ -2272,7 +2273,30 @@ a:focus-visible {
   .ui-modal-panel,
   .ui-modal-panel--lg {
     width: 100%;
-    max-height: 50vh;
+    max-height: 90vh;
+  }
+}
+
+/* ── Icon-only sidebar on phones (≤480px) ──────────────────── */
+@media (max-width: 480px) {
+  .ui-dashboard-sidebar {
+    width: 3.5rem;
+    flex-shrink: 0;
+  }
+  .ui-dashboard-sidebar-head,
+  .ui-dashboard-sidebar-foot {
+    display: none;
+  }
+  .ui-dashboard-navlink {
+    justify-content: center;
+    padding: 0.6rem 0;
+    gap: 0;
+  }
+  .ui-dashboard-navlink span {
+    display: none;
+  }
+  .ui-page {
+    padding: 0.75rem;
   }
 }
 

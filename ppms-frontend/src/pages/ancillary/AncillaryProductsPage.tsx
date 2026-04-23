@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X, AlertTriangle, ArrowRight, ChevronLeft } from 'lucide-react'
 import { usePumpStore } from '../../store/usePumpStore'
 import { ancillaryApi } from '../../api/ancillaryApi'
 import { creditApi } from '../../api/creditApi'
@@ -9,6 +10,7 @@ import type {
   CreateProductRequest,
   RecordStockDeliveryRequest,
   RecordAncillarySaleRequest,
+  BackfillSaleRequest,
   AncillaryPaymentMode,
   UnitOfMeasure,
   UpdateLotRequest,
@@ -142,6 +144,9 @@ export default function AncillaryProductsPage() {
             {activeTab === 'sales' && (
               <SalesTab
                 pumpId={pumpId}
+                products={products}
+                isOwnerOrAdmin={isOwnerOrAdmin}
+                onRefresh={() => qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })}
               />
             )}
           </div>
@@ -191,7 +196,7 @@ function ProductsTab({
       return <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{p.currentStockUnits} units</span>
     }
     if (p.currentStockUnits <= p.lowStockThreshold) {
-      return <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">{p.currentStockUnits} units ⚠️ Low</span>
+      return <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium"><AlertTriangle size={11} strokeWidth={2} />{p.currentStockUnits} units Low</span>
     }
     return <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{p.currentStockUnits} units</span>
   }
@@ -246,7 +251,7 @@ function ProductsTab({
               onClick={() => setSearchQuery('')}
               className="ui-search-shell__clear"
             >
-              ✕
+              <X size={13} strokeWidth={2} />
             </button>
           )}
         </div>
@@ -474,7 +479,7 @@ function AddProductDialog({
                 : 'Review the product details before creating it.'}
             </p>
           </div>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">✕</button>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
         </div>
 
         {step === 'form' && (
@@ -718,7 +723,7 @@ function SellDialog({
               {marginBadge ? ` · ${marginBadge.label}` : ''}
             </p>
           </div>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">✕</button>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
         </div>
 
         {/* Step 1 — Form */}
@@ -833,7 +838,7 @@ function SellDialog({
                 onClick={handleProceedToReview}
                 className="ui-btn ui-btn-primary"
               >
-                Review →
+                <span className="inline-flex items-center gap-1.5">Review<ArrowRight size={14} strokeWidth={2} /></span>
               </button>
             </div>
           </div>
@@ -875,7 +880,7 @@ function SellDialog({
                 onClick={() => { setStep('form'); setError(null) }}
                 className="ui-btn ui-btn-secondary"
               >
-                ← Back
+                <span className="inline-flex items-center gap-1.5"><ChevronLeft size={14} strokeWidth={2} />Back</span>
               </button>
               <button
                 onClick={() => saleMutation.mutate(form)}
@@ -986,7 +991,7 @@ function StockLotsDialog({
             <h3 className="ui-modal-title">Stock Lots</h3>
             <p className="ui-modal-subtitle truncate max-w-[380px]">{product.displayName}</p>
           </div>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">✕</button>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
         </div>
 
         {/* Body */}
@@ -1178,6 +1183,7 @@ function StockInTab({
                   <th className="px-5 py-3 text-right">Cost/Unit</th>
                   <th className="px-5 py-3 text-right">Total Cost</th>
                   <th className="px-5 py-3 text-left">Invoice</th>
+                  <th className="px-5 py-3 text-left">Type</th>
                 </tr>
               </thead>
               <tbody>
@@ -1198,6 +1204,13 @@ function StockInTab({
                       {fmtCurrency(d.costPricePerUnit * d.quantityUnits)}
                     </td>
                     <td className="px-5 py-3 text-slate-400">{d.invoiceReference ?? '—'}</td>
+                    <td className="px-5 py-3">
+                      {d.isBackfilled && (
+                        <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                          Backfilled
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 )})}
               </tbody>
@@ -1307,7 +1320,7 @@ function StockInDialog({
                 : 'Review the stock delivery before submitting it.'}
             </p>
           </div>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">✕</button>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
         </div>
 
         {step === 'form' && (
@@ -1431,12 +1444,19 @@ function StockInDialog({
 
 function SalesTab({
   pumpId,
+  products,
+  isOwnerOrAdmin,
+  onRefresh,
 }: {
   pumpId: number
+  products: AncillaryProduct[]
+  isOwnerOrAdmin: boolean
+  onRefresh: () => void
 }) {
   const qc = useQueryClient()
   const [salesPage, setSalesPage] = useState(0)
   const [salesPageSize, setSalesPageSize] = useState(10)
+  const [backfillOpen, setBackfillOpen] = useState(false)
 
   const { data: salesPageData } = useQuery({
     queryKey: ['ancillarySales', pumpId, salesPage, salesPageSize],
@@ -1453,57 +1473,339 @@ function SalesTab({
   }
 
   return (
-    <div className="ui-card p-0">
-      <div className="px-5 py-4 border-b border-slate-100">
-        <h3 className="text-sm font-semibold text-slate-700">Sales History</h3>
-      </div>
-      {sales.length === 0 ? (
-        <EmptyState icon="transactions" title="No sales recorded yet" subtitle="Sales will appear here after you record them." />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-slate-400 uppercase border-b border-slate-100">
-                  <th className="px-5 py-3 text-left">Date</th>
-                  <th className="px-5 py-3 text-left">Product</th>
-                  <th className="px-5 py-3 text-right">Qty</th>
-                  <th className="px-5 py-3 text-right">Price/Unit</th>
-                  <th className="px-5 py-3 text-right">Total</th>
-                  <th className="px-5 py-3 text-left">Mode</th>
-                  <th className="px-5 py-3 text-left">Client</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales.map(s => (
-                  <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{fmtDate(s.saleDate)}</td>
-                    <td className="px-5 py-3 text-slate-700 font-medium max-w-[180px] truncate">{s.productDisplayName}</td>
-                    <td className="px-5 py-3 text-right">{s.quantityUnits}</td>
-                    <td className="px-5 py-3 text-right text-slate-500">{fmtCurrency(s.sellingPricePerUnit)}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmtCurrency(s.totalAmount)}</td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${modeColor[s.paymentMode] ?? 'bg-slate-100 text-slate-600'}`}>
-                        {s.paymentMode.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-400">{s.clientName ?? '—'}</td>
+    <div className="space-y-4">
+      {/* Backfill button — Admin/Owner only */}
+      {isOwnerOrAdmin && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setBackfillOpen(true)}
+            className="ui-btn ui-btn-secondary"
+          >
+            Backfill Sale
+          </button>
+        </div>
+      )}
+
+      <div className="ui-card p-0">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-700">Sales History</h3>
+        </div>
+        {sales.length === 0 ? (
+          <EmptyState icon="transactions" title="No sales recorded yet" subtitle="Sales will appear here after you record them." />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-slate-400 uppercase border-b border-slate-100">
+                    <th className="px-5 py-3 text-left">Date</th>
+                    <th className="px-5 py-3 text-left">Product</th>
+                    <th className="px-5 py-3 text-right">Qty</th>
+                    <th className="px-5 py-3 text-right">Price/Unit</th>
+                    <th className="px-5 py-3 text-right">Total</th>
+                    <th className="px-5 py-3 text-left">Mode</th>
+                    <th className="px-5 py-3 text-left">Client</th>
+                    <th className="px-5 py-3 text-left">Type</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {salesPageData && (
-            <div className="px-5">
-              <Pagination
-                data={salesPageData}
-                onPageChange={p => { setSalesPage(p); qc.invalidateQueries({ queryKey: ['ancillarySales', pumpId] }) }}
-                onPageSizeChange={s => { setSalesPageSize(s); setSalesPage(0) }}
-              />
+                </thead>
+                <tbody>
+                  {sales.map(s => (
+                    <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{fmtDate(s.saleDate)}</td>
+                      <td className="px-5 py-3 text-slate-700 font-medium max-w-[180px] truncate">{s.productDisplayName}</td>
+                      <td className="px-5 py-3 text-right">{s.quantityUnits}</td>
+                      <td className="px-5 py-3 text-right text-slate-500">{fmtCurrency(s.sellingPricePerUnit)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmtCurrency(s.totalAmount)}</td>
+                      <td className="px-5 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${modeColor[s.paymentMode] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {s.paymentMode.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-slate-400">{s.clientName ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        {s.isBackfilled && (
+                          <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                            Backfilled
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </>
+            {salesPageData && (
+              <div className="px-5">
+                <Pagination
+                  data={salesPageData}
+                  onPageChange={p => { setSalesPage(p); qc.invalidateQueries({ queryKey: ['ancillarySales', pumpId] }) }}
+                  onPageSizeChange={s => { setSalesPageSize(s); setSalesPage(0) }}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {backfillOpen && (
+        <BackfillSaleModal
+          pumpId={pumpId}
+          products={products.filter(p => p.status === 'ACTIVE')}
+          onClose={() => setBackfillOpen(false)}
+          onSuccess={() => {
+            setBackfillOpen(false)
+            setSalesPage(0)
+            qc.invalidateQueries({ queryKey: ['ancillarySales', pumpId] })
+            qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })
+            onRefresh()
+          }}
+        />
       )}
     </div>
+  )
+}
+
+// ── Backfill Sale Modal ───────────────────────────────────────────────────────
+/**
+ * 2-step modal for Admin/Owner to retroactively record a historical counter sale.
+ *
+ * Key differences from the live SellDialog:
+ * - Requires a past date (saleDate strictly before today).
+ * - The selling price is NOT entered by the user — the backend resolves it from
+ *   the product's price history for the chosen date.
+ * - FIFO deduction is restricted to lots delivered on or before saleDate.
+ * - Before recording a sale for a date, the product must have a historical stock
+ *   delivery on or before that date (enforce this via the Stock In tab first).
+ */
+function BackfillSaleModal({
+  pumpId, products, onClose, onSuccess,
+}: {
+  pumpId: number
+  products: AncillaryProduct[]
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const { addToast } = useToastStore()
+  const yesterday = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    return d.toISOString().split('T')[0]
+  })()
+
+  const [step, setStep] = useState<'form' | 'review'>('form')
+  const [form, setForm] = useState<BackfillSaleRequest>({
+    productId: products[0]?.id ?? 0,
+    saleDate: yesterday,
+    quantityUnits: 1,
+    paymentMode: 'CASH',
+  })
+  const [error, setError] = useState<string | null>(null)
+
+  const backfillMutation = useMutation({
+    mutationFn: (data: BackfillSaleRequest) => ancillaryApi.backfillSale(pumpId, data),
+    onSuccess: () => {
+      addToast('Historical sale backfilled successfully', 'success')
+      onSuccess()
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? 'Failed to backfill sale'
+      setError(msg)
+      addToast(msg, 'error')
+    },
+  })
+
+  const selectedProduct = products.find(p => p.id === form.productId) ?? null
+
+  const validate = (): string | null => {
+    if (!form.productId) return 'Select a product'
+    if (!form.saleDate) return 'Sale date is required'
+    if (form.saleDate >= new Date().toISOString().split('T')[0]) {
+      return 'Sale date must be before today. Use the Sell button on the Products tab for today\'s sales.'
+    }
+    if (!form.quantityUnits || form.quantityUnits < 1) return 'Quantity must be at least 1'
+    if (form.paymentMode === 'CREDIT' && !form.clientName?.trim()) {
+      return 'Client name is required for CREDIT payment mode'
+    }
+    return null
+  }
+
+  const handleReview = () => {
+    const err = validate()
+    if (err) { setError(err); return }
+    setError(null)
+    setStep('review')
+  }
+
+  return (
+    <ModalPortal>
+    <div className="ui-modal-backdrop px-4" onClick={onClose}>
+      <div className="ui-modal-panel w-full max-w-md" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
+          <div className="ui-modal-heading">
+            <h3 className="ui-modal-title">
+              {step === 'form' ? 'Backfill Sale' : 'Review Backfill Sale'}
+            </h3>
+            <p className="ui-modal-subtitle">
+              {step === 'form'
+                ? 'Enter a historical counter sale. Price is resolved from price history.'
+                : 'Review the details before submitting.'}
+            </p>
+          </div>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
+        </div>
+
+        {/* Step 1 — Form */}
+        {step === 'form' && (
+          <div className="ui-modal-body space-y-4">
+            {error && (
+              <div className="ui-alert ui-alert-danger text-sm">{error}</div>
+            )}
+
+            {/* Info banner about price resolution */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
+              <strong>Note:</strong> The selling price will be automatically resolved from the product's
+              price history for the selected date. Make sure a price was set on or before that date.
+              Stock must also have been delivered on or before the sale date.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="ui-label">Product *</label>
+                <SearchableSelect
+                  value={form.productId ? form.productId.toString() : ''}
+                  onChange={v => setForm(f => ({ ...f, productId: v ? parseInt(v) : 0 }))}
+                  placeholder="Select product…"
+                  options={products.map(p => ({ value: p.id.toString(), label: `${p.displayName} (stock: ${p.currentStockUnits})` }))}
+                />
+              </div>
+
+              <div>
+                <label className="ui-label">Sale Date * (past only)</label>
+                <input
+                  type="date"
+                  className="text-sm"
+                  value={form.saleDate}
+                  max={yesterday}
+                  onChange={e => setForm(f => ({ ...f, saleDate: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="ui-label">Quantity (units) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="text-sm"
+                  value={form.quantityUnits}
+                  onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="ui-label">Payment Mode *</label>
+                <SearchableSelect
+                  value={form.paymentMode}
+                  onChange={v => setForm(f => ({
+                    ...f,
+                    paymentMode: v as AncillaryPaymentMode,
+                    clientName: v !== 'CREDIT' ? undefined : f.clientName,
+                  }))}
+                  options={PAYMENT_MODES.map(m => ({ value: m, label: m.replace('_', ' ') }))}
+                />
+              </div>
+
+              {form.paymentMode === 'CREDIT' && (
+                <div className="sm:col-span-2">
+                  <label className="ui-label">Client Name * (required for credit)</label>
+                  <input
+                    className="text-sm"
+                    value={form.clientName ?? ''}
+                    onChange={e => setForm(f => ({ ...f, clientName: e.target.value || undefined }))}
+                    placeholder="Enter client name"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="ui-label">Bill No</label>
+                <input
+                  className="text-sm"
+                  value={form.billNo ?? ''}
+                  onChange={e => setForm(f => ({ ...f, billNo: e.target.value || undefined }))}
+                  placeholder="Optional"
+                />
+              </div>
+
+              <div>
+                <label className="ui-label">Notes</label>
+                <input
+                  className="text-sm"
+                  value={form.notes ?? ''}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — Review */}
+        {step === 'review' && (
+          <div className="ui-modal-body space-y-4">
+            <div className="bg-violet-50 border border-violet-200 rounded-lg px-4 py-2.5 text-xs text-violet-700 font-medium">
+              This sale will be recorded as <strong>Backfilled</strong> for {fmtDate(form.saleDate)}.
+              The selling price is resolved from price history.
+            </div>
+
+            <div className="ui-card-plain ui-card-muted divide-y divide-slate-100 overflow-hidden text-sm">
+              <ReviewRow label="Product" value={selectedProduct?.displayName ?? '—'} />
+              <ReviewRow label="Sale Date" value={fmtDate(form.saleDate)} />
+              <ReviewRow label="Quantity" value={`${form.quantityUnits} unit${form.quantityUnits !== 1 ? 's' : ''}`} />
+              <ReviewRow label="Payment Mode" value={form.paymentMode.replace('_', ' ')} />
+              {form.paymentMode === 'CREDIT' && <ReviewRow label="Client" value={form.clientName ?? '—'} />}
+              {form.billNo && <ReviewRow label="Bill No" value={form.billNo} />}
+              {form.notes && <ReviewRow label="Notes" value={form.notes} />}
+              <ReviewRow label="Price" value="Resolved from price history" />
+            </div>
+
+            {error && (
+              <div className="ui-alert ui-alert-danger text-sm">{error}</div>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="ui-modal-footer">
+          {step === 'form' ? (
+            <>
+              <button onClick={onClose} className="ui-btn ui-btn-secondary">Cancel</button>
+              <button onClick={handleReview} className="ui-btn ui-btn-primary">Review →</button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => { setStep('form'); setError(null) }}
+                className="ui-btn ui-btn-secondary"
+              >
+                <span className="inline-flex items-center gap-1.5"><ChevronLeft size={14} strokeWidth={2} />Back</span>
+              </button>
+              <button
+                onClick={() => backfillMutation.mutate(form)}
+                disabled={backfillMutation.isPending}
+                className="ui-btn ui-btn-primary disabled:opacity-50"
+              >
+                {backfillMutation.isPending
+                  ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Recording…</span>
+                  : 'Confirm Backfill'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+    </ModalPortal>
   )
 }

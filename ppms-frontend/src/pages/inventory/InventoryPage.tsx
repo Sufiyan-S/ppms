@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, Plus, AlertTriangle, AlertCircle, Check, X } from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { usePumpStore } from '../../store/usePumpStore'
 import { inventoryApi } from '../../api/inventoryApi'
@@ -176,7 +177,7 @@ export default function InventoryPage() {
           {/* ── Low stock alert banner ── */}
           {lowStockTanks.length > 0 && (
             <div className="ui-alert ui-alert-danger flex items-center gap-3">
-              <span className="text-red-500 text-lg">⚠️</span>
+              <AlertTriangle size={18} strokeWidth={2} className="text-red-500 shrink-0" />
               <p className="text-sm text-red-700 font-medium">
                 {lowStockTanks.length === 1
                   ? `${lowStockTanks[0].tankIdentifier} (${lowStockTanks[0].fuelType}) is below 20% capacity.`
@@ -188,7 +189,7 @@ export default function InventoryPage() {
           {/* ── DIP overdue alert banner ── */}
           {dipOverdueTanks.length > 0 && (
             <div className="ui-alert ui-alert-danger flex items-center gap-3">
-              <span className="text-red-500 text-lg">🔴</span>
+              <AlertCircle size={18} strokeWidth={2} className="text-red-500 shrink-0" />
               <div>
                 <p className="text-sm text-red-700 font-medium">
                   {dipOverdueTanks.length === 1
@@ -215,14 +216,15 @@ export default function InventoryPage() {
                 {selectedPump && (
                   <span className="text-xs text-slate-400">{selectedPump.name}</span>
                 )}
-                <span className={`ui-accordion-arrow ml-1 ${stockOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+                <span className={`ui-accordion-arrow ml-1 ${stockOpen ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
               </button>
               {isOwnerOrAdmin && (
                 <button
                   onClick={() => setShowDeliveryModal(true)}
-                  className="ui-btn ui-btn-primary shrink-0 ml-auto"
+                  className="ui-btn ui-btn-primary shrink-0 ml-auto inline-flex items-center gap-1.5"
                 >
-                  + Record Delivery
+                  <Plus size={14} strokeWidth={2.5} />
+                  Record Delivery
                 </button>
               )}
             </div>
@@ -264,7 +266,7 @@ export default function InventoryPage() {
               className="ui-accordion-trigger"
             >
               <span className="ui-accordion-title">Tanker Delivery History</span>
-              <span className={`ui-accordion-arrow ${deliveryHistOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+              <span className={`ui-accordion-arrow ${deliveryHistOpen ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
             </button>
             {deliveryHistOpen && (
               <div className="ui-accordion-content border-t border-slate-100">
@@ -365,7 +367,7 @@ export default function InventoryPage() {
                                   <span className="text-sm font-bold text-slate-800">
                                     ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                   </span>
-                                  <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+                                  <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
                                 </div>
                               </button>
 
@@ -413,7 +415,7 @@ export default function InventoryPage() {
               className="ui-accordion-trigger"
             >
               <span className="ui-accordion-title">DIP Check History</span>
-              <span className={`ui-accordion-arrow ${dipHistOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+              <span className={`ui-accordion-arrow ${dipHistOpen ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
             </button>
             {dipHistOpen && (
               <div className="ui-accordion-content border-t border-slate-100">
@@ -515,7 +517,7 @@ export default function InventoryPage() {
                                   Variance Detected
                                 </span>
                               )}
-                              <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+                              <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
                             </button>
                             {!isCollapsed && (
                               <div className="ui-accordion-content space-y-1.5">
@@ -620,7 +622,7 @@ function TankStockBar({
           )}
           {dipOverdue && (
             <span className="text-xs bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-medium">
-              ● DIP OVERDUE {lastDipAt ? `· last ${timeSinceDip(lastDipAt)}` : '· never checked'}
+              DIP OVERDUE {lastDipAt ? `· last ${timeSinceDip(lastDipAt)}` : '· never checked'}
             </span>
           )}
         </div>
@@ -707,7 +709,7 @@ function FuelLotsDialog({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">✕</button>
+          <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
         </div>
 
         {/* Body */}
@@ -1125,10 +1127,10 @@ function RecordDeliveryModal({
                           <button
                             type="button"
                             onClick={() => removeRow(row.id)}
-                            className="text-red-300 hover:text-red-600 text-sm transition-colors leading-none"
+                            className="text-red-300 hover:text-red-600 transition-colors p-0.5"
                             title="Remove"
                           >
-                            ✕
+                            <X size={14} strokeWidth={2} />
                           </button>
                         )}
                       </div>
@@ -1508,7 +1510,7 @@ function DipCheckModal({
             }`}>
               <span>
                 {Math.abs(variance) < tank.dipTolerance
-                  ? 'Within tolerance ✓'
+                  ? <span className="inline-flex items-center gap-1">Within tolerance<Check size={12} strokeWidth={2.5} /></span>
                   : variance > 0
                     ? 'Surplus detected'
                     : 'Shortage detected'}

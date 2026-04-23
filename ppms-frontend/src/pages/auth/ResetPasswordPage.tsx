@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
 import { authApi } from '../../api/authApi'
 import { PasswordInput } from '../../components/PasswordInput'
 
@@ -20,7 +21,11 @@ export default function ResetPasswordPage() {
     return (
       <div className="ui-auth-shell">
         <div className="ui-auth-card text-center space-y-4">
-          <span className="text-4xl">⚠️</span>
+          <div className="flex justify-center">
+            <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center">
+              <AlertTriangle size={28} strokeWidth={2} className="text-amber-500" />
+            </div>
+          </div>
           <h1 className="ui-title-sm">Invalid Reset Link</h1>
           <p className="ui-subtitle">
             This password reset link is invalid or missing a token.

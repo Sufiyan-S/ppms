@@ -191,13 +191,17 @@ public class AncillaryProductController {
         AncillaryStockDelivery delivery = result.getDelivery();
         AncillaryStockLot lot = result.getLot();
 
-        log.info("Ancillary delivery recorded: pump={}, productId={}, units={}, cost={}, lot={}, by={}",
+        log.info("Ancillary delivery recorded: pump={}, productId={}, units={}, cost={}, lot={}, backfilled={}, by={}",
                 pumpId, id, request.getQuantityUnits(), delivery.getCostPricePerUnit(),
-                lot.getId(), currentUser.getId());
+                lot.getId(), delivery.isBackfilled(), currentUser.getId());
 
-        auditService.log(pumpId, AuditAction.ANCILLARY_DELIVERY_RECORDED,
+        AuditAction deliveryAuditAction = delivery.isBackfilled()
+                ? AuditAction.ANCILLARY_DELIVERY_BACKFILLED
+                : AuditAction.ANCILLARY_DELIVERY_RECORDED;
+        auditService.log(pumpId, deliveryAuditAction,
                 "AncillaryStockDelivery", delivery.getId().toString(),
-                "Stock delivery: " + product.getName() + " × " + request.getQuantityUnits() +
+                (delivery.isBackfilled() ? "Backfilled stock delivery: " : "Stock delivery: ")
+                + product.getName() + " × " + request.getQuantityUnits() +
                 " units at ₹" + delivery.getCostPricePerUnit() + "/unit",
                 currentUser);
 
@@ -256,6 +260,40 @@ public class AncillaryProductController {
             log.info("Cash event recorded for ancillary sale: pump={}, saleId={}, amount={}",
                     pumpId, sale.getId(), sale.getTotalWithGst());
         }
+        return ResponseEntity.status(HttpStatus.CREATED).body(queryService.toSaleResponse(sale, product));
+    }
+
+    /**
+     * POST /api/pumps/{pumpId}/ancillary/sales/backfill
+     * Retroactively records a historical counter sale for a past date.
+     *
+     * Business rules enforced:
+     * 1. Only OWNER and ADMIN are allowed (managers cannot backfill).
+     * 2. saleDate must be strictly before today (IST).
+     * 3. The selling price is resolved automatically from the product's price history.
+     * 4. At least one active lot must have been delivered on or before saleDate.
+     * 5. Total available units across those historical lots must cover the requested quantity.
+     */
+    @PostMapping("/{pumpId}/ancillary/sales/backfill")
+    @Transactional
+    public ResponseEntity<AncillarySaleResponse> backfillSale(
+            @PathVariable Long pumpId,
+            @Valid @RequestBody BackfillSaleRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        requireOwnerOrAdmin(currentUser);
+
+        AncillaryInventoryWorkflowService.SaleResult result = workflowService.backfillSale(pumpId, request, currentUser);
+        AncillaryProduct product = result.getProduct();
+        AncillarySale sale = result.getSale();
+
+        auditService.log(pumpId, AuditAction.ANCILLARY_SALE_BACKFILLED,
+                "AncillarySale", sale.getId().toString(),
+                "Backfilled sale: " + product.getName() + " × " + request.getQuantityUnits() +
+                " units on " + request.getSaleDate() + ", total ₹" +
+                sale.getTotalAmount() + " (" + request.getPaymentMode() + ")",
+                currentUser);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(queryService.toSaleResponse(sale, product));
     }
 

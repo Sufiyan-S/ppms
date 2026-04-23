@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  LayoutDashboard, Zap, CalendarDays, Database, CreditCard,
+  ReceiptText, FileText, Wallet, Wrench, HardHat, Package,
+  ClipboardList, Landmark, BarChart2, TrendingUp, Settings, Fuel,
+  Check, X,
+  type LucideIcon,
+} from 'lucide-react'
 import { authApi } from '../../api/authApi'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -16,24 +23,23 @@ import { ModalPortal } from '../../components/ModalPortal'
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
 
-// Each nav item declares which PAGE_PERMISSIONS key it maps to.
-// The sidebar filters this list based on the logged-in user's role at render time.
-const ALL_NAV_ITEMS = [
-  { label: 'Overview',        path: '/dashboard',                  icon: '🏠', page: 'overview' },
-  { label: 'Shifts',          path: '/dashboard/shifts',           icon: '⚡', page: 'shifts' },
-  { label: 'Shift Planning',  path: '/dashboard/shift-planning',   icon: '🗓', page: 'shiftPlanning' },
-  { label: 'Inventory',       path: '/dashboard/inventory',        icon: '🛢', page: 'inventory' },
-  { label: 'Credit',          path: '/dashboard/credit',           icon: '💳', page: 'credit' },
-  { label: 'Expenses',        path: '/dashboard/expenses',         icon: '💸', page: 'expenses' },
-  { label: 'Documents',       path: '/dashboard/documents',        icon: '📄', page: 'documents' },
-  { label: 'Cash Drawer',     path: '/dashboard/cash',             icon: '💰', page: 'cashDrawer' },
-  { label: 'Calibration',     path: '/dashboard/calibration',      icon: '🔧', page: 'calibration' },
-  { label: 'Payroll',         path: '/dashboard/payroll',          icon: '👷', page: 'payroll' },
-  { label: 'Products',        path: '/dashboard/ancillary',        icon: '📦', page: 'products' },
-  { label: 'Audit Log',       path: '/dashboard/audit',            icon: '🔍', page: 'auditLog' },
-  { label: 'Balance Sheets',  path: '/dashboard/balance-sheets',   icon: '📊', page: 'balanceSheets' },
-  { label: 'Reports',         path: '/dashboard/reports',          icon: '📈', page: 'reports' },
-  { label: 'Setup',           path: '/dashboard/setup',            icon: '⚙️', page: 'setup' },
+const ALL_NAV_ITEMS: { label: string; path: string; icon: LucideIcon; page: string; bg: string; color: string }[] = [
+  { label: 'Overview',       path: '/dashboard',                icon: LayoutDashboard, page: 'overview',      bg: 'bg-blue-100',    color: 'text-blue-600'    },
+  { label: 'Shifts',         path: '/dashboard/shifts',         icon: Zap,             page: 'shifts',        bg: 'bg-emerald-100', color: 'text-emerald-600' },
+  { label: 'Shift Planning', path: '/dashboard/shift-planning', icon: CalendarDays,    page: 'shiftPlanning', bg: 'bg-violet-100',  color: 'text-violet-600'  },
+  { label: 'Inventory',      path: '/dashboard/inventory',      icon: Database,        page: 'inventory',     bg: 'bg-amber-100',   color: 'text-amber-600'   },
+  { label: 'Credit',         path: '/dashboard/credit',         icon: CreditCard,      page: 'credit',        bg: 'bg-cyan-100',    color: 'text-cyan-600'    },
+  { label: 'Expenses',       path: '/dashboard/expenses',       icon: ReceiptText,     page: 'expenses',      bg: 'bg-rose-100',    color: 'text-rose-600'    },
+  { label: 'Documents',      path: '/dashboard/documents',      icon: FileText,        page: 'documents',     bg: 'bg-slate-100',   color: 'text-slate-600'   },
+  { label: 'Cash Drawer',    path: '/dashboard/cash',           icon: Wallet,          page: 'cashDrawer',    bg: 'bg-lime-100',    color: 'text-lime-700'    },
+  { label: 'Calibration',    path: '/dashboard/calibration',    icon: Wrench,          page: 'calibration',   bg: 'bg-orange-100',  color: 'text-orange-600'  },
+  { label: 'Payroll',        path: '/dashboard/payroll',        icon: HardHat,         page: 'payroll',       bg: 'bg-purple-100',  color: 'text-purple-600'  },
+  { label: 'Products',       path: '/dashboard/ancillary',      icon: Package,         page: 'products',      bg: 'bg-teal-100',    color: 'text-teal-600'    },
+  { label: 'Audit Log',      path: '/dashboard/audit',          icon: ClipboardList,   page: 'auditLog',      bg: 'bg-zinc-100',    color: 'text-zinc-500'    },
+  { label: 'Settlements',    path: '/dashboard/settlements',    icon: Landmark,        page: 'settlements',   bg: 'bg-indigo-100',  color: 'text-indigo-600'  },
+  { label: 'Balance Sheets', path: '/dashboard/balance-sheets', icon: BarChart2,       page: 'balanceSheets', bg: 'bg-sky-100',     color: 'text-sky-600'     },
+  { label: 'Reports',        path: '/dashboard/reports',        icon: TrendingUp,      page: 'reports',       bg: 'bg-green-100',   color: 'text-green-700'   },
+  { label: 'Setup',          path: '/dashboard/setup',          icon: Settings,        page: 'setup',         bg: 'bg-gray-100',    color: 'text-gray-600'    },
 ]
 
 export default function DashboardPage() {
@@ -198,7 +204,7 @@ export default function DashboardPage() {
         {/* ── Left: Logo + tagline ── */}
         <div className="ui-dashboard-topbar-left">
           <div className="ui-dashboard-brandmark">
-            ⛽
+            <Fuel size={20} className="text-blue-300" strokeWidth={1.8} />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -208,7 +214,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <p className="text-xs text-slate-400 italic hidden sm:block mt-0.5">
-              Fuelling efficiency, every shift. ⚡
+              Fuelling efficiency, every shift.
             </p>
           </div>
         </div>
@@ -223,13 +229,13 @@ export default function DashboardPage() {
                 <button
                   key={p.id}
                   onClick={() => setSelectedPumpId(p.id)}
-                  className={`ui-dashboard-pump-chip ${
+                  className={`ui-dashboard-pump-chip cursor-pointer ${
                     selectedPumpId === p.id
                       ? 'ui-dashboard-pump-chip--active'
                       : ''
                   }`}
                 >
-                  ⛽ {p.name}
+                  {p.name}
                 </button>
               ))}
             </div>
@@ -255,15 +261,15 @@ export default function DashboardPage() {
                   <button
                     onClick={saveName}
                     disabled={renameMutation.isPending}
-                    className="text-green-400 hover:text-green-300 text-xs font-bold disabled:opacity-50"
+                    className="text-green-400 hover:text-green-300 p-0.5 disabled:opacity-50"
                     title="Save"
-                  >✓</button>
+                  ><Check size={13} strokeWidth={2.5} /></button>
                   <button
                     onClick={cancelEdit}
                     disabled={renameMutation.isPending}
-                    className="text-slate-400 hover:text-slate-200 text-xs disabled:opacity-50"
+                    className="text-slate-400 hover:text-slate-200 p-0.5 disabled:opacity-50"
                     title="Cancel"
-                  >✕</button>
+                  ><X size={13} strokeWidth={2} /></button>
                 </div>
                 {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
               </div>
@@ -339,9 +345,9 @@ export default function DashboardPage() {
                       : ''
                   }`}
                 >
-                  {/* Active indicator bar */}
-                  <span className={`w-0.5 h-3 rounded-full flex-shrink-0 transition-all ${isActive ? 'bg-blue-600' : 'bg-transparent'}`} />
-                  <span className="text-sm leading-none">{item.icon}</span>
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${item.bg}`}>
+                    <item.icon size={14} strokeWidth={2} className={item.color} />
+                  </div>
                   <span className="truncate">{item.label}</span>
                 </Link>
               )

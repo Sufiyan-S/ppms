@@ -66,4 +66,11 @@ export const shiftDefinitionApi = {
       { disableDate },
       { params: { effectiveFrom } }
     ).then(r => r.data),
+
+  /**
+   * Returns the shift definitions that were active for a pump on a given historical date.
+   * Used by the backfill modal to populate the shift window selector.
+   */
+  getForDate: (pumpId: number, date: string) =>
+    client.get<ShiftDefinition[]>(`/pumps/${pumpId}/shift-definitions/for-date`, { params: { date } }).then(r => r.data),
 }

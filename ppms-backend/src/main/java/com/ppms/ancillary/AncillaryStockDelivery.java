@@ -1,5 +1,6 @@
 package com.ppms.ancillary;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -49,6 +50,15 @@ public class AncillaryStockDelivery {
 
     @Column(name = "logged_by_user_id", nullable = false)
     private Long loggedByUserId;
+
+    /**
+     * True when this delivery was entered retroactively for a past date by Admin/Owner.
+     * Delivery date < today at record time triggers this flag automatically.
+     */
+    @JsonProperty("isBackfilled")
+    @Column(name = "is_backfilled", nullable = false)
+    @Builder.Default
+    private boolean isBackfilled = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

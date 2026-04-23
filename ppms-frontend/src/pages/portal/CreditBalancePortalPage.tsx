@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
+import { Fuel } from 'lucide-react'
 
 // Uses a plain axios instance — no auth header, no JWT
 const publicClient = axios.create({ baseURL: '/api' })
@@ -49,7 +50,7 @@ export default function CreditBalancePortalPage() {
 
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-700 to-blue-800 px-6 py-5 text-white text-center">
-          <div className="text-3xl mb-2">⛽</div>
+          <div className="flex justify-center mb-2"><Fuel size={28} strokeWidth={1.8} className="text-blue-200" /></div>
           <h1 className="text-lg font-bold">Credit Balance Portal</h1>
           <p className="text-blue-200 text-xs mt-1">Check your outstanding fuel credit balance</p>
         </div>

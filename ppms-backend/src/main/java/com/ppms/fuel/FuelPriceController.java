@@ -17,7 +17,11 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/fuel-prices")
@@ -38,6 +42,36 @@ public class FuelPriceController {
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
     public ResponseEntity<List<GlobalFuelPrice>> getCurrentPrices(@RequestParam Long pumpId) {
         return ResponseEntity.ok(fuelPriceRepository.findCurrentPricesForPump(pumpId));
+    }
+
+    /**
+     * GET /api/fuel-prices/for-date?pumpId={id}&date=YYYY-MM-DD
+     * Returns the price that was effective for each fuel type at a pump on the given historical date.
+     * pricePerUnit is null when no price record exists on or before that date for a fuel type.
+     * Used by the backfill shift modal to show resolved rates and flag which ones need manual entry.
+     */
+    @GetMapping("/for-date")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public ResponseEntity<List<FuelPriceForDateResponse>> getPricesForDate(
+            @RequestParam Long pumpId,
+            @RequestParam LocalDate date) {
+
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        OffsetDateTime asOf = date.plusDays(1).atStartOfDay(ist).toOffsetDateTime();
+
+        List<FuelPriceForDateResponse> responses = Arrays.stream(FuelType.values())
+                .map(fuelType -> {
+                    Optional<GlobalFuelPrice> price =
+                            fuelPriceRepository.findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
+                                    pumpId, fuelType, asOf);
+                    return FuelPriceForDateResponse.builder()
+                            .fuelType(fuelType.name())
+                            .pricePerUnit(price.map(GlobalFuelPrice::getPricePerUnit).orElse(null))
+                            .build();
+                })
+                .toList();
+
+        return ResponseEntity.ok(responses);
     }
 
     /**

@@ -6,6 +6,7 @@ export type ShiftStatus =
   | 'AUTO_CLOSED_OVERDUE'
   | 'CLOSED_BALANCED'
   | 'CLOSED_DISCREPANCY_PENDING'
+  | 'CLOSED_DISCREPANCY_PENDING_APPROVAL'
   | 'CLOSED_DISCREPANCY_RESOLVED'
 
 export type DiscrepancyType = 'SHORT' | 'OVER'
@@ -87,6 +88,12 @@ export interface Shift {
   shiftDate: string
   actualStartTime: string
   actualEndTime: string | null
+  /**
+   * Scheduled end time from the shift's definition (IST, ISO string).
+   * Null only for legacy shifts with no linked definition.
+   * Used to show a late-close warning in the Close Shift modal.
+   */
+  scheduledEndTime: string | null
   fuelReadings: FuelReading[]
   totalAmountDue: number | null
   cashCollected: number | null
@@ -100,6 +107,8 @@ export interface Shift {
   discrepancyResolution: string | null
   discrepancyResolutionNote: string | null
   status: ShiftStatus
+  /** True when this shift was entered retroactively by Admin/Owner via the backfill flow. */
+  isBackfilled: boolean
   creditEntries: CreditEntry[]
 }
 
@@ -123,4 +132,31 @@ export interface CloseShiftRequest {
   creditTotal: number
   creditEntries: CreditEntryInput[]
   discrepancyReason?: string
+}
+
+export interface BackfillNozzleReading {
+  nozzleId: number
+  openingReading: number
+  closingReading: number
+}
+
+export interface BackfillShiftRequest {
+  shiftDefinitionId: number
+  /** YYYY-MM-DD — must be within the last 365 days and before today */
+  shiftDate: string
+  duId: number
+  operatorId: number
+  nozzleReadings: BackfillNozzleReading[]
+  cashCollected: number
+  upiCollected: number
+  cardCollected: number
+  fleetCardCollected: number
+  creditTotal: number
+  creditEntries: CreditEntryInput[]
+  discrepancyReason?: string
+  /**
+   * Historical fuel rates to save before processing when no price exists in DB for a fuel type
+   * on shiftDate. Keys are FuelType enum names (e.g. "PETROL", "DIESEL"), values are ₹/L.
+   */
+  fuelRateOverrides?: Record<string, number>
 }

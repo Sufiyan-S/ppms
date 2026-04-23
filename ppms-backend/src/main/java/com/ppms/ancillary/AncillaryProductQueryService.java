@@ -87,6 +87,7 @@ public class AncillaryProductQueryService {
                 .notes(sale.getNotes())
                 .soldByUserId(sale.getSoldByUserId())
                 .saleDate(sale.getSaleDate())
+                .isBackfilled(sale.isBackfilled())
                 .createdAt(sale.getCreatedAt())
                 .build();
     }

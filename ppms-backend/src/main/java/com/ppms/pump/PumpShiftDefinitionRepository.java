@@ -60,6 +60,25 @@ public interface PumpShiftDefinitionRepository extends JpaRepository<PumpShiftDe
     List<PumpShiftDefinition> findOpenDefinitionsForPump(@Param("pumpId") Long pumpId);
 
     /**
+     * Returns the definitions belonging to the most recent group whose effectiveFrom is on or before date.
+     * Ignores effectiveTo — used as a fallback for backfill when the exact date range no longer matches
+     * (e.g. the definition has since been superseded or the backfill date predates the first definition).
+     * Returns an empty list if no group has effectiveFrom <= date.
+     */
+    @Query("""
+            SELECT d FROM PumpShiftDefinition d
+            WHERE d.pumpId = :pumpId
+              AND d.effectiveFrom = (
+                SELECT MAX(d2.effectiveFrom) FROM PumpShiftDefinition d2
+                WHERE d2.pumpId = :pumpId AND d2.effectiveFrom <= :date
+              )
+            ORDER BY d.sortOrder ASC
+            """)
+    List<PumpShiftDefinition> findLatestGroupOnOrBeforeDate(
+            @Param("pumpId") Long pumpId,
+            @Param("date") LocalDate date);
+
+    /**
      * Finds definitions whose effective date range overlaps with [fromDate, toDate].
      * Used to block creation of a new group that would overlap an existing group.
      * Open-ended groups (effectiveTo IS NULL) overlap any range starting on or after their effectiveFrom.

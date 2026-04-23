@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { documentApi } from '../../api/documentApi'
@@ -217,9 +218,9 @@ export default function DocumentsPage() {
                     <button
                       onClick={() => deleteMutation.mutate(doc.id)}
                       disabled={deleteMutation.isPending}
-                      className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-red-400 hover:text-red-600 disabled:opacity-50"
+                      className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
                     >
-                      ✕
+                      <X size={13} strokeWidth={2} />
                     </button>
                   )}
                 </div>

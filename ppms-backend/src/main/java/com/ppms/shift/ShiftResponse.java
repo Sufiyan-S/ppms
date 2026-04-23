@@ -33,6 +33,14 @@ public class ShiftResponse {
     private OffsetDateTime actualStartTime;
     private OffsetDateTime actualEndTime;
 
+    /**
+     * Scheduled end time derived from the linked shift definition.
+     * Null only when no shift definition is linked (legacy/orphaned shifts).
+     * Used by the close-shift UI to warn the operator when they are closing late
+     * and to show them the time that will be recorded (definition end, not clock time).
+     */
+    private OffsetDateTime scheduledEndTime;
+
     /** Per-nozzle fuel readings (one per nozzle in this shift). */
     private List<FuelReadingResponse> fuelReadings;
 
@@ -53,6 +61,9 @@ public class ShiftResponse {
     private String discrepancyResolutionNote;
 
     private String status;
+
+    /** True if this shift was entered retroactively via the Admin backfill flow. */
+    private boolean isBackfilled;
 
     private List<CreditEntryResponse> creditEntries;
 

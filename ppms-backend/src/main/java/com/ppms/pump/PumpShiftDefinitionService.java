@@ -43,6 +43,40 @@ public class PumpShiftDefinitionService {
                 .toList();
     }
 
+    /**
+     * Returns the shift definitions that were (or are) in effect for a pump on a given date.
+     * Used by the backfill modal to populate the shift window selector for a chosen date.
+     *
+     * Three-step fallback so the backfill form is never needlessly blocked:
+     *  1. Exact historical match — definition range covers the date (effectiveFrom ≤ date ≤ effectiveTo).
+     *  2. Most recent group whose effectiveFrom ≤ date — definition was in use at the time but has
+     *     since been superseded or expired (effectiveTo < date).
+     *  3. Currently active definitions — for new pumps where all definitions start after the backfill
+     *     date (effectiveFrom > date for every group).  Using today's windows as a proxy is safe
+     *     because the backend does not validate that the definition was active on the shift date.
+     *
+     * @param pumpId the pump
+     * @param date   the historical date to look up definitions for
+     */
+    public List<ShiftDefinitionResponse> getForPumpOnDate(Long pumpId, LocalDate date) {
+        // Step 1: exact historical match
+        List<PumpShiftDefinition> definitions = repository.findActiveForPumpOnDate(pumpId, date);
+
+        if (definitions.isEmpty()) {
+            // Step 2: most recent group that started on or before the date (may have since expired)
+            definitions = repository.findLatestGroupOnOrBeforeDate(pumpId, date);
+        }
+
+        if (definitions.isEmpty()) {
+            // Step 3: current active definitions — new pump whose config starts after the backfill date
+            definitions = repository.findActiveForPumpOnDate(pumpId, LocalDate.now());
+        }
+
+        return definitions.stream()
+                .map(ShiftDefinitionResponse::from)
+                .toList();
+    }
+
     // ── Detect current shift at shift-open time ───────────────────────────────
 
     /**

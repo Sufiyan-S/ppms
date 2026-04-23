@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
 import { userApi } from '../../api/userApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
@@ -147,7 +148,8 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="ui-modal-body space-y-5 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="ui-modal-body space-y-5">
 
           {/* ── Step 1: Select DU ── */}
           <div>
@@ -197,7 +199,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                         ))}
                       </div>
                       {isSelected && (
-                        <span className="text-xs text-blue-600 font-semibold">✓ Selected</span>
+                        <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold"><Check size={11} strokeWidth={2.5} />Selected</span>
                       )}
                     </button>
                   )
@@ -243,7 +245,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
                       </span>
                       {isBusy
                         ? <span className="text-xs text-slate-400">In use</span>
-                        : isSelected && <span className="text-xs text-blue-600 font-semibold">✓ Selected</span>
+                        : isSelected && <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold"><Check size={11} strokeWidth={2.5} />Selected</span>
                       }
                     </button>
                   )
@@ -365,8 +367,10 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
             </div>
           )}
 
+          </div>{/* end ui-modal-body */}
+
           {/* ── Actions ── */}
-          <div className="ui-modal-footer -mx-6 -mb-6">
+          <div className="ui-modal-footer">
             <button type="button" onClick={onClose}
               className="ui-btn ui-btn-secondary flex-1">
               Cancel

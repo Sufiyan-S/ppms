@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight, Check, X, Sparkles, Circle } from 'lucide-react'
 import { usePumpStore } from '../../store/usePumpStore'
 import { userApi } from '../../api/userApi'
 import { shiftPlanApi } from '../../api/shiftPlanApi'
@@ -219,14 +220,14 @@ export default function ShiftPlanningPage() {
             <div className="flex items-center gap-3">
               <button onClick={prevWeek}
                 className="ui-btn ui-btn-secondary min-h-0 px-3 py-2 text-slate-500">
-                ←
+                <ChevronLeft size={14} strokeWidth={2} />
               </button>
               <span className="text-sm font-semibold text-slate-700">
                 Week of {formatIstDate(weekStart, { day: 'numeric', month: 'long', year: 'numeric' })}
               </span>
               <button onClick={nextWeek}
                 className="ui-btn ui-btn-secondary min-h-0 px-3 py-2 text-slate-500">
-                →
+                <ChevronRight size={14} strokeWidth={2} />
               </button>
             </div>
 
@@ -237,7 +238,10 @@ export default function ShiftPlanningPage() {
                     ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-amber-100 text-amber-700'
                 }`}>
-                  {plan.status === 'PUBLISHED' ? '✓ Published' : '⬤ Draft'}
+                  {plan.status === 'PUBLISHED'
+                    ? <span className="inline-flex items-center gap-1"><Check size={11} strokeWidth={2.5} />Published</span>
+                    : <span className="inline-flex items-center gap-1"><Circle size={8} fill="currentColor" strokeWidth={0} />Draft</span>
+                  }
                 </span>
               )}
               {isOwnerOrAdmin && (
@@ -248,7 +252,7 @@ export default function ShiftPlanningPage() {
                     title={isWeekEntirelyPast ? 'Cannot generate a plan for a past week' : undefined}
                     className="ui-btn ui-btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {plan ? 'Regenerate' : '✦ Auto-generate'}
+                    {plan ? 'Regenerate' : <span className="inline-flex items-center gap-1.5"><Sparkles size={13} strokeWidth={2} />Auto-generate</span>}
                   </button>
                   {plan && plan.status === 'DRAFT' && (
                     <button
@@ -400,8 +404,8 @@ export default function ShiftPlanningPage() {
                                               <span className="truncate text-slate-600 font-medium">
                                                 {staffById[opId]?.fullName ?? `#${opId}`}
                                               </span>
-                                              <span className="ml-auto text-xs px-1.5 py-0.5 rounded-full shrink-0 bg-emerald-100 text-emerald-700">
-                                                ✓
+                                              <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-emerald-100 text-emerald-700">
+                                                <Check size={10} strokeWidth={2.5} />
                                               </span>
                                             </div>
                                           ))}
@@ -410,8 +414,8 @@ export default function ShiftPlanningPage() {
                                               <span className="truncate text-slate-400 font-medium">
                                                 {staffById[entry.operatorUserId]?.fullName ?? `#${entry.operatorUserId}`}
                                               </span>
-                                              <span className="ml-auto text-xs px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600">
-                                                ✗
+                                              <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600">
+                                                <X size={10} strokeWidth={2.5} />
                                               </span>
                                             </div>
                                           ))}
@@ -427,17 +431,17 @@ export default function ShiftPlanningPage() {
                                             {staffById[entry.operatorUserId]?.fullName ?? `#${entry.operatorUserId}`}
                                           </span>
                                           <span className={`ml-auto text-xs px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_BADGE[entry.status]}`}>
-                                            {entry.status === 'PLANNED' ? '●' : entry.status === 'CONFIRMED' ? '✓' : '✗'}
+                                            {entry.status === 'PLANNED' ? <Circle size={8} fill="currentColor" strokeWidth={0} /> : entry.status === 'CONFIRMED' ? <Check size={10} strokeWidth={2.5} /> : <X size={10} strokeWidth={2.5} />}
                                           </span>
                                           {isOwnerOrAdmin && entry.status === 'PLANNED' && (
                                             <button
                                               type="button"
                                               onClick={() => removeEntryMutation.mutate({ entryId: entry.id })}
                                               disabled={removeEntryMutation.isPending}
-                                              className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all ml-0.5 shrink-0"
+                                              className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all ml-0.5 shrink-0 p-0.5"
                                               title="Remove"
                                             >
-                                              ✕
+                                              <X size={11} strokeWidth={2} />
                                             </button>
                                           )}
                                         </div>
@@ -478,7 +482,7 @@ export default function ShiftPlanningPage() {
                                               onClick={() => { setEditSlot(null); setSlotError(null) }}
                                               className="ui-btn ui-btn-secondary min-h-0 px-2 py-1 text-xs"
                                             >
-                                              ✕
+                                              <X size={12} strokeWidth={2} />
                                             </button>
                                           </div>
                                           {slotError && <p className="ui-error-text">{slotError}</p>}

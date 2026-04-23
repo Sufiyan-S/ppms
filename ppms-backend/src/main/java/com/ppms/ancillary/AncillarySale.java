@@ -1,5 +1,6 @@
 package com.ppms.ancillary;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ppms.transaction.TransactionPaymentMode;
 import jakarta.persistence.*;
 import lombok.*;
@@ -85,6 +86,15 @@ public class AncillarySale {
 
     @Column(name = "sale_date", nullable = false)
     private LocalDate saleDate;
+
+    /**
+     * True when this sale was entered retroactively for a past date by Admin/Owner.
+     * Behaves identically to live sales for all reports and balance sheets.
+     */
+    @JsonProperty("isBackfilled")
+    @Column(name = "is_backfilled", nullable = false)
+    @Builder.Default
+    private boolean isBackfilled = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

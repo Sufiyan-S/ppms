@@ -132,6 +132,14 @@ public class Shift {
     @Column(name = "is_overdue_flag", nullable = false)
     private Boolean isOverdueFlag;
 
+    /**
+     * True when this shift was entered retroactively by an Admin/Owner via the backfill flow.
+     * The shift behaves identically to a live closed shift for reports and balance sheets.
+     */
+    @Column(name = "is_backfilled", nullable = false)
+    @Builder.Default
+    private boolean isBackfilled = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

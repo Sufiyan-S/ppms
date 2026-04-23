@@ -24,6 +24,7 @@ const CalibrationPage = lazy(() => import('./pages/calibration/CalibrationPage')
 const AuditLogPage = lazy(() => import('./pages/audit/AuditLogPage'))
 const PayrollPage = lazy(() => import('./pages/payroll/PayrollPage'))
 const AncillaryProductsPage = lazy(() => import('./pages/ancillary/AncillaryProductsPage'))
+const PaymentSettlementsPage = lazy(() => import('./pages/settlements/PaymentSettlementsPage'))
 const CreditBalancePortalPage = lazy(() => import('./pages/portal/CreditBalancePortalPage'))
 
 const queryClient = new QueryClient({
@@ -163,6 +164,14 @@ export default function App() {
               element={withSuspense(
                 <ProtectedRoute page="auditLog">
                   <AuditLogPage />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="settlements"
+              element={withSuspense(
+                <ProtectedRoute page="settlements">
+                  <PaymentSettlementsPage />
                 </ProtectedRoute>
               )}
             />

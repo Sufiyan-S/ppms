@@ -27,6 +27,9 @@ import com.ppms.pump.UndergroundTank;
 import com.ppms.pump.UndergroundTankRepository;
 import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionService;
+import com.ppms.settlement.PaymentSettlement;
+import com.ppms.settlement.PaymentSettlementRepository;
+import com.ppms.settlement.SettlementPaymentType;
 import com.ppms.shift.*;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -42,6 +45,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -72,6 +77,7 @@ public class BalanceSheetService {
     private final BusinessClock             businessClock;
     private final BalanceSheetSupportService supportService;
     private final BalanceSheetDetailAssembler detailAssembler;
+    private final PaymentSettlementRepository settlementRepository;
 
     // ── Generate ──────────────────────────────────────────────────────────────
 
@@ -81,6 +87,14 @@ public class BalanceSheetService {
 
         LocalDate reportDate = req.getReportDate();
         boolean isShift = req.getReportType() == BalanceSheetReportType.SHIFT;
+
+        // Live DAY report: reportDate == today (IST) → use a rolling 24-hour window ending now
+        // so that cross-midnight shifts (e.g. 11pm→9am) are captured correctly.
+        // Historical DAY reports (reportDate < today) use the old calendar-day behaviour.
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        boolean isLiveDay = !isShift && reportDate.equals(LocalDate.now(ist));
+        OffsetDateTime windowEnd   = isLiveDay ? businessClock.now() : null;
+        OffsetDateTime windowStart = isLiveDay ? windowEnd.minusHours(24) : null;
 
         // For SHIFT reports, resolve the definition and use it for duplicate check and querying
         PumpShiftDefinition shiftDef = null;
@@ -105,13 +119,20 @@ public class BalanceSheetService {
         }
 
         // ── 1. Collect closed shifts ──────────────────────────────────────────
+        // Live DAY: rolling 24-hour window ending now (captures cross-midnight shifts).
+        // Historical DAY / SHIFT: calendar-date or shift-definition filter.
         List<Shift> shifts = isShift
                 ? shiftRepository.findClosedShiftsByDefinition(pumpId, reportDate, shiftDef.getId())
-                : shiftRepository.findClosedShiftsByDate(pumpId, reportDate);
+                : isLiveDay
+                        ? shiftRepository.findClosedShiftsByEndTimeWindow(pumpId, windowStart, windowEnd)
+                        : shiftRepository.findClosedShiftsByDate(pumpId, reportDate);
 
         if (shifts.isEmpty()) {
             String shiftLabel = isShift ? "\"" + shiftDef.getName() + "\" on " : "";
-            throw new BusinessException("No closed shifts found for " + shiftLabel + reportDate + ". Close all shifts before generating a balance sheet.");
+            String windowHint = isLiveDay
+                    ? " (window: last 24 hrs ending now — ensure all shifts for this period are closed)"
+                    : "";
+            throw new BusinessException("No closed shifts found for " + shiftLabel + reportDate + windowHint + ". Close all shifts before generating a balance sheet.");
         }
 
         List<Long> shiftIds = shifts.stream().map(Shift::getId).toList();
@@ -162,8 +183,8 @@ public class BalanceSheetService {
         // ── 5. Tanker deliveries (DAY reports only) ───────────────────────────
         List<TankerDelivery> deliveries = Collections.emptyList();
         if (!isShift) {
-            OffsetDateTime dayStart = supportService.startOfBusinessDay(reportDate);
-            OffsetDateTime dayEnd   = supportService.startOfBusinessDay(reportDate.plusDays(1));
+            OffsetDateTime dayStart = isLiveDay ? windowStart : supportService.startOfBusinessDay(reportDate);
+            OffsetDateTime dayEnd   = isLiveDay ? windowEnd   : supportService.startOfBusinessDay(reportDate.plusDays(1));
             deliveries = tankerDeliveryRepository.findByPumpIdAndDeliveryDateBetween(pumpId, dayStart, dayEnd);
         }
 
@@ -211,10 +232,12 @@ public class BalanceSheetService {
 
         // ── 9. Dip losses for the report period ──────────────────────────────
         // Fetch FuelDipEntry records for this pump and date range.
-        // For SHIFT reports we still use reportDate (the full day) — dip entries are date-based,
-        // not window-based, so all dips on that date are included in any shift report for that date.
-        LocalDate dipTo = isShift ? reportDate : reportDate;
-        List<FuelDipEntry> dipEntries = fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, reportDate, dipTo);
+        // For SHIFT/historical reports use reportDate.
+        // For live DAY reports use the calendar dates covered by the 24-hour window
+        // (windowStart may be yesterday, so we span two dates).
+        LocalDate dipFrom = isLiveDay ? windowStart.atZoneSameInstant(ist).toLocalDate() : reportDate;
+        LocalDate dipTo   = isLiveDay ? windowEnd.atZoneSameInstant(ist).toLocalDate()   : reportDate;
+        List<FuelDipEntry> dipEntries = fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, dipFrom, dipTo);
 
         // Group by fuel type: litres and monetary loss
         Map<FuelType, BigDecimal> dipLitresByFuel = new EnumMap<>(FuelType.class);
@@ -238,8 +261,8 @@ public class BalanceSheetService {
         // Different from FuelDipEntry (physical removal for maintenance) — both are tracked.
         // All checks (WITHIN_TOLERANCE, PENDING_REVIEW, REVIEWED) are included: the
         // variance happened regardless of review status.
-        OffsetDateTime periodStart = supportService.startOfBusinessDay(reportDate);
-        OffsetDateTime periodEnd   = supportService.startOfBusinessDay(reportDate.plusDays(1));
+        OffsetDateTime periodStart = isLiveDay ? windowStart : supportService.startOfBusinessDay(reportDate);
+        OffsetDateTime periodEnd   = isLiveDay ? windowEnd   : supportService.startOfBusinessDay(reportDate.plusDays(1));
         List<DipCheck> dipChecks = dipCheckRepository.findByPumpIdAndCheckedAtBetween(pumpId, periodStart, periodEnd);
 
         // Build tankId → fuelType map from already-loaded tanks
@@ -305,7 +328,7 @@ public class BalanceSheetService {
         BigDecimal grossProfit = totalExpectedRevenue.subtract(totalCogs).setScale(2, RoundingMode.HALF_UP);
 
         // ── 11. Persist parent record ─────────────────────────────────────────
-        String periodLabel = buildPeriodLabel(req, pumpId, shiftDef);
+        String periodLabel = buildPeriodLabel(req, pumpId, shiftDef, isLiveDay, windowStart, windowEnd);
         BalanceSheet bs = BalanceSheet.builder()
                 .pumpId(pumpId)
                 .reportType(req.getReportType())
@@ -478,8 +501,19 @@ public class BalanceSheetService {
         BalanceSheetDetailResponse.ExpenseSummary expenseSummary =
                 isShift ? null : supportService.buildExpenseSummary(pumpId, reportDate);
 
-        return detailAssembler.toDetailResponse(bs, fuelLines, shiftLines, amendmentLines, dipPlEntries,
-                generatedBy.getFullName(), productSalesSummary, expenseSummary);
+        BalanceSheetDetailResponse response = detailAssembler.toDetailResponse(bs, fuelLines, shiftLines,
+                amendmentLines, dipPlEntries, generatedBy.getFullName(), productSalesSummary, expenseSummary);
+
+        if (!isShift) {
+            response.setSettlementSummary(buildSettlementSummary(pumpId, reportDate));
+            List<String> shiftNames = shifts.stream()
+                    .map(Shift::getShiftName)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            response.setIncludedShiftNames(shiftNames);
+        }
+        return response;
     }
 
     // ── Queries ───────────────────────────────────────────────────────────────
@@ -535,10 +569,21 @@ public class BalanceSheetService {
                 ? userRepository.findById(bs.getGeneratedByUserId()).map(User::getFullName).orElse("Unknown")
                 : "System";
 
-        // Re-fetch live amendments, DIP checks, and DIP entries for the report's date so the
+        // Re-fetch live amendments, DIP checks, and DIP entries for the report's period so the
         // detail view is always current (these are not stored on the balance sheet snapshot itself).
-        OffsetDateTime from = supportService.startOfBusinessDay(bs.getReportDate());
-        OffsetDateTime to   = supportService.startOfBusinessDay(bs.getReportDate().plusDays(1));
+        // Live DAY reports (reportDate == generatedAt date in IST) used a 24-hour rolling window
+        // anchored to generatedAt — re-derive the same window here for consistency.
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        LocalDate generatedDate = bs.getGeneratedAt().atZoneSameInstant(ist).toLocalDate();
+        boolean isLiveDayReport = bs.getReportType() == BalanceSheetReportType.DAY
+                && bs.getReportDate().equals(generatedDate);
+
+        OffsetDateTime from = isLiveDayReport
+                ? bs.getGeneratedAt().minusHours(24)
+                : supportService.startOfBusinessDay(bs.getReportDate());
+        OffsetDateTime to   = isLiveDayReport
+                ? bs.getGeneratedAt()
+                : supportService.startOfBusinessDay(bs.getReportDate().plusDays(1));
 
         List<NozzleReadingAdjustment> amendments =
                 adjustmentRepository.findByPumpIdAndCreatedAtBetweenOrderByCreatedAtAsc(pumpId, from, to);
@@ -561,9 +606,17 @@ public class BalanceSheetService {
                         .build())
                 .toList();
 
-        // Re-fetch dip entries and checks to build individual Dip P/L entries live
+        // Re-fetch dip entries and checks to build individual Dip P/L entries live.
+        // Live DAY reports span up to two calendar dates (e.g. window 21 Apr 15:05 → 22 Apr 15:05)
+        // so derive dipFrom/dipTo from the same 24-hour window used during generation.
+        LocalDate dipFrom = isLiveDayReport
+                ? bs.getGeneratedAt().minusHours(24).atZoneSameInstant(ist).toLocalDate()
+                : bs.getReportDate();
+        LocalDate dipTo   = isLiveDayReport
+                ? bs.getGeneratedAt().atZoneSameInstant(ist).toLocalDate()
+                : bs.getReportDate();
         List<FuelDipEntry> dipEntries =
-                fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, bs.getReportDate(), bs.getReportDate());
+                fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, dipFrom, dipTo);
         List<DipCheck> dipChecks =
                 dipCheckRepository.findByPumpIdAndCheckedAtBetween(pumpId, from, to);
 
@@ -583,8 +636,20 @@ public class BalanceSheetService {
         BalanceSheetDetailResponse.ExpenseSummary expenseSummary =
                 isDayReport ? supportService.buildExpenseSummary(bs.getPumpId(), bs.getReportDate()) : null;
 
-        return detailAssembler.toDetailResponse(bs, fuelLines, shiftLines, amendmentLines, dipPlEntries,
-                userName, productSalesSummary, expenseSummary);
+        BalanceSheetDetailResponse response = detailAssembler.toDetailResponse(bs, fuelLines, shiftLines,
+                amendmentLines, dipPlEntries, userName, productSalesSummary, expenseSummary);
+
+        if (isDayReport) {
+            response.setSettlementSummary(buildSettlementSummary(bs.getPumpId(), bs.getReportDate()));
+            List<Long> shiftIds = shiftLines.stream().map(BsShiftLine::getShiftId).toList();
+            List<String> shiftNames = shiftRepository.findAllById(shiftIds).stream()
+                    .map(Shift::getShiftName)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            response.setIncludedShiftNames(shiftNames);
+        }
+        return response;
     }
 
     @Transactional
@@ -600,6 +665,76 @@ public class BalanceSheetService {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
+    /**
+     * Builds the settlement summary for a DAY balance sheet.
+     *
+     * settlementsOnDate — entries recorded on this date (the date money arrived in bank).
+     * settled amounts   — totals per type for this date.
+     * wallet pending    — cumulative (all collections up to reportDate) − (all settlements up to reportDate).
+     *
+     * The "as-of" wallet snapshot uses reportDate as the cut-off so the figure is historically
+     * accurate even when viewed months later.
+     */
+    private BalanceSheetDetailResponse.SettlementSummary buildSettlementSummary(Long pumpId, LocalDate reportDate) {
+        // Individual settlements recorded for this date (drill-down list)
+        List<PaymentSettlement> onDate = settlementRepository
+                .findByPumpIdAndSettlementDateOrderByCreatedAtDesc(pumpId, reportDate);
+
+        // Batch-load recorder names
+        Set<Long> recorderIds = onDate.stream()
+                .map(PaymentSettlement::getRecordedByUserId)
+                .collect(Collectors.toSet());
+        Map<Long, String> recorderNames = recorderIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(recorderIds).stream()
+                        .collect(Collectors.toMap(User::getId, User::getFullName));
+
+        // Per-type settled amounts on this date
+        BigDecimal upiOnDate   = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.UPI)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cardOnDate  = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.CARD)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal fleetOnDate = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.FLEET_CARD)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Cumulative wallet as-of reportDate
+        BigDecimal upiCollected   = shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, reportDate);
+        BigDecimal cardCollected  = shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, reportDate);
+        BigDecimal fleetCollected = shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, reportDate);
+
+        BigDecimal upiSettledTotal   = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.UPI, reportDate);
+        BigDecimal cardSettledTotal  = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.CARD, reportDate);
+        BigDecimal fleetSettledTotal = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.FLEET_CARD, reportDate);
+
+        BigDecimal upiPending   = supportService.orZero(upiCollected).subtract(supportService.orZero(upiSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal cardPending  = supportService.orZero(cardCollected).subtract(supportService.orZero(cardSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal fleetPending = supportService.orZero(fleetCollected).subtract(supportService.orZero(fleetSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+
+        List<BalanceSheetDetailResponse.SettlementLine> lines = onDate.stream()
+                .map(s -> BalanceSheetDetailResponse.SettlementLine.builder()
+                        .id(s.getId())
+                        .paymentType(s.getPaymentType().name())
+                        .amountReceived(s.getAmountReceived())
+                        .notes(s.getNotes())
+                        .recordedByUserName(recorderNames.getOrDefault(s.getRecordedByUserId(), "Unknown"))
+                        .createdAt(s.getCreatedAt())
+                        .build())
+                .toList();
+
+        return BalanceSheetDetailResponse.SettlementSummary.builder()
+                .upiSettledOnDate(upiOnDate.setScale(2, RoundingMode.HALF_UP))
+                .cardSettledOnDate(cardOnDate.setScale(2, RoundingMode.HALF_UP))
+                .fleetCardSettledOnDate(fleetOnDate.setScale(2, RoundingMode.HALF_UP))
+                .walletUpiPending(upiPending)
+                .walletCardPending(cardPending)
+                .walletFleetCardPending(fleetPending)
+                .settlementsOnDate(lines)
+                .build();
+    }
+
     private void validateRequest(GenerateBalanceSheetRequest req) {
         if (req.getReportType() == BalanceSheetReportType.SHIFT) {
             if (req.getShiftDefinitionId() == null) {
@@ -609,10 +744,22 @@ public class BalanceSheetService {
     }
 
     private String buildPeriodLabel(GenerateBalanceSheetRequest req, Long pumpId,
-                                     com.ppms.pump.PumpShiftDefinition shiftDef) {
-        String base = req.getReportType() == BalanceSheetReportType.DAY
-                ? "Day End · " + req.getReportDate()
-                : shiftDef.getName() + " · " + req.getReportDate();
+                                     com.ppms.pump.PumpShiftDefinition shiftDef,
+                                     boolean isLiveDay, OffsetDateTime windowStart, OffsetDateTime windowEnd) {
+        String base;
+        if (isLiveDay) {
+            // Show the actual 24-hour window so the label is unambiguous.
+            // Example: "Day End · 21 Apr 15:05 → 22 Apr 15:05"
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMM HH:mm");
+            ZoneId ist = ZoneId.of("Asia/Kolkata");
+            String from = windowStart.atZoneSameInstant(ist).format(fmt);
+            String to   = windowEnd.atZoneSameInstant(ist).format(fmt);
+            base = "Day End · " + from + " → " + to;
+        } else {
+            base = req.getReportType() == BalanceSheetReportType.DAY
+                    ? "Day End · " + req.getReportDate()
+                    : shiftDef.getName() + " · " + req.getReportDate();
+        }
 
         if (!req.isForceRegenerate()) return base;
 

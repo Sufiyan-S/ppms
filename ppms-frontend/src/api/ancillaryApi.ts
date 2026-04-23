@@ -48,6 +48,8 @@ export interface AncillaryStockDelivery {
   invoiceReference: string | null
   notes: string | null
   loggedByUserId: number
+  /** True when the delivery was recorded with a past date (historical stock entry). */
+  isBackfilled: boolean
   createdAt: string
 }
 
@@ -66,6 +68,8 @@ export interface AncillarySale {
   notes: string | null
   soldByUserId: number
   saleDate: string
+  /** True when this sale was entered retroactively for a historical date. */
+  isBackfilled: boolean
   createdAt: string
 }
 
@@ -126,6 +130,23 @@ export interface RecordAncillarySaleRequest {
   notes?: string
 }
 
+/**
+ * Request for retroactively recording a historical counter sale.
+ * The selling price is NOT sent — the backend resolves it from the product's price
+ * history for the given saleDate. saleDate must be strictly before today.
+ */
+export interface BackfillSaleRequest {
+  productId: number
+  /** YYYY-MM-DD, must be strictly before today */
+  saleDate: string
+  quantityUnits: number
+  paymentMode: AncillaryPaymentMode
+  /** Required when paymentMode is CREDIT */
+  clientName?: string
+  billNo?: string
+  notes?: string
+}
+
 export const ancillaryApi = {
   getProducts: (pumpId: number): Promise<AncillaryProduct[]> =>
     client.get(`/pumps/${pumpId}/ancillary/products`).then(r => r.data),
@@ -162,4 +183,7 @@ export const ancillaryApi = {
 
   updateLot: (pumpId: number, lotId: number, data: UpdateLotRequest): Promise<AncillaryLotDetail> =>
     client.patch(`/pumps/${pumpId}/ancillary/lots/${lotId}`, data).then(r => r.data),
+
+  backfillSale: (pumpId: number, data: BackfillSaleRequest): Promise<AncillarySale> =>
+    client.post(`/pumps/${pumpId}/ancillary/sales/backfill`, data).then(r => r.data),
 }

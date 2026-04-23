@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X, Check, AlertTriangle, ArrowUp } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
 import { pumpApi } from '../../api/pumpApi'
 import type { CloseShiftRequest, CreditEntryInput, FuelReading, Shift } from '../../types/shift'
@@ -82,6 +83,15 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   const nozzleNumberById: Record<number, number> = Object.fromEntries(
     shift.nozzles.map((n) => [n.id, n.nozzleNumber])
   )
+
+  // ── Scheduled end time alert ────────────────────────────────────────────────
+  // When closing past the shift's defined end, actualEndTime will be snapped back to
+  // the scheduled boundary. Warn the operator so they aren't surprised.
+  const scheduledEnd = shift.scheduledEndTime ? new Date(shift.scheduledEndTime) : null
+  const isLateClose  = scheduledEnd !== null && new Date() > scheduledEnd
+  const scheduledEndDisplay = scheduledEnd
+    ? scheduledEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+    : null
 
   // ── Live calculations ───────────────────────────────────────────────────────
 
@@ -318,8 +328,24 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div className="ui-modal-body space-y-5">
+
+            {/* ── Late-close notice ─────────────────────────────────────── */}
+            {isLateClose && scheduledEndDisplay && (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zm-1 4a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H10z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Shift close time adjusted</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    You are closing after the scheduled end. Close time will be recorded as{' '}
+                    <span className="font-semibold">{scheduledEndDisplay}</span> (your shift's scheduled end time).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* ── Step 1: End Readings ──────────────────────────────────── */}
             <Section label="1" title="End Meter Readings">
@@ -539,10 +565,10 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); removeCreditRow(row.id) }}
-                                  className="text-red-300 hover:text-red-600 text-sm transition-colors leading-none"
+                                  className="text-red-300 hover:text-red-600 transition-colors p-0.5"
                                   title="Delete entry"
                                 >
-                                  ✕
+                                  <X size={13} strokeWidth={2} />
                                 </button>
                               </div>
                             </div>
@@ -562,8 +588,8 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                   Entry {idx + 1}
                                 </button>
                                 <button type="button" onClick={() => removeCreditRow(row.id)}
-                                  className="text-red-400 hover:text-red-600 text-xs transition-colors">
-                                  ✕ Delete
+                                  className="inline-flex items-center gap-1 text-red-400 hover:text-red-600 text-xs transition-colors">
+                                  <X size={12} strokeWidth={2} />Delete
                                 </button>
                               </div>
 
@@ -856,7 +882,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                     }`}
                   />
                   {!reasonFilled && (
-                    <p className="text-xs text-amber-600 mt-1">↑ Enter a reason to enable closing</p>
+                    <p className="inline-flex items-center gap-1 text-xs text-amber-600 mt-1"><ArrowUp size={11} strokeWidth={2} />Enter a reason to enable closing</p>
                   )}
                 </div>
               </div>
@@ -884,12 +910,12 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
               ) : isBalanced ? (
                 <button type="submit" disabled={closeMutation.isPending}
                   className="ui-btn w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white">
-                  {closeMutation.isPending ? 'Closing...' : '✓ Close Shift — Balanced'}
+                  {closeMutation.isPending ? 'Closing...' : <span className="inline-flex items-center gap-1.5"><Check size={14} strokeWidth={2.5} />Close Shift — Balanced</span>}
                 </button>
               ) : reasonFilled ? (
                 <button type="submit" disabled={closeMutation.isPending}
                   className="ui-btn w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white">
-                  {closeMutation.isPending ? 'Closing...' : '⚠ Close with Discrepancy'}
+                  {closeMutation.isPending ? 'Closing...' : <span className="inline-flex items-center gap-1.5"><AlertTriangle size={14} strokeWidth={2} />Close with Discrepancy</span>}
                 </button>
               ) : (
                 <button type="submit" disabled
@@ -1003,7 +1029,12 @@ function BalanceCard({ totalDue, totalCollected, diff, fmt }: {
         <div className={`flex items-center gap-1.5 text-sm font-bold ${
           isBalanced ? 'text-emerald-700' : diff < 0 ? 'text-red-700' : 'text-amber-700'
         }`}>
-          {isBalanced ? '✓ Balanced' : diff < 0 ? `↓ SHORT ₹${fmt(Math.abs(diff))}` : `↑ OVER ₹${fmt(diff)}`}
+          {isBalanced
+            ? <span className="inline-flex items-center gap-1"><Check size={14} strokeWidth={2.5} />Balanced</span>
+            : diff < 0
+              ? <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} style={{ transform: 'rotate(180deg)' }} />SHORT ₹{fmt(Math.abs(diff))}</span>
+              : <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} />OVER ₹{fmt(diff)}</span>
+          }
         </div>
       </div>
     </div>

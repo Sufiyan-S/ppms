@@ -16,5 +16,11 @@ public enum NotificationType {
      * Fired when the OverdueShiftJob force-closes a shift that was never submitted by the operator.
      * Signals to management that meter readings are missing and a manual reconciliation is required.
      */
-    AUTO_CLOSED_SHIFT
+    AUTO_CLOSED_SHIFT,
+    /**
+     * Fired daily after the configured alert time (per pump, per payment type) to remind
+     * Admin/Owner to record the day's UPI / Card / Fleet Card bank settlement.
+     * Dedup key format: SETTLEMENT_REMINDER:{type}:{pumpId}:{date}
+     */
+    SETTLEMENT_REMINDER
 }

@@ -22,6 +22,7 @@ public enum AuditAction {
     // ── Shift lifecycle ───────────────────────────────────────────────────────
     SHIFT_OPENED,
     SHIFT_CLOSED,
+    SHIFT_BACKFILLED,
     DISCREPANCY_RESOLVED,
 
     // ── Credit management ─────────────────────────────────────────────────────
@@ -55,12 +56,18 @@ public enum AuditAction {
 
     // ── Ancillary products ────────────────────────────────────────────────────
     ANCILLARY_SALE_RECORDED,
+    ANCILLARY_SALE_BACKFILLED,
     ANCILLARY_DELIVERY_RECORDED,
+    ANCILLARY_DELIVERY_BACKFILLED,
 
     // ── Operations ────────────────────────────────────────────────────────────
     HANDOVER_COMPLETED,
     PUMP_CLOSURE_ADDED,
     BANK_STATEMENT_IMPORTED,
     SUPPLIER_PAYMENT_RECORDED,
-    PUMP_CONFIG_UPDATED
+    PUMP_CONFIG_UPDATED,
+
+    // ── Payment settlements ───────────────────────────────────────────────────
+    SETTLEMENT_RECORDED,
+    SETTLEMENT_CONFIG_UPDATED
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Reveal } from '../../components/Reveal'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -473,7 +474,10 @@ function DiscrepancyTab({ pumpId }: { pumpId: number }) {
                     {op.totalOverAmount > 0 && (
                       <span className="text-amber-600 font-semibold">Over {fmtAmt(op.totalOverAmount)}</span>
                     )}
-                    <span className="text-slate-400">{expandedOp === op.operatorId ? '▲' : '▼'}</span>
+                    {expandedOp === op.operatorId
+                      ? <ChevronUp size={14} strokeWidth={2} className="text-slate-400" />
+                      : <ChevronDown size={14} strokeWidth={2} className="text-slate-400" />
+                    }
                   </div>
                 </button>
                 {expandedOp === op.operatorId && (
@@ -634,7 +638,10 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                   <span>₹{lot.costPricePerUnit}/L</span>
                   <span>{fmtQty(lot.remainingQuantity)} remaining</span>
                   <span>{fmtAmt(lot.totalCogsConsumed)} COGS</span>
-                  <span className="text-slate-400">{expandedLot === lot.lotId ? '▲' : '▼'}</span>
+                  {expandedLot === lot.lotId
+                    ? <ChevronUp size={14} strokeWidth={2} className="text-slate-400" />
+                    : <ChevronDown size={14} strokeWidth={2} className="text-slate-400" />
+                  }
                 </div>
               </button>
               {expandedLot === lot.lotId && lot.consumptions.length > 0 && (

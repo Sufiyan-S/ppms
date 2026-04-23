@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -147,8 +149,8 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     List<Shift> findClosedShiftsByDefinition(Long pumpId, LocalDate shiftDate, Long shiftDefinitionId);
 
     /**
-     * All closed shifts for a full business date.
-     * Used when generating a DAY balance sheet.
+     * All closed shifts for a full calendar date.
+     * Used for historical DAY balance sheets where reportDate is in the past.
      */
     @Query("""
             SELECT s FROM Shift s
@@ -160,6 +162,109 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     List<Shift> findClosedShiftsByDate(Long pumpId, LocalDate shiftDate);
 
     /**
+     * All closed shifts whose actualEndTime falls in (windowStart, windowEnd].
+     * Used for live DAY balance sheets — captures every shift that finished in
+     * the last 24 hours regardless of which calendar date they started on.
+     * Open/overdue shifts are excluded so a mid-day report never includes
+     * a shift that is still running.
+     */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.actualEndTime > :windowStart
+              AND s.actualEndTime <= :windowEnd
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            ORDER BY s.actualEndTime ASC
+            """)
+    List<Shift> findClosedShiftsByEndTimeWindow(
+            @Param("pumpId") Long pumpId,
+            @Param("windowStart") OffsetDateTime windowStart,
+            @Param("windowEnd") OffsetDateTime windowEnd);
+
+    // ── Settlement wallet queries ─────────────────────────────────────────────
+
+    /**
+     * Total UPI collected across ALL closed shifts for a pump.
+     * Used by the settlement wallet to compute pending balance: collected − settled.
+     * COALESCE guarantees non-null even when no shifts exist yet.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(s.upiCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumUpiCollectedByPumpId(@Param("pumpId") Long pumpId);
+
+    @Query("""
+            SELECT COALESCE(SUM(s.cardCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumCardCollectedByPumpId(@Param("pumpId") Long pumpId);
+
+    @Query("""
+            SELECT COALESCE(SUM(s.fleetCardCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumFleetCardCollectedByPumpId(@Param("pumpId") Long pumpId);
+
+    /**
+     * Total UPI collected across ALL closed shifts for a pump on or before a given date.
+     * Used for the historical wallet snapshot on balance sheets.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(s.upiCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate <= :asOf
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumUpiCollectedByPumpIdAsOf(@Param("pumpId") Long pumpId, @Param("asOf") LocalDate asOf);
+
+    @Query("""
+            SELECT COALESCE(SUM(s.cardCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate <= :asOf
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumCardCollectedByPumpIdAsOf(@Param("pumpId") Long pumpId, @Param("asOf") LocalDate asOf);
+
+    @Query("""
+            SELECT COALESCE(SUM(s.fleetCardCollected), 0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate <= :asOf
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            """)
+    BigDecimal sumFleetCardCollectedByPumpIdAsOf(@Param("pumpId") Long pumpId, @Param("asOf") LocalDate asOf);
+
+    /**
+     * Per-date breakdown of closed-shift collections for the given pump and date range.
+     * Returns one row per shift date: [shiftDate, sumUpi, sumCard, sumFleetCard].
+     * Used by the payment settlement daily-summary endpoint.
+     */
+    @Query("""
+            SELECT s.shiftDate,
+                   COALESCE(SUM(s.upiCollected),        0),
+                   COALESCE(SUM(s.cardCollected),       0),
+                   COALESCE(SUM(s.fleetCardCollected),  0)
+            FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate BETWEEN :from AND :to
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            GROUP BY s.shiftDate
+            ORDER BY s.shiftDate ASC
+            """)
+    List<Object[]> collectionsGroupedByDate(@Param("pumpId") Long pumpId,
+                                            @Param("from") LocalDate from,
+                                            @Param("to") LocalDate to);
+
+    /**
      * Returns true if any shift (in any status) references one of the given shift definition IDs.
      * Used before deleting a shift definition group to enforce referential safety at the application layer.
      */
@@ -168,4 +273,24 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             WHERE s.shiftDefinitionId IN :definitionIds
             """)
     boolean existsByShiftDefinitionIdIn(@Param("definitionIds") List<Long> definitionIds);
+
+    /**
+     * Counts shifts for the given nozzle, business date, and shift definition.
+     * Used during backfill to enforce the one-shift-per-nozzle-per-window-per-day constraint.
+     *
+     * Native SQL is used here because JPQL cannot combine an unrelated-entity JOIN (ShiftNozzle
+     * has no mapped association to Shift) with a COUNT aggregate in the SELECT clause — Hibernate
+     * fails to parse that combination at EntityManagerFactory initialisation time.
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM shifts s
+            JOIN shift_nozzles sn ON sn.shift_id = s.id
+            WHERE sn.nozzle_id = :nozzleId
+              AND s.shift_date = :shiftDate
+              AND s.shift_definition_id = :shiftDefinitionId
+            """, nativeQuery = true)
+    Long countForNozzleDateAndDefinition(
+            @Param("nozzleId") Long nozzleId,
+            @Param("shiftDate") LocalDate shiftDate,
+            @Param("shiftDefinitionId") Long shiftDefinitionId);
 }

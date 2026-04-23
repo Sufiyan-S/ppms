@@ -173,6 +173,19 @@ public class ShiftLifecycleSupportService {
             }
             BigDecimal endReading = endReadingByNozzleId.get(reading.getNozzleId());
             BigDecimal maxMeter = maxMeterByNozzleId.getOrDefault(reading.getNozzleId(), new BigDecimal("99999999.999"));
+
+            if (endReading.compareTo(ZERO) < 0) {
+                throw new BusinessException(
+                        "End reading for " + reading.getFuelType() + " nozzle cannot be negative. " +
+                        "Please verify the meter reading.");
+            }
+            if (endReading.compareTo(maxMeter) > 0) {
+                throw new BusinessException(
+                        "End reading " + endReading.toPlainString() + " exceeds the maximum meter value of " +
+                        maxMeter.toPlainString() + " for the " + reading.getFuelType() + " nozzle. " +
+                        "Please verify the meter reading.");
+            }
+
             BigDecimal unitsSold = calcUnits(reading.getStartReading(), endReading, maxMeter);
             reading.setEndReading(endReading);
             reading.setUnitsSold(unitsSold);

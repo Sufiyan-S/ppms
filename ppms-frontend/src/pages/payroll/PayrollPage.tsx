@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown } from 'lucide-react'
 import { usePumpStore } from '../../store/usePumpStore'
 import { userApi } from '../../api/userApi'
 import { payrollApi } from '../../api/payrollApi'
@@ -109,7 +110,7 @@ function PayrollGroup({
           </span>
           <span className="text-sm font-semibold text-slate-700">{fmtAmt(totalAmount)}</span>
         </div>
-        <span className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`}>▼</span>
+        <ChevronDown size={14} strokeWidth={2} className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`} />
       </button>
 
       {/* Records — shown only when expanded */}

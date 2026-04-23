@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +16,14 @@ public interface AncillaryProductPriceRepository extends JpaRepository<Ancillary
 
     /** Full price history for a product, newest first. */
     List<AncillaryProductPrice> findByProductIdOrderByEffectiveFromDesc(Long productId);
+
+    /**
+     * Returns the most recently set price for a product on or before a given point in time.
+     * Used during backfill to resolve the historical price that was in effect on the sale date.
+     * Pass end-of-day IST on the sale date as {@code asOf} to capture any price set that day.
+     */
+    Optional<AncillaryProductPrice> findFirstByProductIdAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
+            Long productId, OffsetDateTime asOf);
 
     /**
      * Returns the latest price row for each product in the supplied list, in a single query.

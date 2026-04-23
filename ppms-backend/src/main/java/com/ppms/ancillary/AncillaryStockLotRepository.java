@@ -4,8 +4,10 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Repository
@@ -51,4 +53,18 @@ public interface AncillaryStockLotRepository extends JpaRepository<AncillaryStoc
      */
     List<AncillaryStockLot> findByProductIdAndStatusOrderByDeliveryDateAscIdAsc(
             Long productId, AncillaryLotStatus status);
+
+    /**
+     * FIFO-ordered active lots for a product whose delivery date is on or before
+     * the given sale date. Used during backfill to:
+     * 1. Check whether stock was physically present on the historical date.
+     * 2. Deduct from only the lots that existed on that date (historically accurate FIFO).
+     *
+     * Pessimistic write lock prevents a concurrent live sale from deducting from the
+     * same lot between the availability check and the deduction.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT l FROM AncillaryStockLot l WHERE l.productId = :productId AND l.status = 'ACTIVE' AND l.deliveryDate <= :saleDate ORDER BY l.deliveryDate ASC, l.id ASC")
+    List<AncillaryStockLot> findActiveLotsByProductAvailableOnDate(
+            @Param("productId") Long productId, @Param("saleDate") LocalDate saleDate);
 }

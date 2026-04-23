@@ -916,6 +916,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
             {weekPayments > 0 && <span className="text-green-600">−₹{formatAmount(weekPayments)} paid</span>}
           </div>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-slate-50">
             {items.map((tx, idx) => (
@@ -984,6 +985,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     )
   })

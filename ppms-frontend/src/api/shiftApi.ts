@@ -1,5 +1,5 @@
 import client from './client'
-import type { DUOption, Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput } from '../types/shift'
+import type { DUOption, Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput, BackfillShiftRequest } from '../types/shift'
 
 export type { CreditEntryInput }
 
@@ -36,4 +36,7 @@ export const shiftApi = {
 
   voidCreditEntry: (pumpId: number, shiftId: number, entryId: number, voidReason: string) =>
     client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/credit-entries/${entryId}/void`, { voidReason }).then((r) => r.data),
+
+  backfillShift: (pumpId: number, request: BackfillShiftRequest) =>
+    client.post<Shift>(`/pumps/${pumpId}/shifts/backfill`, request).then((r) => r.data),
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X, Check, BarChart2, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { balanceSheetApi } from '../../api/balanceSheetApi'
@@ -15,6 +16,7 @@ import type {
   GenerateBalanceSheetRequest,
   ProductSalesSummary,
   ExpenseSummary,
+  SettlementSummary,
 } from '../../api/balanceSheetApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
@@ -25,6 +27,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { RefreshIndicator } from '../../components/RefreshIndicator'
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 // Use local calendar date (not UTC) so the value matches the user's timezone.
@@ -86,6 +89,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
+  const [existingBsMsg, setExistingBsMsg] = useState<string | null>(null)
 
   const { data: shiftDefinitions = [], isLoading: defsLoading } = useQuery({
     queryKey: ['shift-definitions-active', pumpId],
@@ -115,6 +119,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
       // Backend returns "already exists" — offer the user a re-generate option
       if (msg.includes('already exists')) {
         setConfirmRegenerate(true)
+        setExistingBsMsg(msg)
         setError(null)
       } else {
         setError(msg)
@@ -233,8 +238,11 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
               <p className="text-sm text-amber-800 font-medium">
                 A balance sheet already exists for this period.
               </p>
+              {existingBsMsg && (
+                <p className="text-xs text-amber-700">{existingBsMsg}</p>
+              )}
               <p className="text-xs text-amber-700">
-                Do you want to generate a new revision? It will be saved as a separate entry (e.g. Shift 1 · 12 AM – 8 AM #2).
+                If you can't see it in the list, widen the date filter. Do you want to generate a new revision instead? It will be saved as a separate entry (e.g. Shift 1 · 12 AM – 8 AM #2).
               </p>
               <div className="flex gap-2">
                 <button
@@ -394,8 +402,24 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
             {fmtDate(detail.reportDate)} · Generated {fmtDateTime(detail.generatedAt)} by {detail.generatedByUserName}
             {pumpName && <span className="hidden print:inline"> · Pump: <span className="font-medium">{pumpName}</span></span>}
           </p>
+          {detail.reportType === 'DAY' && detail.includedShiftNames && detail.includedShiftNames.length > 0 && (
+            <p className="text-xs text-slate-500 mt-1">
+              Shifts included:{' '}
+              {detail.includedShiftNames.map(name => (
+                <span key={name} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 mr-1">
+                  {name}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 print:hidden">
+          <button
+            onClick={onClose}
+            className="md:hidden text-xs text-blue-600 hover:text-blue-800 font-medium border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            ← Back
+          </button>
           {canDelete && (
             <button
               onClick={() => onDelete(summary)}
@@ -412,7 +436,7 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
           </button>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+            className="hidden md:block text-slate-400 hover:text-slate-600 text-xl leading-none"
           >
             &times;
           </button>
@@ -735,6 +759,11 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
         {detail.reportType === 'DAY' && detail.expenses && (
           <ExpensesSection expenses={detail.expenses} />
         )}
+
+        {/* Payment Settlements — DAY reports only */}
+        {detail.reportType === 'DAY' && detail.settlementSummary && (
+          <SettlementSection summary={detail.settlementSummary} />
+        )}
       </div>
     </div>
   )
@@ -988,6 +1017,85 @@ function ExpensesSection({ expenses }: { expenses: ExpenseSummary }) {
   )
 }
 
+// ── Payment settlement section (DAY reports only) ──────────────────────────────
+
+function SettlementSection({ summary }: { summary: SettlementSummary }) {
+  const TYPE_LABELS: Record<string, string> = { UPI: 'UPI', CARD: 'Card', FLEET_CARD: 'Fleet Card' }
+
+  const rows = [
+    { type: 'UPI',        settled: summary.upiSettledOnDate,        pending: summary.walletUpiPending },
+    { type: 'CARD',       settled: summary.cardSettledOnDate,        pending: summary.walletCardPending },
+    { type: 'FLEET_CARD', settled: summary.fleetCardSettledOnDate,   pending: summary.walletFleetCardPending },
+  ]
+
+  const totalSettled = rows.reduce((s, r) => s + r.settled, 0)
+  const totalPending = rows.reduce((s, r) => s + r.pending, 0)
+
+  return (
+    <section className="mt-6">
+      <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+        Digital Payment Settlements
+      </h3>
+      <div className="border border-slate-200 rounded-lg overflow-hidden text-sm">
+        <table className="w-full">
+          <thead className="bg-slate-50">
+            <tr>
+              <Th>Payment Type</Th>
+              <Th right>Settled on this Date</Th>
+              <Th right>Cumulative Wallet Pending</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.type} className="border-t border-slate-100">
+                <Td>{TYPE_LABELS[r.type]}</Td>
+                <Td right>
+                  {r.settled > 0
+                    ? <span className="text-emerald-600 font-medium">{fmtMoney(r.settled)}</span>
+                    : <span className="text-slate-400">—</span>
+                  }
+                </Td>
+                <Td right>
+                  {r.pending !== 0
+                    ? <span className={r.pending > 0 ? 'text-amber-600 font-medium' : 'text-emerald-600'}>{fmtMoney(r.pending)}</span>
+                    : <span className="inline-flex items-center gap-1 text-slate-400">Settled<Check size={11} strokeWidth={2.5} /></span>
+                  }
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-50 font-semibold border-t border-slate-200">
+              <Td>Total</Td>
+              <Td right>{totalSettled > 0 ? fmtMoney(totalSettled) : '—'}</Td>
+              <Td right>
+                <span className={totalPending > 0 ? 'text-amber-600' : 'text-emerald-600'}>
+                  {fmtMoney(totalPending)}
+                </span>
+              </Td>
+            </tr>
+          </tfoot>
+        </table>
+        {summary.settlementsOnDate.length > 0 && (
+          <div className="border-t border-slate-200 p-3 bg-slate-50">
+            <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Recorded on this date</p>
+            <div className="space-y-1">
+              {summary.settlementsOnDate.map(s => (
+                <div key={s.id} className="flex items-center gap-3 text-xs text-slate-600">
+                  <span className="font-medium">{TYPE_LABELS[s.paymentType]}</span>
+                  <span className="text-emerald-700 font-mono font-semibold">{fmtMoney(s.amountReceived)}</span>
+                  {s.notes && <span className="text-slate-400">· {s.notes}</span>}
+                  <span className="text-slate-400 ml-auto">by {s.recordedByUserName}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 // ── Main page ───────────────────────────────────────────────────────────────────
 
 export default function BalanceSheetPage() {
@@ -1000,8 +1108,8 @@ export default function BalanceSheetPage() {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<BalanceSheetSummary | null>(null)
 
-  // Date range filter — defaults to yesterday → today (computed fresh on mount, not at module load)
-  const [filterFrom, setFilterFrom] = useState(() => localDateStr(-1))
+  // Date range filter — defaults to last 7 days → today (computed fresh on mount, not at module load)
+  const [filterFrom, setFilterFrom] = useState(() => localDateStr(-7))
   const [filterTo, setFilterTo]     = useState(() => localDateStr(0))
 
   const [bsPage, setBsPage]         = useState(0)
@@ -1020,7 +1128,7 @@ export default function BalanceSheetPage() {
   useEffect(() => { setBsPage(0) }, [filterFrom, filterTo, pumpId])
 
   // Report list
-  const { data: reportsPage, isLoading } = useQuery({
+  const { data: reportsPage, isLoading, isFetching: fetchingReports, dataUpdatedAt: reportsUpdatedAt } = useQuery({
     queryKey: ['balance-sheets', pumpId, filterFrom, filterTo, bsPage, bsPageSize],
     queryFn:  () => balanceSheetApi.list(
       pumpId!,
@@ -1050,11 +1158,14 @@ export default function BalanceSheetPage() {
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden print:h-auto print:overflow-visible">
       {/* ── Left panel: list ────────────────────────────────────────────────── */}
-      <div className={`flex flex-col ${selectedReportId ? 'w-80 flex-shrink-0' : 'flex-1'} border-r border-slate-200 bg-white overflow-hidden print:hidden`}>
+      <div className={`flex flex-col ${selectedReportId ? 'hidden md:flex w-80 flex-shrink-0' : 'flex-1'} border-r border-slate-200 bg-white overflow-hidden print:hidden`}>
         {/* Page header */}
         <div className="px-5 py-4 border-b border-slate-200">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-base font-semibold text-slate-800">Balance Sheets</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-semibold text-slate-800">Balance Sheets</h1>
+              <RefreshIndicator isFetching={fetchingReports} dataUpdatedAt={reportsUpdatedAt ?? 0} />
+            </div>
             <button
               onClick={() => setShowGenerateModal(true)}
               disabled={!pumpId}
@@ -1085,10 +1196,10 @@ export default function BalanceSheetPage() {
             {(filterFrom || filterTo) && (
               <button
                 onClick={() => { setFilterFrom(''); setFilterTo(''); setBsPage(0) }}
-                className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-sm text-slate-400 hover:text-slate-600"
+                className="ui-btn ui-btn-ghost min-h-0 p-1 text-slate-400 hover:text-slate-600"
                 title="Clear filter"
               >
-                ✕
+                <X size={14} strokeWidth={2} />
               </button>
             )}
           </div>
@@ -1147,7 +1258,7 @@ export default function BalanceSheetPage() {
       {!selectedReportId && (
         <div className="flex-1 hidden sm:flex items-center justify-center bg-slate-50/70">
           <div className="ui-empty">
-            <div className="text-4xl mb-3">📊</div>
+            <div className="flex justify-center mb-3"><BarChart2 size={40} strokeWidth={1.5} className="text-slate-300" /></div>
             <p className="ui-subtitle">Select a report to view details</p>
           </div>
         </div>
@@ -1212,7 +1323,7 @@ function ReportListItem({ report, isSelected, onClick }: ReportListItemProps) {
           <p className={`text-xs font-medium ${discrepancyColor}`}>
             {report.cashDiscrepancy === 0
               ? 'Balanced'
-              : `${report.cashDiscrepancy < 0 ? '▼' : '▲'} ${fmtMoney(Math.abs(report.cashDiscrepancy))}`}
+              : <span className="inline-flex items-center gap-0.5">{report.cashDiscrepancy < 0 ? <TrendingDown size={12} strokeWidth={2} /> : <TrendingUp size={12} strokeWidth={2} />}{fmtMoney(Math.abs(report.cashDiscrepancy))}</span>}
           </p>
           <p className="text-xs text-emerald-600">{fmtMoney(report.totalGrossProfit)} profit</p>
         </div>
