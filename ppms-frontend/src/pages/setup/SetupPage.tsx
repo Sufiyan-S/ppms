@@ -55,7 +55,7 @@ export default function SetupPage() {
       {/* Page title */}
       <Reveal delay={60}>
       <div>
-        <h2 className="ui-title-sm">Pump Setup</h2>
+        <h1 className="ui-title-sm">Pump Setup</h1>
         <p className="ui-subtitle">
           Create pump locations, configure nozzles, set prices, manage staff and credit clients.
         </p>
@@ -153,7 +153,7 @@ function PumpManagementPanel({
       <div className="px-5 py-4 bg-gradient-to-r from-slate-700 to-slate-800">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-white text-base">{pump.name}</h3>
+            <h2 className="font-bold text-white text-base">{pump.name}</h2>
             <p className="text-slate-400 text-xs mt-0.5">{pump.address}</p>
           </div>
           <div className="flex gap-2">
@@ -769,7 +769,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                               <div className="ui-disable-editor__hero">
                                 <div>
                                   <p className="ui-section-kicker mb-2">Maintenance Lock</p>
-                                  <h5 className="ui-title-sm">Disable nozzle #{nozzle.nozzleNumber}</h5>
+                                  <h3 className="ui-title-sm">Disable nozzle #{nozzle.nozzleNumber}</h3>
                                   <p className="ui-subtitle mt-1">Take this nozzle offline for maintenance or operational issues.</p>
                                 </div>
                               </div>
@@ -801,7 +801,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                               <div className="ui-tank-map-form__hero">
                                 <div>
                                   <p className="ui-section-kicker mb-2">Tank Mapping</p>
-                                  <h5 className="ui-title-sm">Map nozzle to tank</h5>
+                                  <h3 className="ui-title-sm">Map nozzle to tank</h3>
                                   <p className="ui-subtitle mt-1">
                                     Assign nozzle #{nozzle.nozzleNumber} ({FUEL_LABEL[nozzle.fuelType]}) to the tank it draws from.
                                   </p>
@@ -853,7 +853,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                               <div className="ui-reading-editor__hero">
                                 <div>
                                   <p className="ui-section-kicker mb-2">Meter Adjustment</p>
-                                  <h5 className="ui-title-sm">Adjust meter reading</h5>
+                                  <h3 className="ui-title-sm">Adjust meter reading</h3>
                                   <p className="ui-subtitle mt-1">
                                     Use this only when the meter was replaced, reset, or the stored reading is incorrect for nozzle #{nozzle.nozzleNumber}.
                                   </p>
@@ -954,7 +954,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
                                 <div className="ui-dip-editor__hero">
                                   <div>
                                     <p className="ui-section-kicker mb-2">Dip Record</p>
-                                    <h5 className="ui-title-sm">Record fuel dip</h5>
+                                    <h3 className="ui-title-sm">Record fuel dip</h3>
                                     <p className="ui-subtitle mt-1">
                                       Record fuel physically removed from the tank, such as maintenance draining or contamination removal.
                                     </p>
@@ -1157,7 +1157,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
           <div className="ui-nozzle-form__hero">
             <div>
               <p className="ui-section-kicker mb-2">DU Setup</p>
-              <h4 className="ui-title-sm">Add a new Dispensary Unit</h4>
+              <h3 className="ui-title-sm">Add a new Dispensary Unit</h3>
               <p className="ui-subtitle mt-1">
                 A Dispensary Unit (DU) is a physical MPD machine. Give it a name and add one or more nozzles — each nozzle carries exactly one fuel type.
               </p>
@@ -1264,6 +1264,8 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
   const [prices, setPrices] = useState<Record<string, string>>({})
   const [error, setError]   = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  // Set to true immediately after a successful save so the alert disappears without waiting for query refetch
+  const [pricesConfirmedToday, setPricesConfirmedToday] = useState(false)
   // 15% deviation warning state — set when backend returns HTTP 409
   const [deviationWarning, setDeviationWarning] = useState<(PriceDeviationWarning & { fuelType: string }) | null>(null)
   // P2.3 — open shifts warning shown after a successful price update
@@ -1303,6 +1305,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
       const results = await Promise.all(tasks)
       queryClient.invalidateQueries({ queryKey: ['fuelPrices', pump.id] })
       setPrices({})
+      setPricesConfirmedToday(true)
       setSuccess(true); setTimeout(() => setSuccess(false), 3000)
       addToast('Fuel prices updated', 'success')
       // Show open-shifts warning if any price update detected open shifts
@@ -1322,6 +1325,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
     try {
       const results = await Promise.all(tasks)
       queryClient.invalidateQueries({ queryKey: ['fuelPrices', pump.id] })
+      setPricesConfirmedToday(true)
       setSuccess(true); setTimeout(() => setSuccess(false), 3000)
       addToast('Prices confirmed for today', 'success')
       const warning = results.find((r) => r.openShiftsWarning)?.openShiftsWarning ?? null
@@ -1342,6 +1346,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
       })
       queryClient.invalidateQueries({ queryKey: ['fuelPrices', pump.id] })
       setPrices({})
+      setPricesConfirmedToday(true)
       setSuccess(true); setTimeout(() => setSuccess(false), 3000)
       if (result.openShiftsWarning) setOpenShiftsWarning(result.openShiftsWarning)
     } catch (err: any) {
@@ -1350,7 +1355,10 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
   }
 
   const todayStr = localDateInputValue()
-  const pricesStale = currentPrices.length > 0 && currentPrices.some((p) => p.effectiveFrom < todayStr)
+  // Parse effectiveFrom as IST date to avoid UTC-vs-IST date boundary mismatch (e.g. midnight shifts)
+  const istDateOf = (effectiveFrom: string) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(effectiveFrom))
+  const pricesStale = !pricesConfirmedToday && currentPrices.length > 0 && currentPrices.some((p) => istDateOf(p.effectiveFrom) < todayStr)
 
   if (pump.dus.length === 0) {
     return <p className="text-xs text-slate-400">Add at least one DU with a nozzle first (Nozzles section above).</p>
@@ -3247,7 +3255,7 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
       {/* New batch form */}
       {showForm ? (
         <div className="ui-card-plain p-4 space-y-4">
-          <h4 className="text-sm font-semibold text-slate-700">New Shift Schedule</h4>
+          <h3 className="text-sm font-semibold text-slate-700">New Shift Schedule</h3>
 
           {/* Date range */}
           <div className="grid grid-cols-2 gap-3">

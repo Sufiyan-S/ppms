@@ -19,6 +19,7 @@ interface SearchableSelectProps {
   size?: 'sm' | 'md'
   disabled?: boolean
   className?: string
+  'aria-labelledby'?: string
 }
 
 export function SearchableSelect({
@@ -31,6 +32,7 @@ export function SearchableSelect({
   size = 'md',
   disabled = false,
   className = '',
+  'aria-labelledby': ariaLabelledby,
 }: SearchableSelectProps) {
   const [open, setOpen]       = useState(false)
   const [search, setSearch]   = useState('')
@@ -108,6 +110,7 @@ export function SearchableSelect({
         ref={triggerRef}
         type="button"
         disabled={disabled}
+        aria-labelledby={ariaLabelledby}
         onClick={() => open ? (setOpen(false), setSearch('')) : openDropdown()}
         className={[
           'ui-select-trigger w-full flex items-center justify-between gap-2 border text-left transition-all bg-white shadow-sm',

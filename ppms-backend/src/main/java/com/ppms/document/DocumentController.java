@@ -6,9 +6,11 @@ import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -31,7 +33,7 @@ public class DocumentController {
     @GetMapping("/{pumpId}/documents")
     public List<PumpDocument> getDocuments(
             @PathVariable Long pumpId) {
-        List<PumpDocument> docs = documentRepository.findByPumpIdOrderByExpiryDateAsc(pumpId);
+        List<PumpDocument> docs = documentRepository.findByPumpIdOrderByExpiryDateAsc(pumpId, PageRequest.of(0, 500));
         // Refresh computed status based on today's date
         LocalDate today = LocalDate.now();
         docs.forEach(doc -> doc.setStatus(computeStatus(doc.getExpiryDate(), today)));
@@ -44,6 +46,7 @@ public class DocumentController {
      */
     @PostMapping("/{pumpId}/documents")
     @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
     public PumpDocument createDocument(
             @PathVariable Long pumpId,
             @Valid @RequestBody UpsertDocumentRequest req,
@@ -74,6 +77,7 @@ public class DocumentController {
      * Updates an existing document entry.
      */
     @PutMapping("/{pumpId}/documents/{documentId}")
+    @Transactional
     public PumpDocument updateDocument(
             @PathVariable Long pumpId,
             @PathVariable Long documentId,
@@ -81,6 +85,9 @@ public class DocumentController {
 
         PumpDocument doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found"));
+        if (!doc.getPumpId().equals(pumpId)) {
+            throw new ResourceNotFoundException("Document not found");
+        }
 
         LocalDate today = LocalDate.now();
         doc.setName(req.getName().trim());
@@ -102,6 +109,11 @@ public class DocumentController {
     public void deleteDocument(
             @PathVariable Long pumpId,
             @PathVariable Long documentId) {
+        PumpDocument doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found"));
+        if (!doc.getPumpId().equals(pumpId)) {
+            throw new ResourceNotFoundException("Document not found");
+        }
         documentRepository.deleteById(documentId);
     }
 

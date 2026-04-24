@@ -81,6 +81,19 @@ public class ReportController {
     }
 
     /**
+     * GET /api/pumps/{pumpId}/reports/inventory-lots/all
+     *
+     * Returns all inventory lots for every tank at this pump, grouped by tank.
+     * Includes per-tank summaries (remaining qty, weighted avg cost, stock value)
+     * and a cross-tank summary aggregated by fuel type.
+     */
+    @GetMapping("/inventory-lots/all")
+    public ResponseEntity<ReportService.AllTanksInventoryReport> getAllTanksInventoryLots(
+            @PathVariable Long pumpId) {
+        return ResponseEntity.ok(reportService.buildAllTanksInventoryReport(pumpId));
+    }
+
+    /**
      * GET /api/pumps/{pumpId}/reports/dip-pl?from=&to=
      *
      * Returns individual Dip P/L entries for the given date range.

@@ -7,7 +7,7 @@ import { usePumpStore } from '../../store/usePumpStore'
 import { userApi } from '../../api/userApi'
 import { reportApi } from '../../api/reportApi'
 import { pumpApi } from '../../api/pumpApi'
-import type { ProfitLossReport, OperatorDutyReport, OperatorDutyShiftLine, OperatorDiscrepancyReport, InventoryLotsReport, DipPlEntry, ShiftReportLine, ExpenseReportLine, InterestAccrualReport } from '../../api/reportApi'
+import type { ProfitLossReport, OperatorDutyReport, OperatorDutyShiftLine, OperatorDiscrepancyReport, InventoryLotsReport, AllTanksInventoryReport, DipPlEntry, ShiftReportLine, ExpenseReportLine, InterestAccrualReport } from '../../api/reportApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import type { PagedResponse } from '../../types/paged'
@@ -173,6 +173,16 @@ function ProfitLossTab({ pumpId }: { pumpId: number }) {
   const [query, setQuery] = useState<{ from: string; to: string } | null>(null)
   const [page, setPage]   = useState(0)
   const [pageSize, setPageSize] = useState(10)
+  const [showRevBreakdown, setShowRevBreakdown] = useState(false)
+  const [expandedFuelRows, setExpandedFuelRows] = useState<Set<string>>(new Set())
+
+  function toggleFuelRow(fuelType: string) {
+    setExpandedFuelRows(prev => {
+      const next = new Set(prev)
+      next.has(fuelType) ? next.delete(fuelType) : next.add(fuelType)
+      return next
+    })
+  }
 
   const { data, isFetching, error } = useQuery<ProfitLossReport>({
     queryKey: ['report-pl', pumpId, query?.from, query?.to],
@@ -187,21 +197,21 @@ function ProfitLossTab({ pumpId }: { pumpId: number }) {
       {/* Screen: controls */}
       <div className="ui-card ui-card-muted p-4 print:hidden">
         <div className="ui-filter-group">
-        <DateRangeInputs from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
-        <button
-          onClick={() => { setQuery({ from, to }); setPage(0) }}
-          disabled={isFetching}
-          className="ui-btn ui-btn-primary"
-        >
-          {isFetching ? 'Loading…' : 'Generate'}
-        </button>
-        <button
-          onClick={() => window.print()}
-          disabled={!data || data.byFuelType.length === 0}
-          className="ui-btn bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40"
-        >
-          Print PDF
-        </button>
+          <DateRangeInputs from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+          <button
+            onClick={() => { setQuery({ from, to }); setPage(0) }}
+            disabled={isFetching}
+            className="ui-btn ui-btn-primary"
+          >
+            {isFetching ? 'Loading…' : 'Generate'}
+          </button>
+          <button
+            onClick={() => window.print()}
+            disabled={!data || data.byFuelType.length === 0}
+            className="ui-btn bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40"
+          >
+            Print PDF
+          </button>
         </div>
       </div>
 
@@ -211,32 +221,117 @@ function ProfitLossTab({ pumpId }: { pumpId: number }) {
       {data && paged && (
         <div className="space-y-4 print:hidden">
           <div className="grid grid-cols-3 gap-4">
-            <SummaryCard label="Total Revenue"   value={fmtAmt(data.totalRevenue)} color="text-slate-800" />
-            <SummaryCard label="Cost of Goods"   value={fmtAmt(data.totalCogs)}    color="text-red-600" />
-            <SummaryCard label="Gross Profit"    value={fmtAmt(data.grossProfit)}  color={data.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'} />
+            <SummaryCard label="Total Revenue" value={fmtAmt(data.totalRevenue)} color="text-slate-800" />
+            <SummaryCard label="Cost of Goods" value={fmtAmt(data.totalCogs)}    color="text-red-600" />
+            <SummaryCard label="Gross Profit"  value={fmtAmt(data.grossProfit)}  color={data.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'} />
           </div>
+
+          {/* Revenue breakdown toggle */}
+          <div className="ui-card ui-card-muted p-3">
+            <button
+              onClick={() => setShowRevBreakdown(v => !v)}
+              className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              {showRevBreakdown
+                ? <ChevronUp size={14} strokeWidth={2} />
+                : <ChevronDown size={14} strokeWidth={2} />}
+              Revenue breakdown (Cash / UPI / Card / Credit)
+            </button>
+            {showRevBreakdown && (
+              <div className="grid grid-cols-4 gap-3 mt-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Cash</p>
+                  <p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtAmt(data.totalCashRevenue)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">UPI</p>
+                  <p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtAmt(data.totalUpiRevenue)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Card</p>
+                  <p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtAmt(data.totalCardRevenue)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Credit Sales</p>
+                  <p className="text-sm font-semibold text-orange-600 mt-0.5">{fmtAmt(data.totalCreditRevenue)}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Per-fuel table with drilldown */}
           <div className="ui-table-wrap">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs text-slate-500">
+                  <th className="w-6 px-2 py-2.5" />
                   <th className="text-left px-4 py-2.5 font-medium">Fuel Type</th>
                   <th className="text-right px-4 py-2.5 font-medium">Revenue</th>
                   <th className="text-right px-4 py-2.5 font-medium">COGS</th>
                   <th className="text-right px-4 py-2.5 font-medium">Gross Profit</th>
+                  <th className="text-right px-4 py-2.5 font-medium">₹/L Margin</th>
                 </tr>
               </thead>
               <tbody>
                 {paged.content.map((row) => (
-                  <tr key={row.fuelType} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5 font-medium text-slate-700">{row.fuelType.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-700">{fmtAmt(row.revenue)}</td>
-                    <td className="px-4 py-2.5 text-right text-red-600">{fmtAmt(row.cogs)}</td>
-                    <td className={`px-4 py-2.5 text-right font-semibold ${row.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmtAmt(row.grossProfit)}</td>
-                  </tr>
+                  <>
+                    <tr
+                      key={row.fuelType}
+                      className="border-t border-slate-100 cursor-pointer hover:bg-slate-50/60"
+                      onClick={() => toggleFuelRow(row.fuelType)}
+                    >
+                      <td className="px-2 py-2.5 text-slate-400">
+                        {expandedFuelRows.has(row.fuelType)
+                          ? <ChevronUp size={13} strokeWidth={2} />
+                          : <ChevronDown size={13} strokeWidth={2} />}
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-slate-700">{row.fuelType.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{fmtAmt(row.revenue)}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600 tabular-nums">{fmtAmt(row.cogs)}</td>
+                      <td className={`px-4 py-2.5 text-right font-semibold tabular-nums ${row.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {fmtAmt(row.grossProfit)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-slate-500 text-xs tabular-nums">
+                        {row.grossMarginPerLitre != null ? `₹${row.grossMarginPerLitre.toFixed(2)}/L` : '—'}
+                      </td>
+                    </tr>
+                    {expandedFuelRows.has(row.fuelType) && row.lotCostLines.length > 0 && (
+                      <tr key={`${row.fuelType}-lots`} className="bg-blue-50/40">
+                        <td />
+                        <td colSpan={5} className="px-4 pb-3 pt-1">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="text-slate-400 font-semibold">
+                                <th className="text-left py-1.5 pr-3">Lot Ref</th>
+                                <th className="text-left py-1.5 pr-3">Delivery Date</th>
+                                <th className="text-right py-1.5 pr-3">Cost/L</th>
+                                <th className="text-right py-1.5 pr-3">Units Consumed</th>
+                                <th className="text-right py-1.5">Cost</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {row.lotCostLines.map((lot) => (
+                                <tr key={lot.lotId} className="border-t border-blue-100">
+                                  <td className="py-1.5 pr-3 text-slate-600">{lot.tankerReference}</td>
+                                  <td className="py-1.5 pr-3 text-slate-500">{fmtShortDate(lot.deliveryDate)}</td>
+                                  <td className="py-1.5 pr-3 text-right text-slate-600">₹{lot.costPricePerUnit.toFixed(2)}</td>
+                                  <td className="py-1.5 pr-3 text-right text-slate-600">{fmtQty(lot.quantityConsumed)}</td>
+                                  <td className="py-1.5 text-right font-medium text-slate-700">{fmtAmt(lot.lotCost)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Gross Profit reflects fuel sales only. Operating expenses (salaries, maintenance) are excluded.
+          </p>
           <Pagination data={paged} onPageChange={setPage} onPageSizeChange={s => { setPageSize(s); setPage(0) }} pageSizeOptions={[10, 20, 50]} />
           <p className="text-xs text-slate-400">{data.totalShifts} closed shift{data.totalShifts !== 1 ? 's' : ''} in range.</p>
         </div>
@@ -247,11 +342,30 @@ function ProfitLossTab({ pumpId }: { pumpId: number }) {
         <div className="hidden print:block space-y-4">
           <PrintHeader title="Profit & Loss Report" from={query?.from} to={query?.to} />
           <div className="grid grid-cols-3 gap-4">
-            <SummaryCard label="Total Revenue"   value={fmtAmt(data.totalRevenue)} color="text-slate-800" />
-            <SummaryCard label="Cost of Goods"   value={fmtAmt(data.totalCogs)}    color="text-red-600" />
-            <SummaryCard label="Gross Profit"    value={fmtAmt(data.grossProfit)}  color={data.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'} />
+            <SummaryCard label="Total Revenue" value={fmtAmt(data.totalRevenue)} color="text-slate-800" />
+            <SummaryCard label="Cost of Goods" value={fmtAmt(data.totalCogs)}    color="text-red-600" />
+            <SummaryCard label="Gross Profit"  value={fmtAmt(data.grossProfit)}  color={data.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'} />
           </div>
-          <div className="ui-card p-0 overflow-hidden">
+          {/* Revenue breakdown — always expanded in print */}
+          <div className="grid grid-cols-4 gap-3 mb-2">
+            <div>
+              <p className="text-[10px] text-slate-400 uppercase font-semibold">Cash</p>
+              <p className="text-sm font-semibold text-slate-700">{fmtAmt(data.totalCashRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 uppercase font-semibold">UPI</p>
+              <p className="text-sm font-semibold text-slate-700">{fmtAmt(data.totalUpiRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 uppercase font-semibold">Card</p>
+              <p className="text-sm font-semibold text-slate-700">{fmtAmt(data.totalCardRevenue)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 uppercase font-semibold">Credit Sales</p>
+              <p className="text-sm font-semibold text-orange-600">{fmtAmt(data.totalCreditRevenue)}</p>
+            </div>
+          </div>
+          <div className="ui-card p-0 overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs text-slate-500">
@@ -259,20 +373,57 @@ function ProfitLossTab({ pumpId }: { pumpId: number }) {
                   <th className="text-right px-4 py-2.5 font-medium">Revenue</th>
                   <th className="text-right px-4 py-2.5 font-medium">COGS</th>
                   <th className="text-right px-4 py-2.5 font-medium">Gross Profit</th>
+                  <th className="text-right px-4 py-2.5 font-medium">₹/L Margin</th>
                 </tr>
               </thead>
               <tbody>
                 {data.byFuelType.map((row) => (
-                  <tr key={row.fuelType} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5 font-medium text-slate-700">{row.fuelType.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-700">{fmtAmt(row.revenue)}</td>
-                    <td className="px-4 py-2.5 text-right text-red-600">{fmtAmt(row.cogs)}</td>
-                    <td className={`px-4 py-2.5 text-right font-semibold ${row.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmtAmt(row.grossProfit)}</td>
-                  </tr>
+                  <>
+                    <tr key={row.fuelType} className="border-t border-slate-100">
+                      <td className="px-4 py-2.5 font-medium text-slate-700">{row.fuelType.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{fmtAmt(row.revenue)}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600 tabular-nums">{fmtAmt(row.cogs)}</td>
+                      <td className={`px-4 py-2.5 text-right font-semibold tabular-nums ${row.grossProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmtAmt(row.grossProfit)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-500 text-xs tabular-nums">
+                        {row.grossMarginPerLitre != null ? `₹${row.grossMarginPerLitre.toFixed(2)}/L` : '—'}
+                      </td>
+                    </tr>
+                    {row.lotCostLines.length > 0 && (
+                      <tr key={`${row.fuelType}-lots`}>
+                        <td colSpan={5} className="px-6 pb-2">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="text-slate-400 font-semibold">
+                                <th className="text-left py-1 pr-3">Lot Ref</th>
+                                <th className="text-left py-1 pr-3">Delivery Date</th>
+                                <th className="text-right py-1 pr-3">Cost/L</th>
+                                <th className="text-right py-1 pr-3">Units</th>
+                                <th className="text-right py-1">Cost</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {row.lotCostLines.map((lot) => (
+                                <tr key={lot.lotId} className="border-t border-slate-100">
+                                  <td className="py-1 pr-3 text-slate-600">{lot.tankerReference}</td>
+                                  <td className="py-1 pr-3 text-slate-500">{fmtShortDate(lot.deliveryDate)}</td>
+                                  <td className="py-1 pr-3 text-right text-slate-600">₹{lot.costPricePerUnit.toFixed(2)}</td>
+                                  <td className="py-1 pr-3 text-right text-slate-600">{fmtQty(lot.quantityConsumed)}</td>
+                                  <td className="py-1 text-right font-medium text-slate-700">{fmtAmt(lot.lotCost)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Gross Profit reflects fuel sales only. Operating expenses (salaries, maintenance) are excluded.
+          </p>
           <p className="text-xs text-slate-400">{data.totalShifts} closed shift{data.totalShifts !== 1 ? 's' : ''} in range.</p>
         </div>
       )}
@@ -318,10 +469,10 @@ function OperatorDutyTab({ pumpId }: { pumpId: number }) {
     <tr key={s.shiftId} className="border-t border-slate-100">
       <td className="px-4 py-2.5 text-slate-600">{s.shiftDate}</td>
       <td className="px-4 py-2.5 text-slate-500">{s.shiftWindow}</td>
-      <td className="px-4 py-2.5 text-right font-medium text-slate-700">{fmtAmt(s.totalAmountDue)}</td>
-      <td className="px-4 py-2.5 text-right text-slate-600">{fmtAmt(s.cashCollected)}</td>
-      <td className="px-4 py-2.5 text-right text-orange-600">{fmtAmt(s.creditTotal)}</td>
-      <td className={`px-4 py-2.5 text-right text-xs font-semibold ${s.discrepancyAmount > 0 ? (s.discrepancyType === 'SHORT' ? 'text-red-600' : 'text-amber-600') : 'text-slate-300'}`}>
+      <td className="px-4 py-2.5 text-right font-medium text-slate-700 tabular-nums">{fmtAmt(s.totalAmountDue)}</td>
+      <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums">{fmtAmt(s.cashCollected)}</td>
+      <td className="px-4 py-2.5 text-right text-orange-600 tabular-nums">{fmtAmt(s.creditTotal)}</td>
+      <td className={`px-4 py-2.5 text-right text-xs font-semibold tabular-nums ${s.discrepancyAmount > 0 ? (s.discrepancyType === 'SHORT' ? 'text-red-600' : 'text-amber-600') : 'text-slate-300'}`}>
         {s.discrepancyAmount > 0 ? `${s.discrepancyType} ${fmtAmt(s.discrepancyAmount)}` : '—'}
       </td>
       <td className="px-4 py-2.5 text-xs text-slate-500">{s.status.replace(/_/g, ' ')}</td>
@@ -389,7 +540,7 @@ function OperatorDutyTab({ pumpId }: { pumpId: number }) {
             <SummaryCard label="Total Amount Due"  value={fmtAmt(data.totalAmountDue)}   color="text-slate-800" />
             <SummaryCard label="Total Discrepancy" value={fmtAmt(data.totalDiscrepancy)} color={data.totalDiscrepancy > 0 ? 'text-red-700' : 'text-green-700'} />
           </div>
-          <div className="ui-card p-0 overflow-hidden">
+          <div className="ui-card p-0 overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead>{dutyTableHead}</thead>
               <tbody>{data.shifts.map(dutyRow)}</tbody>
@@ -561,8 +712,8 @@ function DiscrepancyTab({ pumpId }: { pumpId: number }) {
 // ── Inventory Lots Tab ────────────────────────────────────────────────────────
 
 function InventoryLotsTab({ pumpId }: { pumpId: number }) {
-  const [tankId, setTankId] = useState<number | null>(null)
-  const [query, setQuery] = useState<number | null>(null)
+  const [tankId, setTankId] = useState<string>('')    // '' = All Tanks, '123' = specific tank id
+  const [query,  setQuery]  = useState<string>('')    // mirrors tankId on Load click
   const [expandedLot, setExpandedLot] = useState<number | null>(null)
 
   const { data: tanks = [] } = useQuery({
@@ -573,48 +724,81 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
   const [page, setPage]   = useState(0)
   const [pageSize, setPageSize] = useState(10)
 
-  const { data, isFetching, error } = useQuery<InventoryLotsReport>({
-    queryKey: ['report-inventory', pumpId, query],
-    queryFn: () => reportApi.getInventoryLots(pumpId, query!),
-    enabled: query !== null,
-  })
+  const { data: singleTankData, isFetching: singleFetching, error: singleError } =
+    useQuery<InventoryLotsReport>({
+      queryKey: ['report-inventory-single', pumpId, query],
+      queryFn:  () => reportApi.getInventoryLots(pumpId, Number(query)),
+      enabled:  query !== '' && query !== null,
+    })
 
-  const paged = data ? pageSlice(data.lots, page, pageSize) : null
+  const { data: allTanksData, isFetching: allFetching, error: allError } =
+    useQuery<AllTanksInventoryReport>({
+      queryKey: ['report-inventory-all', pumpId, query],
+      queryFn:  () => reportApi.getAllTanksInventoryLots(pumpId),
+      enabled:  query === '',
+    })
+
+  const isFetching = singleFetching || allFetching
+  const error      = singleError ?? allError
+  const data       = singleTankData
+  const paged      = data ? pageSlice(data.lots, page, pageSize) : null
 
   return (
     <div className="space-y-4">
       <div className="ui-card ui-card-muted p-4 print:hidden">
         <div className="ui-filter-group">
-        <div className="w-56">
-          <label className="ui-label">Tank</label>
-          <SearchableSelect
-            value={tankId ? String(tankId) : ''}
-            onChange={(v) => setTankId(v ? Number(v) : null)}
-            options={tanks.map(t => ({ value: String(t.id), label: `${t.tankIdentifier} (${t.fuelType})` }))}
-            placeholder="Select tank…"
-          />
-        </div>
-        <button
-          onClick={() => { tankId && setQuery(tankId); setPage(0) }}
-          disabled={!tankId || isFetching}
-          className="ui-btn ui-btn-primary"
-        >
-          {isFetching ? 'Loading…' : 'Load Lots'}
-        </button>
-        <button
-          onClick={() => window.print()}
-          disabled={!data || data.lots.length === 0}
-          className="ui-btn bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40"
-        >
-          Print PDF
-        </button>
+          <div className="w-56">
+            <label className="ui-label">Tank</label>
+            <SearchableSelect
+              value={tankId}
+              onChange={(v) => setTankId(v ?? '')}
+              options={[
+                { value: '', label: 'All Tanks' },
+                ...tanks.map(t => ({ value: String(t.id), label: `${t.tankIdentifier} (${t.fuelType})` })),
+              ]}
+              placeholder="Select tank…"
+            />
+          </div>
+          <button
+            onClick={() => { setQuery(tankId); setPage(0) }}
+            disabled={isFetching}
+            className="ui-btn ui-btn-primary"
+          >
+            {isFetching ? 'Loading…' : 'Load Lots'}
+          </button>
+          <button
+            onClick={() => window.print()}
+            disabled={!data || data.lots.length === 0}
+            className="ui-btn bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40"
+          >
+            Print PDF
+          </button>
         </div>
       </div>
 
       {error && <ErrorBox message={(error as any)?.response?.data?.message ?? 'Failed to load report'} />}
 
-      {data && paged && (
+      {/* Single-tank view */}
+      {data && paged && query !== '' && (
         <div className="space-y-3 print:hidden">
+          {/* Summary strip */}
+          {data.weightedAvgCostPerUnit != null && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="ui-card ui-card-muted p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total Remaining</p>
+                <p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtQty(data.totalRemaining)}</p>
+              </div>
+              <div className="ui-card ui-card-muted p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Avg Cost</p>
+                <p className="text-sm font-semibold text-slate-700 mt-0.5">₹{data.weightedAvgCostPerUnit.toFixed(2)}/L</p>
+              </div>
+              <div className="ui-card ui-card-muted p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Stock Value</p>
+                <p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtAmt(data.totalStockValue)}</p>
+              </div>
+            </div>
+          )}
+
           <p className="text-xs text-slate-400">{data.totalLots} lot{data.totalLots !== 1 ? 's' : ''} in this tank.</p>
           {paged.content.map((lot) => (
             <div key={lot.lotId} className="ui-card p-0 overflow-hidden">
@@ -629,10 +813,9 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                   {lot.isDipAdjustment && (
                     <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">DIP Adj.</span>
                   )}
-                  <span className="text-sm font-medium text-slate-700">
-                    {fmtShortDate(lot.deliveryDate)}
-                  </span>
+                  <span className="text-sm font-medium text-slate-700">{fmtShortDate(lot.deliveryDate)}</span>
                   <span className="text-xs text-slate-400">{lot.fuelType.replace(/_/g, ' ')}</span>
+                  <span className="text-xs text-slate-400">{lot.tankerReference}</span>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-slate-500">
                   <span>₹{lot.costPricePerUnit}/L</span>
@@ -648,6 +831,7 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                 <table className="w-full text-xs border-t border-slate-100">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500">
+                      <th className="text-left px-4 py-2 font-medium">Tanker Ref</th>
                       <th className="text-left px-4 py-2 font-medium">Date</th>
                       <th className="text-left px-4 py-2 font-medium">Source</th>
                       <th className="text-left px-4 py-2 font-medium">Shift</th>
@@ -659,9 +843,8 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                   <tbody>
                     {lot.consumptions.map((c) => (
                       <tr key={c.id} className="border-t border-slate-100">
-                        <td className="px-4 py-2 text-slate-500">
-                          {fmtShortDayMonth(c.consumedAt)}
-                        </td>
+                        <td className="px-4 py-2 text-slate-600 text-xs font-medium">{lot.tankerReference}</td>
+                        <td className="px-4 py-2 text-slate-500">{fmtShortDayMonth(c.consumedAt)}</td>
                         <td className="px-4 py-2 text-slate-500">{c.sourceType.replace(/_/g, ' ')}</td>
                         <td className="px-4 py-2 text-slate-500">{c.shiftName ?? '—'}</td>
                         <td className="px-4 py-2 text-right text-slate-700">
@@ -686,7 +869,109 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
         </div>
       )}
 
-      {/* Print: full dataset */}
+      {/* All-tanks view */}
+      {allTanksData && query === '' && (
+        <div className="space-y-3 print:hidden">
+          {allTanksData.tanks.length === 0 ? (
+            <div className="ui-empty py-6">No tanks configured for this pump.</div>
+          ) : (
+            <>
+              {allTanksData.tanks.map((section) => (
+                <div key={section.tankId} className="ui-card p-0 overflow-hidden">
+                  <button
+                    className="ui-accordion-trigger"
+                    onClick={() => setExpandedLot(expandedLot === section.tankId ? null : section.tankId)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-slate-700">{section.tankIdentifier}</span>
+                      <span className="text-xs text-slate-400">{section.fuelType.replace(/_/g, ' ')}</span>
+                      <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{section.lotCount} lots</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                      <span>{fmtQty(section.totalRemaining)} remaining</span>
+                      {section.weightedAvgCostPerUnit != null && (
+                        <span>₹{section.weightedAvgCostPerUnit.toFixed(2)}/L avg</span>
+                      )}
+                      <span>{fmtAmt(section.totalStockValue)} value</span>
+                      {expandedLot === section.tankId
+                        ? <ChevronUp size={14} strokeWidth={2} className="text-slate-400" />
+                        : <ChevronDown size={14} strokeWidth={2} className="text-slate-400" />}
+                    </div>
+                  </button>
+                  {expandedLot === section.tankId && (
+                    <div className="p-4 border-t border-slate-100">
+                      {section.lots.length === 0 ? (
+                        <p className="ui-empty">No lots in this tank.</p>
+                      ) : (
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500">
+                              <th className="text-left px-3 py-2 font-medium">Tanker Ref</th>
+                              <th className="text-left px-3 py-2 font-medium">Delivery Date</th>
+                              <th className="text-right px-3 py-2 font-medium">Cost/L</th>
+                              <th className="text-right px-3 py-2 font-medium">Original</th>
+                              <th className="text-right px-3 py-2 font-medium">Remaining</th>
+                              <th className="text-left px-3 py-2 font-medium">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {section.lots.map((lot) => (
+                              <tr key={lot.lotId} className="border-t border-slate-100">
+                                <td className="px-3 py-2 text-slate-600">{lot.tankerReference}</td>
+                                <td className="px-3 py-2 text-slate-500">{fmtShortDate(lot.deliveryDate)}</td>
+                                <td className="px-3 py-2 text-right text-slate-600">₹{lot.costPricePerUnit.toFixed(2)}</td>
+                                <td className="px-3 py-2 text-right text-slate-500">{fmtQty(lot.originalQuantity)}</td>
+                                <td className="px-3 py-2 text-right font-medium text-slate-700">{fmtQty(lot.remainingQuantity)}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                    lot.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                                  }`}>{lot.status}</span>
+                                  {lot.isDipAdjustment && (
+                                    <span className="ml-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">DIP</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Cross-tank summary */}
+              <div className="ui-card p-4 overflow-x-auto">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Cross-Tank Summary</p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-xs text-slate-500">
+                      <th className="text-left px-3 py-2 font-medium">Fuel Type</th>
+                      <th className="text-right px-3 py-2 font-medium">Total Remaining</th>
+                      <th className="text-right px-3 py-2 font-medium">Weighted Avg Cost</th>
+                      <th className="text-right px-3 py-2 font-medium">Total Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allTanksData.crossTankSummary.map((row) => (
+                      <tr key={row.fuelType} className="border-t border-slate-100">
+                        <td className="px-3 py-2.5 font-medium text-slate-700">{row.fuelType.replace(/_/g, ' ')}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-600">{fmtQty(row.totalRemaining)}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-600">
+                          {row.weightedAvgCostPerUnit != null ? `₹${row.weightedAvgCostPerUnit.toFixed(2)}/L` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-slate-700">{fmtAmt(row.totalStockValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Print: single-tank full dataset */}
       {data && data.lots.length > 0 && (
         <div className="hidden print:block space-y-4">
           <PrintHeader title="Inventory Lots Report" />
@@ -696,10 +981,9 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
               <div className="flex items-center gap-3 mb-1 pb-1 border-b border-slate-200 flex-wrap">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${lot.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{lot.status}</span>
                 {lot.isDipAdjustment && <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">DIP Adj.</span>}
-                <span className="text-sm font-medium text-slate-700">
-                  {fmtShortDate(lot.deliveryDate)}
-                </span>
+                <span className="text-sm font-medium text-slate-700">{fmtShortDate(lot.deliveryDate)}</span>
                 <span className="text-xs text-slate-500">{lot.fuelType.replace(/_/g, ' ')}</span>
+                <span className="text-xs text-slate-500">{lot.tankerReference}</span>
                 <span className="text-xs text-slate-500">₹{lot.costPricePerUnit}/L</span>
                 <span className="text-xs text-slate-500">{fmtQty(lot.remainingQuantity)} remaining</span>
                 <span className="text-xs text-slate-500">{fmtAmt(lot.totalCogsConsumed)} COGS</span>
@@ -708,6 +992,7 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                 <table className="w-full text-xs border border-slate-100">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500">
+                      <th className="text-left px-3 py-2 font-medium">Tanker Ref</th>
                       <th className="text-left px-3 py-2 font-medium">Date</th>
                       <th className="text-left px-3 py-2 font-medium">Source</th>
                       <th className="text-left px-3 py-2 font-medium">Shift</th>
@@ -719,9 +1004,8 @@ function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                   <tbody>
                     {lot.consumptions.map((c) => (
                       <tr key={c.id} className="border-t border-slate-100">
-                        <td className="px-3 py-1.5 text-slate-500">
-                          {fmtShortDayMonth(c.consumedAt)}
-                        </td>
+                        <td className="px-3 py-1.5 text-slate-600">{lot.tankerReference}</td>
+                        <td className="px-3 py-1.5 text-slate-500">{fmtShortDayMonth(c.consumedAt)}</td>
                         <td className="px-3 py-1.5 text-slate-500">{c.sourceType.replace(/_/g, ' ')}</td>
                         <td className="px-3 py-1.5 text-slate-500">{c.shiftName ?? '—'}</td>
                         <td className="px-3 py-1.5 text-right text-slate-700">{c.quantityConsumed.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -904,7 +1188,8 @@ function DipPlTab({ pumpId }: { pumpId: number }) {
               color="text-blue-600"
             />
           </div>
-          <table className="w-full text-sm border border-slate-200">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 text-left">
                 <th className="px-3 py-2.5 text-xs font-semibold text-slate-500">Date &amp; Time</th>
@@ -961,6 +1246,7 @@ function DipPlTab({ pumpId }: { pumpId: number }) {
               </tfoot>
             )}
           </table>
+          </div>
         </div>
       )}
     </div>

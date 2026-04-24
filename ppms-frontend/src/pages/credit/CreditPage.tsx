@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useDeferredValue } from 'react'
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -1380,6 +1380,7 @@ export default function CreditPage() {
   const [showInterestModal, setShowInterestModal] = useState<CreditClient | null>(null)
   // Search query for filtering clients in the main list
   const [searchQuery, setSearchQuery] = useState('')
+  const deferredSearch = useDeferredValue(searchQuery)
 
   // Only one parent can be expanded at a time; null = all collapsed
   const [expandedParentId, setExpandedParentId] = useState<number | null>(null)
@@ -1550,7 +1551,7 @@ export default function CreditPage() {
 
         // Root clients = those that are NOT children in the full structure, filtered by search.
         // A parent matches if its own name/phone matches OR any of its sub-accounts match.
-        const q = searchQuery.trim().toLowerCase()
+        const q = deferredSearch.trim().toLowerCase()
         const rootClients = clients
           .filter(c => {
             if (isChildId(c.id)) return false
@@ -1688,7 +1689,7 @@ export default function CreditPage() {
             <div className="ui-card">
               <EmptyState
                 icon="generic"
-                title={`No clients match "${searchQuery.trim()}"`}
+                title={`No clients match "${deferredSearch.trim()}"`}
                 subtitle="Try a different name or phone number."
               />
             </div>

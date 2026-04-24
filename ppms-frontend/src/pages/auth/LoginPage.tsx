@@ -125,38 +125,42 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             <div>
-              <label className="ui-label">
+              <label htmlFor="phoneNumber" className="ui-label">
                 Phone Number
               </label>
               <input
+                id="phoneNumber"
                 {...register('phoneNumber')}
                 type="tel"
                 inputMode="numeric"
+                autoComplete="tel"
                 maxLength={10}
                 placeholder="e.g. 9999999999"
                 className="shadow-sm"
               />
               {errors.phoneNumber && (
-                <p className="ui-error-text">{errors.phoneNumber.message}</p>
+                <p className="ui-error-text" role="alert">{errors.phoneNumber.message}</p>
               )}
             </div>
 
             <div>
-              <label className="ui-label">
+              <label htmlFor="password" className="ui-label">
                 Password
               </label>
               <PasswordInput
+                id="password"
                 {...register('password')}
+                autoComplete="current-password"
                 placeholder="Enter your password"
                 className="shadow-sm"
               />
               {errors.password && (
-                <p className="ui-error-text">{errors.password.message}</p>
+                <p className="ui-error-text" role="alert">{errors.password.message}</p>
               )}
             </div>
 
             {serverError && (
-              <div className="ui-alert ui-alert-danger">
+              <div className="ui-alert ui-alert-danger" role="alert">
                 <p className="text-red-600 text-sm">{serverError}</p>
               </div>
             )}

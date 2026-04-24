@@ -2,17 +2,20 @@ package com.ppms.supplier;
 
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
-import com.ppms.common.exception.BusinessException;
+import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
-import com.ppms.user.UserRole;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.RoundingMode;
@@ -45,20 +48,27 @@ public class FuelSupplierPaymentController {
     private final AuditService auditService;
 
     /**
-     * GET /api/pumps/{pumpId}/supplier-payments
-     * Returns all supplier payments for a pump, newest first.
+     * GET /api/pumps/{pumpId}/supplier-payments?page=0&size=50
+     * Returns paginated supplier payments for a pump, newest first.
      * Optional supplierId query param to filter by a specific supplier.
+     * Max page size is capped at 200 to prevent runaway queries.
      */
     @GetMapping
-    public ResponseEntity<List<SupplierPaymentResponse>> getPayments(
+    public ResponseEntity<PagedResponse<SupplierPaymentResponse>> getPayments(
             @PathVariable Long pumpId,
-            @RequestParam(required = false) Long supplierId) {
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
 
-        List<FuelSupplierPayment> payments = supplierId != null
-                ? paymentRepository.findByPumpIdAndSupplierIdOrderByPaymentDateDesc(pumpId, supplierId)
-                : paymentRepository.findByPumpIdOrderByPaymentDateDescCreatedAtDesc(pumpId);
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 200));
 
-        // Batch-load supplier names and user names
+        Page<FuelSupplierPayment> paymentsPage = supplierId != null
+                ? paymentRepository.findByPumpIdAndSupplierIdOrderByPaymentDateDesc(pumpId, supplierId, pageable)
+                : paymentRepository.findByPumpIdOrderByPaymentDateDescCreatedAtDesc(pumpId, pageable);
+
+        List<FuelSupplierPayment> payments = paymentsPage.getContent();
+
+        // Batch-load supplier names and user names for this page only
         Set<Long> supplierIds = payments.stream().map(FuelSupplierPayment::getSupplierId).collect(Collectors.toSet());
         Map<Long, String> supplierNameById = supplierRepository.findAllById(supplierIds).stream()
                 .collect(Collectors.toMap(FuelSupplier::getId, FuelSupplier::getName));
@@ -67,10 +77,11 @@ public class FuelSupplierPaymentController {
         Map<Long, String> userNameById = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
 
-        return ResponseEntity.ok(payments.stream()
-                .map(p -> toResponse(p, supplierNameById.getOrDefault(p.getSupplierId(), "Unknown"),
-                        userNameById.getOrDefault(p.getRecordedByUserId(), "Unknown")))
-                .toList());
+        Page<SupplierPaymentResponse> responsePage = paymentsPage.map(p ->
+                toResponse(p, supplierNameById.getOrDefault(p.getSupplierId(), "Unknown"),
+                        userNameById.getOrDefault(p.getRecordedByUserId(), "Unknown")));
+
+        return ResponseEntity.ok(PagedResponse.of(responsePage));
     }
 
     /**
@@ -80,12 +91,12 @@ public class FuelSupplierPaymentController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<SupplierPaymentResponse> recordPayment(
             @PathVariable Long pumpId,
             @Valid @RequestBody RecordSupplierPaymentRequest request,
             @AuthenticationPrincipal User currentUser) {
-
-        requireOwnerOrAdmin(currentUser);
 
         FuelSupplier supplier = supplierRepository.findById(request.supplierId())
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
@@ -117,13 +128,6 @@ public class FuelSupplierPaymentController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(toResponse(saved, supplier.getName(), currentUser.getFullName()));
-    }
-
-    private void requireOwnerOrAdmin(User user) {
-        if (user.getRole() != UserRole.OWNER && user.getRole() != UserRole.ADMIN
-                && user.getRole() != UserRole.SUPER_ADMIN) {
-            throw new BusinessException("Only Owner or Admin can manage supplier payments.");
-        }
     }
 
     private SupplierPaymentResponse toResponse(FuelSupplierPayment p,

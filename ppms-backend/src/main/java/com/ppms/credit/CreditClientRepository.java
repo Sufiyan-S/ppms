@@ -48,6 +48,9 @@ public interface CreditClientRepository extends JpaRepository<CreditClient, Long
     // Sub-account queries — used to enforce hierarchy and compute parent-level outstanding
     List<CreditClient> findByParentClientId(Long parentClientId);
 
+    // Batch version — fetches all sub-accounts for multiple parents in one query
+    List<CreditClient> findByParentClientIdIn(java.util.Collection<Long> parentClientIds);
+
     // Returns only root (parent/standalone) accounts for a pump — excludes sub-accounts
     List<CreditClient> findByPumpIdAndParentClientIdIsNullOrderByNameAsc(Long pumpId);
 

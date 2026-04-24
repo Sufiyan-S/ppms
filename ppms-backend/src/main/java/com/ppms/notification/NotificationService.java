@@ -146,7 +146,7 @@ public class NotificationService {
         LocalDate today     = LocalDate.now();
         LocalDate threshold = today.plusDays(30);
 
-        documentRepository.findByPumpIdOrderByExpiryDateAsc(pumpId).stream()
+        documentRepository.findByPumpIdOrderByExpiryDateAsc(pumpId, org.springframework.data.domain.PageRequest.of(0, 500)).stream()
                 .filter(doc -> doc.getExpiryDate() != null
                         && !doc.getExpiryDate().isAfter(threshold))
                 .forEach(doc -> {
@@ -182,7 +182,7 @@ public class NotificationService {
                     String dedupKey = "ZERO_SALE_SHIFT:shift:" + shift.getId();
                     dedupService.maybeInsert(pumpId, NotificationType.ZERO_SALE_SHIFT, dedupKey,
                             "Zero-Sale Shift Detected",
-                            "Shift #" + shift.getId() + " on Nozzle was open for over 30 minutes but recorded ₹0 in sales. " +
+                            "Shift '" + shift.getShiftName() + "' (#" + shift.getId() + ") was open for over 30 minutes but recorded ₹0 in sales. " +
                             "This may indicate a data entry error or missing readings. Please review.");
                 });
     }

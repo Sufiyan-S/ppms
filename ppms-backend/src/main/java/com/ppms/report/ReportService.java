@@ -11,6 +11,10 @@ import com.ppms.inventory.InventoryLot;
 import com.ppms.inventory.InventoryLotRepository;
 import com.ppms.inventory.LotConsumption;
 import com.ppms.inventory.LotConsumptionRepository;
+import com.ppms.inventory.TankerDelivery;
+import com.ppms.inventory.TankerDeliveryRepository;
+import com.ppms.pump.UndergroundTank;
+import com.ppms.pump.UndergroundTankRepository;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftFuelReading;
 import com.ppms.shift.ShiftFuelReadingRepository;
@@ -46,6 +50,8 @@ public class ReportService {
     private final PumpExpenseRepository expenseRepository;
     private final CreditInterestChargeRepository interestChargeRepository;
     private final CreditClientRepository creditClientRepository;
+    private final TankerDeliveryRepository tankerDeliveryRepository;
+    private final UndergroundTankRepository undergroundTankRepository;
 
     // ── P&L Report ────────────────────────────────────────────────────────────
 
@@ -63,7 +69,12 @@ public class ReportService {
         List<Shift> shifts = shiftRepository.findClosedShiftsByDateRange(pumpId, from, to);
         List<Long> shiftIds = shifts.stream().map(Shift::getId).toList();
 
-        // Batch-fetch readings and consumptions — avoids N+1
+        // Revenue breakdown from shift payment fields
+        BigDecimal totalCash   = shifts.stream().map(s -> s.getCashCollected()  != null ? s.getCashCollected()  : BigDecimal.ZERO).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalUpi    = shifts.stream().map(s -> s.getUpiCollected()   != null ? s.getUpiCollected()   : BigDecimal.ZERO).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalCard   = shifts.stream().map(s -> s.getCardCollected()  != null ? s.getCardCollected()  : BigDecimal.ZERO).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalCredit = shifts.stream().map(s -> s.getCreditTotal()    != null ? s.getCreditTotal()    : BigDecimal.ZERO).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
         List<ShiftFuelReading> readings = shiftIds.isEmpty()
                 ? List.of()
                 : fuelReadingRepository.findByShiftIdIn(shiftIds);
@@ -72,42 +83,89 @@ public class ReportService {
                 ? List.of()
                 : lotConsumptionRepository.findByShiftIdIn(shiftIds);
 
-        // Revenue per fuel type
-        Map<FuelType, BigDecimal> revenueByFuel = new LinkedHashMap<>();
+        // Revenue + units sold per fuel type
+        Map<FuelType, BigDecimal> revenueByFuel   = new LinkedHashMap<>();
+        Map<FuelType, BigDecimal> unitsSoldByFuel = new LinkedHashMap<>();
         for (ShiftFuelReading r : readings) {
             if (r.getUnitsSold() == null) continue;
             BigDecimal revenue = r.getUnitsSold().multiply(r.getPriceSnapshot()).setScale(2, RoundingMode.HALF_UP);
             revenueByFuel.merge(r.getFuelType(), revenue, BigDecimal::add);
+            unitsSoldByFuel.merge(r.getFuelType(), r.getUnitsSold(), BigDecimal::add);
         }
 
-        // COGS per fuel type — requires resolving lot → fuelType.
-        // Pre-fetch all referenced lots in one batch query instead of one findById per unique lot.
+        // Batch-fetch lots to resolve fuelType, tankerDeliveryId, deliveryDate
         Set<Long> referencedLotIds = consumptions.stream().map(LotConsumption::getLotId).collect(Collectors.toSet());
-        Map<Long, FuelType> fuelTypeByLotId = inventoryLotRepository.findAllById(referencedLotIds).stream()
-                .collect(Collectors.toMap(InventoryLot::getId, InventoryLot::getFuelType));
+        List<InventoryLot> referencedLots = referencedLotIds.isEmpty()
+                ? List.of()
+                : inventoryLotRepository.findAllById(referencedLotIds);
+        Map<Long, InventoryLot> lotById = referencedLots.stream()
+                .collect(Collectors.toMap(InventoryLot::getId, l -> l));
 
-        Map<FuelType, BigDecimal> cogsByFuel = new LinkedHashMap<>();
+        // Batch-fetch tanker deliveries for invoice references
+        Set<Long> deliveryIds = referencedLots.stream()
+                .map(InventoryLot::getTankerDeliveryId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<Long, TankerDelivery> deliveryById = deliveryIds.isEmpty()
+                ? Map.of()
+                : tankerDeliveryRepository.findAllById(deliveryIds).stream()
+                        .collect(Collectors.toMap(TankerDelivery::getId, d -> d));
+
+        // COGS + lot cost lines per fuel type
+        Map<FuelType, BigDecimal>                         cogsByFuel     = new LinkedHashMap<>();
+        Map<FuelType, List<ProfitLossReport.LotCostLine>> lotLinesByFuel = new LinkedHashMap<>();
+
         for (LotConsumption c : consumptions) {
-            FuelType fuelType = fuelTypeByLotId.get(c.getLotId());
-            if (fuelType == null) continue;
+            InventoryLot lot = lotById.get(c.getLotId());
+            if (lot == null) continue;
+            FuelType fuelType = lot.getFuelType();
+
             BigDecimal cogs = c.getQuantityConsumed().multiply(c.getCostPricePerUnit()).setScale(2, RoundingMode.HALF_UP);
             cogsByFuel.merge(fuelType, cogs, BigDecimal::add);
+
+            String tankerRef;
+            LocalDate deliveryDate;
+            if (lot.getIsDipAdjustment() || lot.getTankerDeliveryId() == null) {
+                tankerRef    = "DIP Adjustment";
+                deliveryDate = lot.getDeliveryDate().toLocalDate();
+            } else {
+                TankerDelivery delivery = deliveryById.get(lot.getTankerDeliveryId());
+                tankerRef    = delivery != null ? delivery.getInvoiceReference() : "—";
+                deliveryDate = delivery != null ? delivery.getDeliveryDate().toLocalDate() : lot.getDeliveryDate().toLocalDate();
+            }
+
+            lotLinesByFuel.computeIfAbsent(fuelType, k -> new ArrayList<>())
+                    .add(new ProfitLossReport.LotCostLine(
+                            lot.getId(), tankerRef, deliveryDate,
+                            c.getCostPricePerUnit(), c.getQuantityConsumed(), cogs));
         }
 
         // Build per-fuel lines
         List<ProfitLossReport.FuelLine> lines = new ArrayList<>();
         for (FuelType fuelType : FuelType.values()) {
             BigDecimal revenue = revenueByFuel.getOrDefault(fuelType, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal cogs = cogsByFuel.getOrDefault(fuelType, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal cogs    = cogsByFuel.getOrDefault(fuelType, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             if (revenue.compareTo(BigDecimal.ZERO) == 0 && cogs.compareTo(BigDecimal.ZERO) == 0) continue;
-            lines.add(new ProfitLossReport.FuelLine(fuelType.name(), revenue, cogs, revenue.subtract(cogs)));
+
+            BigDecimal units  = unitsSoldByFuel.getOrDefault(fuelType, BigDecimal.ZERO);
+            BigDecimal margin = units.compareTo(BigDecimal.ZERO) == 0
+                    ? null
+                    : revenue.subtract(cogs).divide(units, 2, RoundingMode.HALF_UP);
+
+            List<ProfitLossReport.LotCostLine> lotCostLines = lotLinesByFuel.getOrDefault(fuelType, List.of());
+            lines.add(new ProfitLossReport.FuelLine(fuelType.name(), revenue, cogs,
+                    revenue.subtract(cogs), margin, lotCostLines));
         }
 
         BigDecimal totalRevenue = lines.stream().map(ProfitLossReport.FuelLine::revenue).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalCogs    = lines.stream().map(ProfitLossReport.FuelLine::cogs).reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return new ProfitLossReport(pumpId, from, to, shifts.size(), totalRevenue.setScale(2, RoundingMode.HALF_UP),
-                totalCogs.setScale(2, RoundingMode.HALF_UP), totalRevenue.subtract(totalCogs).setScale(2, RoundingMode.HALF_UP), lines);
+        return new ProfitLossReport(pumpId, from, to, shifts.size(),
+                totalRevenue.setScale(2, RoundingMode.HALF_UP),
+                totalCogs.setScale(2, RoundingMode.HALF_UP),
+                totalRevenue.subtract(totalCogs).setScale(2, RoundingMode.HALF_UP),
+                totalCash, totalUpi, totalCard, totalCredit,
+                lines);
     }
 
     // ── Operator Duty Report ──────────────────────────────────────────────────
@@ -234,6 +292,18 @@ public class ReportService {
                 : shiftRepository.findAllById(shiftIds).stream()
                         .collect(Collectors.toMap(Shift::getId, s -> s.getShiftName() != null ? s.getShiftName() : ""));
 
+        // Batch-fetch tanker deliveries for invoice references
+        Set<Long> deliveryIds = lots.stream()
+                .map(InventoryLot::getTankerDeliveryId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<Long, String> invoiceByDeliveryId = deliveryIds.isEmpty()
+                ? Map.of()
+                : tankerDeliveryRepository.findAllById(deliveryIds).stream()
+                        .collect(Collectors.toMap(
+                                TankerDelivery::getId,
+                                TankerDelivery::getInvoiceReference));
+
         List<InventoryLotsReport.LotLine> lines = lots.stream().map(lot -> {
             List<LotConsumption> consumptions = consumptionsByLot.getOrDefault(lot.getId(), List.of());
             BigDecimal totalConsumed = consumptions.stream()
@@ -253,15 +323,143 @@ public class ReportService {
                             c.getConsumedAt()))
                     .toList();
 
+            String tankerRef = lot.getIsDipAdjustment() || lot.getTankerDeliveryId() == null
+                    ? "DIP Adjustment"
+                    : invoiceByDeliveryId.getOrDefault(lot.getTankerDeliveryId(), "—");
+
             return new InventoryLotsReport.LotLine(
-                    lot.getId(), lot.getFuelType().name(), lot.getDeliveryDate(),
+                    lot.getId(), tankerRef, lot.getFuelType().name(), lot.getDeliveryDate(),
                     lot.getOriginalQuantity(), lot.getRemainingQuantity(),
                     totalConsumed.setScale(3, RoundingMode.HALF_UP),
                     lot.getCostPricePerUnit(), totalCogs, lot.getStatus().name(),
                     lot.getIsDipAdjustment(), consumptionLines);
         }).toList();
 
-        return new InventoryLotsReport(tankId, lots.size(), lines);
+        BigDecimal totalRemaining = lines.stream()
+                .map(InventoryLotsReport.LotLine::remainingQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal numerator = lines.stream()
+                .map(l -> l.remainingQuantity().multiply(l.costPricePerUnit()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal weightedAvgCost = totalRemaining.compareTo(BigDecimal.ZERO) == 0
+                ? null
+                : numerator.divide(totalRemaining, 2, RoundingMode.HALF_UP);
+
+        BigDecimal totalStockValue = numerator.setScale(2, RoundingMode.HALF_UP);
+
+        return new InventoryLotsReport(tankId, lots.size(), totalRemaining, weightedAvgCost, totalStockValue, lines);
+    }
+
+    // ── All-Tanks Inventory Report ────────────────────────────────────────────
+
+    public AllTanksInventoryReport buildAllTanksInventoryReport(Long pumpId) {
+        List<InventoryLot> allLots = inventoryLotRepository.findAllByPumpIdOrderedByTankAndDelivery(pumpId);
+
+        Set<Long> tankIds     = allLots.stream().map(InventoryLot::getTankId).collect(Collectors.toSet());
+        Set<Long> deliveryIds = allLots.stream().map(InventoryLot::getTankerDeliveryId)
+                .filter(id -> id != null).collect(Collectors.toSet());
+
+        Map<Long, UndergroundTank> tankById = undergroundTankRepository.findAllById(tankIds).stream()
+                .collect(Collectors.toMap(UndergroundTank::getId, t -> t));
+        Map<Long, String> invoiceByDeliveryId = deliveryIds.isEmpty()
+                ? Map.of()
+                : tankerDeliveryRepository.findAllById(deliveryIds).stream()
+                        .collect(Collectors.toMap(TankerDelivery::getId, TankerDelivery::getInvoiceReference));
+
+        List<Long> lotIds = allLots.stream().map(InventoryLot::getId).toList();
+        List<LotConsumption> allConsumptions = lotIds.isEmpty()
+                ? List.of()
+                : lotConsumptionRepository.findByLotIdIn(lotIds);
+        Map<Long, List<LotConsumption>> consumptionsByLot = allConsumptions.stream()
+                .collect(Collectors.groupingBy(LotConsumption::getLotId));
+
+        List<Long> shiftIds = allConsumptions.stream().map(LotConsumption::getShiftId)
+                .filter(id -> id != null).distinct().toList();
+        Map<Long, String> shiftNameById = shiftIds.isEmpty()
+                ? Map.of()
+                : shiftRepository.findAllById(shiftIds).stream()
+                        .collect(Collectors.toMap(Shift::getId, s -> s.getShiftName() != null ? s.getShiftName() : ""));
+
+        Map<Long, List<InventoryLot>> lotsByTank = new LinkedHashMap<>();
+        allLots.forEach(l -> lotsByTank.computeIfAbsent(l.getTankId(), k -> new ArrayList<>()).add(l));
+
+        List<AllTanksInventoryReport.TankSection> sections = new ArrayList<>();
+        for (Map.Entry<Long, List<InventoryLot>> entry : lotsByTank.entrySet()) {
+            Long tankId = entry.getKey();
+            List<InventoryLot> lots = entry.getValue();
+            UndergroundTank tank = tankById.get(tankId);
+            String identifier = tank != null ? tank.getTankIdentifier() : "Tank " + tankId;
+            String fuelType   = tank != null ? tank.getFuelType().name() : "UNKNOWN";
+
+            List<InventoryLotsReport.LotLine> lotLines = lots.stream().map(lot -> {
+                List<LotConsumption> consumptions = consumptionsByLot.getOrDefault(lot.getId(), List.of());
+                BigDecimal totalConsumed = consumptions.stream().map(LotConsumption::getQuantityConsumed)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal totalCogs = consumptions.stream()
+                        .map(c -> c.getQuantityConsumed().multiply(c.getCostPricePerUnit()))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
+                String tankerRef = lot.getIsDipAdjustment() || lot.getTankerDeliveryId() == null
+                        ? "DIP Adjustment"
+                        : invoiceByDeliveryId.getOrDefault(lot.getTankerDeliveryId(), "—");
+
+                List<InventoryLotsReport.ConsumptionLine> consumptionLines = consumptions.stream()
+                        .map(c -> new InventoryLotsReport.ConsumptionLine(
+                                c.getId(), c.getSourceType().name(), c.getShiftId(),
+                                c.getShiftId() != null ? shiftNameById.getOrDefault(c.getShiftId(), null) : null,
+                                c.getQuantityConsumed(), c.getCostPricePerUnit(),
+                                c.getQuantityConsumed().multiply(c.getCostPricePerUnit()).setScale(2, RoundingMode.HALF_UP),
+                                c.getConsumedAt()))
+                        .toList();
+
+                return new InventoryLotsReport.LotLine(
+                        lot.getId(), tankerRef, lot.getFuelType().name(), lot.getDeliveryDate(),
+                        lot.getOriginalQuantity(), lot.getRemainingQuantity(),
+                        totalConsumed.setScale(3, RoundingMode.HALF_UP),
+                        lot.getCostPricePerUnit(), totalCogs, lot.getStatus().name(),
+                        lot.getIsDipAdjustment(), consumptionLines);
+            }).toList();
+
+            BigDecimal totalRemaining  = lotLines.stream().map(InventoryLotsReport.LotLine::remainingQuantity)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal numerator       = lotLines.stream()
+                    .map(l -> l.remainingQuantity().multiply(l.costPricePerUnit()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal weightedAvg     = totalRemaining.compareTo(BigDecimal.ZERO) == 0
+                    ? null
+                    : numerator.divide(totalRemaining, 2, RoundingMode.HALF_UP);
+            BigDecimal totalStockValue = numerator.setScale(2, RoundingMode.HALF_UP);
+
+            sections.add(new AllTanksInventoryReport.TankSection(
+                    tankId, identifier, fuelType, lots.size(),
+                    totalRemaining, weightedAvg, totalStockValue, lotLines));
+        }
+
+        Map<String, List<AllTanksInventoryReport.TankSection>> byFuelType = sections.stream()
+                .collect(Collectors.groupingBy(AllTanksInventoryReport.TankSection::fuelType,
+                        LinkedHashMap::new, Collectors.toList()));
+
+        List<AllTanksInventoryReport.CrossTankSummaryLine> crossSummary = byFuelType.entrySet().stream()
+                .map(entry -> {
+                    List<AllTanksInventoryReport.TankSection> tankSections = entry.getValue();
+                    BigDecimal totalRem = tankSections.stream().map(AllTanksInventoryReport.TankSection::totalRemaining)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal num = tankSections.stream()
+                            .map(s -> s.totalRemaining().multiply(
+                                    s.weightedAvgCostPerUnit() != null ? s.weightedAvgCostPerUnit() : BigDecimal.ZERO))
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal wtdAvg  = totalRem.compareTo(BigDecimal.ZERO) == 0
+                            ? null
+                            : num.divide(totalRem, 2, RoundingMode.HALF_UP);
+                    BigDecimal totalVal = tankSections.stream().map(AllTanksInventoryReport.TankSection::totalStockValue)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+                    return new AllTanksInventoryReport.CrossTankSummaryLine(entry.getKey(), totalRem, wtdAvg, totalVal);
+                })
+                .toList();
+
+        return new AllTanksInventoryReport(pumpId, sections, crossSummary);
     }
 
     public List<ReportController.ShiftReportLine> buildShiftReportLines(Long pumpId, LocalDate from, LocalDate to) {
@@ -357,9 +555,27 @@ public class ReportService {
             BigDecimal totalRevenue,
             BigDecimal totalCogs,
             BigDecimal grossProfit,
+            BigDecimal totalCashRevenue,
+            BigDecimal totalUpiRevenue,
+            BigDecimal totalCardRevenue,
+            BigDecimal totalCreditRevenue,
             List<FuelLine> byFuelType) {
 
-        public record FuelLine(String fuelType, BigDecimal revenue, BigDecimal cogs, BigDecimal grossProfit) {}
+        public record FuelLine(
+                String fuelType,
+                BigDecimal revenue,
+                BigDecimal cogs,
+                BigDecimal grossProfit,
+                BigDecimal grossMarginPerLitre,    // null when totalUnitsSold == 0
+                List<LotCostLine> lotCostLines) {}
+
+        public record LotCostLine(
+                Long lotId,
+                String tankerReference,
+                LocalDate deliveryDate,
+                BigDecimal costPricePerUnit,
+                BigDecimal quantityConsumed,
+                BigDecimal lotCost) {}
     }
 
     public record OperatorDutyReport(
@@ -419,10 +635,14 @@ public class ReportService {
     public record InventoryLotsReport(
             Long tankId,
             int totalLots,
+            BigDecimal totalRemaining,
+            BigDecimal weightedAvgCostPerUnit,   // null when totalRemaining == 0
+            BigDecimal totalStockValue,
             List<LotLine> lots) {
 
         public record LotLine(
                 Long lotId,
+                String tankerReference,
                 String fuelType,
                 java.time.OffsetDateTime deliveryDate,
                 BigDecimal originalQuantity,
@@ -469,5 +689,27 @@ public class ReportService {
                 Integer daysApplied,
                 BigDecimal amount,
                 String source) {}
+    }
+
+    public record AllTanksInventoryReport(
+            Long pumpId,
+            List<TankSection> tanks,
+            List<CrossTankSummaryLine> crossTankSummary) {
+
+        public record TankSection(
+                Long tankId,
+                String tankIdentifier,
+                String fuelType,
+                int lotCount,
+                BigDecimal totalRemaining,
+                BigDecimal weightedAvgCostPerUnit,   // null when totalRemaining == 0
+                BigDecimal totalStockValue,
+                List<InventoryLotsReport.LotLine> lots) {}
+
+        public record CrossTankSummaryLine(
+                String fuelType,
+                BigDecimal totalRemaining,
+                BigDecimal weightedAvgCostPerUnit,
+                BigDecimal totalStockValue) {}
     }
 }

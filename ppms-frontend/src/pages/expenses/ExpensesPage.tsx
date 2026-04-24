@@ -59,6 +59,8 @@ export default function ExpensesPage() {
 
   const expenses = expensesPage?.content ?? []
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+
   const [form, setForm] = useState<CreateExpenseRequest>({
     category: 'MAINTENANCE',
     amount: 0,
@@ -202,17 +204,19 @@ export default function ExpensesPage() {
 
         <div className="ui-form-shell__grid">
           <div>
-            <label className="ui-label">Category</label>
+            <label id="expense-category-label" className="ui-label">Category</label>
             <SearchableSelect
               value={form.category}
               onChange={v => setForm(f => ({ ...f, category: v as ExpenseCategory }))}
               options={CATEGORIES.map(c => ({ value: c, label: c.replace('_', ' ') }))}
+              aria-labelledby="expense-category-label"
             />
           </div>
 
           <div>
-            <label className="ui-label">Amount (₹)</label>
+            <label htmlFor="expense-amount" className="ui-label">Amount (₹)</label>
             <input
+              id="expense-amount"
               type="number"
               min="0"
               step="0.01"
@@ -225,8 +229,9 @@ export default function ExpensesPage() {
           </div>
 
           <div>
-            <label className="ui-label">Description</label>
+            <label htmlFor="expense-description" className="ui-label">Description</label>
             <input
+              id="expense-description"
               type="text"
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
@@ -237,8 +242,9 @@ export default function ExpensesPage() {
           </div>
 
           <div>
-            <label className="ui-label">Expense Date</label>
+            <label htmlFor="expense-date" className="ui-label">Expense Date</label>
             <input
+              id="expense-date"
               type="date"
               value={form.expenseDate}
               onChange={e => setForm(f => ({ ...f, expenseDate: e.target.value }))}
@@ -455,14 +461,32 @@ export default function ExpensesPage() {
                   )}
                   {/* Delete — DRAFT only, backend enforces this; OWNER only */}
                   {isOwner && e.approvalStatus === 'DRAFT' && (
-                    <button
-                      onClick={() => deleteMutation.mutate(e.id)}
-                      disabled={deleteMutation.isPending}
-                      className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
-                      title="Delete"
-                    >
-                      <X size={14} strokeWidth={2} />
-                    </button>
+                    deleteConfirmId === e.id ? (
+                      <span className="flex items-center gap-1">
+                        <span className="text-xs text-red-600 font-medium">Delete?</span>
+                        <button
+                          onClick={() => { deleteMutation.mutate(e.id); setDeleteConfirmId(null) }}
+                          disabled={deleteMutation.isPending}
+                          className="ui-btn ui-btn-danger min-h-0 px-2 py-0.5 text-xs"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="ui-btn ui-btn-ghost min-h-0 px-2 py-0.5 text-xs"
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteConfirmId(e.id)}
+                        className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600"
+                        aria-label="Delete expense"
+                      >
+                        <X size={14} strokeWidth={2} />
+                      </button>
+                    )
                   )}
                 </div>
               </div>

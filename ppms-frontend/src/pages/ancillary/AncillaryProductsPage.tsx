@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useDeferredValue } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, AlertTriangle, ArrowRight, ChevronLeft } from 'lucide-react'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -173,13 +173,14 @@ function ProductsTab({
   const { addToast } = useToastStore()
   const [showAddForm, setShowAddForm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const deferredSearch = useDeferredValue(searchQuery)
   const [productsPage, setProductsPage] = useState(0)
   const [productsPageSize, setProductsPageSize] = useState(10)
   const [sellProduct, setSellProduct] = useState<AncillaryProduct | null>(null)
   const [stockLotsProduct, setStockLotsProduct] = useState<AncillaryProduct | null>(null)
 
-  // Reset to page 0 whenever the search query changes
-  useEffect(() => { setProductsPage(0) }, [searchQuery])
+  // Reset to page 0 whenever the deferred search query changes
+  useEffect(() => { setProductsPage(0) }, [deferredSearch])
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'ACTIVE' | 'INACTIVE' }) =>
@@ -201,7 +202,7 @@ function ProductsTab({
     return <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{p.currentStockUnits} units</span>
   }
 
-  const q = searchQuery.trim().toLowerCase()
+  const q = deferredSearch.trim().toLowerCase()
   const filteredProducts = q
     ? products.filter(p =>
         p.displayName.toLowerCase().includes(q) ||
@@ -271,8 +272,8 @@ function ProductsTab({
       ) : sortedProducts.length === 0 ? (
         <EmptyState
           icon="generic"
-          title={searchQuery ? `No products match "${searchQuery}"` : 'No products configured yet'}
-          subtitle={searchQuery ? 'Try a different search term.' : 'Add your first product using the button above.'}
+          title={deferredSearch ? `No products match "${deferredSearch}"` : 'No products configured yet'}
+          subtitle={deferredSearch ? 'Try a different search term.' : 'Add your first product using the button above.'}
         />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">

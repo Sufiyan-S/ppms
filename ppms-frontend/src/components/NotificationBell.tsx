@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  Bell, Droplets, AlertTriangle, FileText, Wrench,
+  Clock, TrendingDown, IndianRupee, Package, Lock, Info,
+} from 'lucide-react'
+import type { LucideProps } from 'lucide-react'
 import { notificationApi } from '../api/notificationApi'
 
 interface Props {
@@ -41,16 +46,20 @@ export default function NotificationBell({ pumpId }: Props) {
     if (unread.length > 0) markReadMutation.mutate()
   }
 
-  const TYPE_ICONS: Record<string, string> = {
-    LOW_STOCK:               '🛢',
-    PRICE_STALE:             '⚠️',
-    DOCUMENT_EXPIRING:       '📄',
-    CALIBRATION_DUE:         '🔧',
-    SHIFT_OVERDUE:           '⏰',
-    ZERO_SALE_SHIFT:         '🔍',
-    PRICE_CHANGE_OPEN_SHIFT: '💰',
-    ANCILLARY_LOW_STOCK:     '📦',
-    AUTO_CLOSED_SHIFT:       '🔒',
+  function TypeIcon({ type }: { type: string }) {
+    const base: LucideProps = { size: 15, strokeWidth: 1.75 }
+    switch (type) {
+      case 'LOW_STOCK':               return <Droplets      {...base} className="text-orange-400 flex-shrink-0 mt-0.5" />
+      case 'PRICE_STALE':             return <AlertTriangle {...base} className="text-amber-400  flex-shrink-0 mt-0.5" />
+      case 'DOCUMENT_EXPIRING':       return <FileText      {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+      case 'CALIBRATION_DUE':         return <Wrench        {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+      case 'SHIFT_OVERDUE':           return <Clock         {...base} className="text-red-400    flex-shrink-0 mt-0.5" />
+      case 'ZERO_SALE_SHIFT':         return <TrendingDown  {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+      case 'PRICE_CHANGE_OPEN_SHIFT': return <IndianRupee   {...base} className="text-blue-400   flex-shrink-0 mt-0.5" />
+      case 'ANCILLARY_LOW_STOCK':     return <Package       {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+      case 'AUTO_CLOSED_SHIFT':       return <Lock          {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+      default:                        return <Info          {...base} className="text-slate-400  flex-shrink-0 mt-0.5" />
+    }
   }
 
   return (
@@ -58,10 +67,12 @@ export default function NotificationBell({ pumpId }: Props) {
       {/* Bell button */}
       <button
         onClick={handleOpen}
+        aria-label={`Notifications${unread.length > 0 ? `, ${unread.length} unread` : ''}`}
+        aria-expanded={open}
+        aria-haspopup="true"
         className="ui-notification-bell relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white"
-        title="Notifications"
       >
-        <span className="text-lg">🔔</span>
+        <Bell size={18} strokeWidth={1.75} />
         {unread.length > 0 && (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
             {unread.length > 9 ? '9+' : unread.length}
@@ -101,7 +112,7 @@ export default function NotificationBell({ pumpId }: Props) {
                   className={`ui-notification-panel__item px-4 py-3.5 ${n.readAt ? 'opacity-70' : 'bg-blue-50/50'}`}
                 >
                   <div className="flex items-start gap-2">
-                    <span className="text-base flex-shrink-0 mt-0.5">{TYPE_ICONS[n.type] ?? '📌'}</span>
+                    <TypeIcon type={n.type} />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800">{n.title}</p>
                       <p className="mt-1 text-sm leading-relaxed text-slate-500">{n.message}</p>

@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -133,7 +134,7 @@ public class CreditInterestService {
     @Transactional
     public Optional<CreditInterestCharge> applyProRata(Long pumpId, Long clientId, Long appliedByUserId) {
         CreditClient client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + clientId));
+                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException("Client not found: " + clientId));
 
         Optional<CreditInterestCharge> result = applyInterest(client, LocalDate.now(), "MANUAL", appliedByUserId);
 
@@ -152,25 +153,51 @@ public class CreditInterestService {
     }
 
     /**
-     * Applies pro-rata interest to ALL eligible root clients for a pump up to today.
-     * Sub-accounts are skipped here — they are processed during their parent's cascade.
+     * Result of a bulk interest application run.
+     *
+     * @param charged     number of root clients that received an interest charge
+     * @param skipped     number of root clients skipped (zero balance, within grace period, etc.)
+     * @param failed      number of root clients where the application threw an exception
+     * @param failedClientIds  IDs of clients that failed — operator can retry or investigate
      */
-    public int applyProRataForAllClients(Long pumpId, Long appliedByUserId) {
+    public record InterestApplicationResult(int charged, int skipped, int failed, List<Long> failedClientIds) {}
+
+    /**
+     * Applies pro-rata interest to ALL eligible root clients for a pump up to today.
+     * Sub-accounts are processed automatically during their parent's cascade.
+     *
+     * Each client runs in its own transaction (via {@link #applyProRata}).
+     * Failures are caught, logged, and included in the returned result so the caller
+     * can surface them to the operator — a partial run is no longer silently hidden.
+     */
+    public InterestApplicationResult applyProRataForAllClients(Long pumpId, Long appliedByUserId) {
         List<CreditClient> clients = clientRepository.findByPumpIdOrderByNameAsc(pumpId);
         int charged = 0;
+        int skipped = 0;
+        List<Long> failedClientIds = new ArrayList<>();
+
         for (CreditClient client : clients) {
             // Sub-accounts are processed when their parent is processed — skip them here
             if (client.getParentClientId() != null) continue;
             try {
                 Optional<CreditInterestCharge> charge = applyProRata(pumpId, client.getId(), appliedByUserId);
-                if (charge.isPresent()) charged++;
+                if (charge.isPresent()) {
+                    charged++;
+                } else {
+                    skipped++;
+                }
             } catch (Exception e) {
-                log.error("Interest application failed for client={} on pump={}: {}", client.getId(), pumpId, e.getMessage(), e);
+                log.error("Interest application failed for client={} on pump={}: {}",
+                        client.getId(), pumpId, e.getMessage(), e);
+                failedClientIds.add(client.getId());
             }
         }
+
+        int failed = failedClientIds.size();
         long rootCount = clients.stream().filter(c -> c.getParentClientId() == null).count();
-        log.info("Pro-rata interest applied for pump={}: {}/{} root clients charged", pumpId, charged, rootCount);
-        return charged;
+        log.info("Pro-rata interest applied for pump={}: charged={}, skipped={}, failed={}/{}",
+                pumpId, charged, skipped, failed, rootCount);
+        return new InterestApplicationResult(charged, skipped, failed, failedClientIds);
     }
 
     // ── Scheduled job entry points (called by InterestStagingJob) ────────────
@@ -183,6 +210,17 @@ public class CreditInterestService {
     public int applyInterestForPeriod(InterestPeriod period, LocalDate periodTo, String source) {
         List<CreditClient> clients = clientRepository.findByInterestPeriod(period);
 
+        List<Long> parentIds = clients.stream()
+                .filter(c -> c.getParentClientId() == null)
+                .map(CreditClient::getId)
+                .toList();
+
+        // Batch-fetch all children in one query instead of one query per parent
+        Map<Long, List<CreditClient>> childrenByParentId = clientRepository
+                .findByParentClientIdIn(parentIds)
+                .stream()
+                .collect(Collectors.groupingBy(CreditClient::getParentClientId));
+
         int charged = 0;
         for (CreditClient client : clients) {
             // Sub-accounts are cascaded from their parent — skip them in the main loop
@@ -191,8 +229,8 @@ public class CreditInterestService {
             Optional<CreditInterestCharge> charge = applyInterest(client, periodTo, source, null);
             if (charge.isPresent()) charged++;
 
-            // Cascade to sub-accounts
-            for (CreditClient child : clientRepository.findByParentClientId(client.getId())) {
+            // Cascade to sub-accounts using the pre-fetched map
+            for (CreditClient child : childrenByParentId.getOrDefault(client.getId(), List.of())) {
                 try {
                     Optional<CreditInterestCharge> childCharge = applyInterest(child, periodTo, source, null);
                     if (childCharge.isPresent()) charged++;

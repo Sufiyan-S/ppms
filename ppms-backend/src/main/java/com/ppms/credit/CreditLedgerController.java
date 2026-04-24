@@ -198,8 +198,14 @@ public class CreditLedgerController {
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {
 
-        int charged = interestService.applyProRataForAllClients(pumpId, currentUser.getId());
-        return ResponseEntity.ok(Map.of("clientsCharged", charged));
+        CreditInterestService.InterestApplicationResult result =
+                interestService.applyProRataForAllClients(pumpId, currentUser.getId());
+        return ResponseEntity.ok(Map.of(
+                "clientsCharged",    result.charged(),
+                "clientsSkipped",    result.skipped(),
+                "clientsFailed",     result.failed(),
+                "failedClientIds",   result.failedClientIds()
+        ));
     }
 
     /**

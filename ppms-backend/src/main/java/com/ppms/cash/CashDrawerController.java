@@ -1,7 +1,6 @@
 package com.ppms.cash;
 
 import com.ppms.common.dto.PagedResponse;
-import com.ppms.common.exception.BusinessException;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -23,6 +21,7 @@ import java.util.Map;
 public class CashDrawerController {
 
     private final CashEventRepository cashEventRepository;
+    private final CashDrawerService cashDrawerService;
 
     /**
      * GET /api/pumps/{pumpId}/cash-events?page=0&size=50&eventType=CASH_IN
@@ -39,17 +38,8 @@ public class CashDrawerController {
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) CashEventType eventType) {
 
-        // Balance computed from ALL events — filter does not affect the balance figure.
-        List<CashEvent> allEvents = cashEventRepository.findByPumpIdOrderByEventDateDescCreatedAtDesc(pumpId);
-        BigDecimal balance = allEvents.stream()
-                .filter(e -> e.getEventType() == CashEventType.OPENING_BALANCE
-                          || e.getEventType() == CashEventType.CASH_IN
-                          || e.getEventType() == CashEventType.CASH_OUT)
-                .map(e -> e.getEventType() == CashEventType.CASH_OUT
-                        ? e.getAmount().negate()
-                        : e.getAmount())
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+        // Balance computed via a single DB aggregate — avoids loading all events into heap.
+        BigDecimal balance = cashEventRepository.computeBalance(pumpId).setScale(2, RoundingMode.HALF_UP);
 
         var pageReq = PageRequest.of(page, size);
         var pagedEvents = (eventType != null)
@@ -69,39 +59,6 @@ public class CashDrawerController {
             @PathVariable Long pumpId,
             @Valid @RequestBody RecordCashEventRequest req,
             @AuthenticationPrincipal User currentUser) {
-
-        BigDecimal amount = req.getAmount().setScale(2, RoundingMode.HALF_UP);
-
-        // Guard: cash-out cannot exceed the current drawer balance.
-        if (req.getEventType() == CashEventType.CASH_OUT) {
-            BigDecimal currentBalance = cashEventRepository
-                    .findByPumpIdOrderByEventDateDescCreatedAtDesc(pumpId)
-                    .stream()
-                    .filter(e -> e.getEventType() == CashEventType.OPENING_BALANCE
-                              || e.getEventType() == CashEventType.CASH_IN
-                              || e.getEventType() == CashEventType.CASH_OUT)
-                    .map(e -> e.getEventType() == CashEventType.CASH_OUT
-                            ? e.getAmount().negate()
-                            : e.getAmount())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .setScale(2, RoundingMode.HALF_UP);
-
-            if (amount.compareTo(currentBalance) > 0) {
-                throw new BusinessException(
-                        "Cash-out amount ₹" + amount
-                        + " exceeds the current drawer balance of ₹" + currentBalance + ".");
-            }
-        }
-
-        CashEvent event = CashEvent.builder()
-                .pumpId(pumpId)
-                .eventType(req.getEventType())
-                .amount(amount)
-                .description(req.getDescription().trim())
-                .eventDate(req.getEventDate())
-                .recordedByUserId(currentUser.getId())
-                .build();
-
-        return cashEventRepository.save(event);
+        return cashDrawerService.recordCashEvent(pumpId, req, currentUser);
     }
 }

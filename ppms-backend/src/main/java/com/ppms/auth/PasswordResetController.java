@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -43,6 +44,9 @@ public class PasswordResetController {
             "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,}$";
     private static final String PASSWORD_POLICY_MESSAGE =
             "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.";
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     private final UserRepository             userRepository;
     private final PasswordResetTokenRepository tokenRepository;
@@ -113,7 +117,7 @@ public class PasswordResetController {
             throw new BusinessException("Invalid reset token format.");
         }
 
-        PasswordResetToken resetToken = tokenRepository.findByToken(tokenUuid)
+        PasswordResetToken resetToken = tokenRepository.findByTokenForUpdate(tokenUuid)
                 .orElseThrow(() -> new BusinessException("Invalid or expired password reset link."));
 
         if (resetToken.getUsedAt() != null) {
@@ -142,8 +146,7 @@ public class PasswordResetController {
 
     private void sendResetEmail(User user, UUID token) {
         try {
-            // TODO: replace this placeholder URL with the actual deployed frontend URL via config
-            String resetUrl = "http://localhost:5173/reset-password?token=" + token;
+            String resetUrl = frontendUrl + "/reset-password?token=" + token;
 
             SimpleMailMessage mail = new SimpleMailMessage();
             mail.setTo(user.getEmail());
@@ -159,7 +162,7 @@ public class PasswordResetController {
             mailSender.send(mail);
         } catch (Exception e) {
             // Do not expose mail failure to the caller — log it for ops visibility
-            log.error("Failed to send password reset email to userId={}: {}", user.getId(), e.getMessage());
+            log.error("Failed to send password reset email to userId={}", user.getId(), e);
         }
     }
 

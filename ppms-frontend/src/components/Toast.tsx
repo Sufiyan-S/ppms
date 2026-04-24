@@ -21,7 +21,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="ui-toast-stack">
+    <div className="ui-toast-stack" role="status" aria-live="polite" aria-atomic="false">
       {toasts.map(t => {
         const { border, icon } = VARIANT_STYLES[t.variant]
         return (

@@ -65,10 +65,12 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="ui-label">New Password</label>
+            <label htmlFor="newPassword" className="ui-label">New Password</label>
             <PasswordInput
+              id="newPassword"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
+              autoComplete="new-password"
               placeholder="Use a strong password"
               className="shadow-sm"
               autoFocus
@@ -79,17 +81,19 @@ export default function ResetPasswordPage() {
           </div>
 
           <div>
-            <label className="ui-label">Confirm Password</label>
+            <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
             <PasswordInput
+              id="confirmPassword"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
               placeholder="Repeat the password"
               className="shadow-sm"
               required
             />
           </div>
 
-          {error && <p className="ui-error-text">{error}</p>}
+          {error && <p className="ui-error-text" role="alert">{error}</p>}
 
           <button
             type="submit"

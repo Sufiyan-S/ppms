@@ -101,7 +101,7 @@ public class ShiftController {
             @PathVariable Long pumpId,
             @Valid @RequestBody OpenShiftRequest request,
             @AuthenticationPrincipal User currentUser) {
-        ShiftResponse response = shiftService.openShift(request, currentUser);
+        ShiftResponse response = shiftService.openShift(pumpId, request, currentUser);
         auditService.log(response.getPumpId(), AuditAction.SHIFT_OPENED,
                 "Shift", response.getId().toString(),
                 "Shift opened on DU #" + response.getDuNumber() + " by operator " + response.getOperatorName(),
@@ -123,7 +123,7 @@ public class ShiftController {
             @Valid @RequestBody AddCreditEntryRequest request,
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(shiftService.addCreditEntry(id, request, currentUser));
+                .body(shiftService.addCreditEntry(pumpId, id, request, currentUser));
     }
 
     /**
@@ -137,7 +137,7 @@ public class ShiftController {
             @PathVariable Long id,
             @Valid @RequestBody CloseShiftRequest request,
             @AuthenticationPrincipal User currentUser) {
-        ShiftResponse response = shiftService.closeShift(id, request, currentUser);
+        ShiftResponse response = shiftService.closeShift(pumpId, id, request, currentUser);
         auditService.log(response.getPumpId(), AuditAction.SHIFT_CLOSED,
                 "Shift", response.getId().toString(),
                 "Shift closed: status=" + response.getStatus() + " totalAmountDue=₹" + response.getTotalAmountDue(),
@@ -158,7 +158,7 @@ public class ShiftController {
             @PathVariable Long id,
             @Valid @RequestBody ResolveDiscrepancyRequest request,
             @AuthenticationPrincipal User currentUser) {
-        ShiftResponse response = shiftService.resolveDiscrepancy(id, request, currentUser);
+        ShiftResponse response = shiftService.resolveDiscrepancy(pumpId, id, request, currentUser);
         auditService.log(response.getPumpId(), AuditAction.DISCREPANCY_RESOLVED,
                 "Shift", response.getId().toString(),
                 "Discrepancy resolved: resolution=" + request.resolutionAction()
@@ -180,6 +180,6 @@ public class ShiftController {
             @PathVariable Long entryId,
             @Valid @RequestBody VoidCreditEntryRequest request,
             @AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(shiftService.voidCreditEntry(shiftId, entryId, request.voidReason(), currentUser));
+        return ResponseEntity.ok(shiftService.voidCreditEntry(pumpId, shiftId, entryId, request.voidReason(), currentUser));
     }
 }

@@ -103,6 +103,10 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             """)
     List<InventoryLot> findAllByTankIdOrdered(Long tankId);
 
+    /** All lots for a pump across all tanks, ordered by tank then delivery date. Used by all-tanks inventory report. */
+    @Query("SELECT l FROM InventoryLot l WHERE l.pumpId = :pumpId ORDER BY l.tankId ASC, l.deliveryDate ASC, l.id ASC")
+    List<InventoryLot> findAllByPumpIdOrderedByTankAndDelivery(@Param("pumpId") Long pumpId);
+
     /**
      * ACTIVE lots for a specific tank in FIFO order — display use only (no row lock).
      *

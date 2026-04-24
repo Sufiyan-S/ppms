@@ -141,13 +141,21 @@ public class BalanceSheetService {
         List<ShiftFuelReading> allReadings = shiftFuelReadingRepository.findByShiftIdIn(shiftIds);
 
         // Group readings by fuel type
-        Map<FuelType, BigDecimal> litresByFuel = new EnumMap<>(FuelType.class);
+        Map<FuelType, BigDecimal> litresByFuel      = new EnumMap<>(FuelType.class);
+        // Historical expected revenue per fuel type: sum(unitsSold × priceSnapshot) at close time.
+        // Using priceSnapshot (not current price) keeps the per-fuel revenue consistent with
+        // totalExpectedRevenue which is derived from shift.totalAmountDue (also snapshot-based).
+        Map<FuelType, BigDecimal> expectedRevByFuel = new EnumMap<>(FuelType.class);
         Map<Long, List<ShiftFuelReading>> readingsByShift = allReadings.stream()
                 .collect(Collectors.groupingBy(ShiftFuelReading::getShiftId));
 
         for (ShiftFuelReading r : allReadings) {
             BigDecimal units = r.getUnitsSold() != null ? r.getUnitsSold() : BigDecimal.ZERO;
             litresByFuel.merge(r.getFuelType(), units, BigDecimal::add);
+            if (r.getPriceSnapshot() != null && units.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal rev = units.multiply(r.getPriceSnapshot());
+                expectedRevByFuel.merge(r.getFuelType(), rev, BigDecimal::add);
+            }
         }
 
         // ── 3. COGS — FIFO lot costs for sold litres ──────────────────────────
@@ -361,8 +369,12 @@ public class BalanceSheetService {
         List<BsFuelLine> fuelLines = new ArrayList<>();
         for (FuelType ft : allFuelTypes) {
             BigDecimal soldLitres    = litresByFuel.getOrDefault(ft, BigDecimal.ZERO);
+            // sellingPrice is retained for display/reference only (current price at generation time).
             BigDecimal sellingPrice  = priceMap.getOrDefault(ft, BigDecimal.ZERO);
-            BigDecimal expectedRev   = soldLitres.multiply(sellingPrice).setScale(2, RoundingMode.HALF_UP);
+            // expectedRev uses historical price snapshots from each reading so the per-fuel total
+            // matches totalExpectedRevenue (sum of shift.totalAmountDue) exactly.
+            BigDecimal expectedRev   = expectedRevByFuel.getOrDefault(ft, BigDecimal.ZERO)
+                                           .setScale(2, RoundingMode.HALF_UP);
             BigDecimal delivLitres   = deliveredLitresByFuel.getOrDefault(ft, BigDecimal.ZERO);
             BigDecimal delivCost     = deliveredCostByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             BigDecimal creditSold    = creditByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);

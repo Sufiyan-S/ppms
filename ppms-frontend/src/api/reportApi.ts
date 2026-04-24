@@ -2,11 +2,22 @@ import client from './client'
 
 // ── P&L Report ────────────────────────────────────────────────────────────────
 
+export interface LotCostLine {
+  lotId: number
+  tankerReference: string
+  deliveryDate: string       // ISO date string (LocalDate)
+  costPricePerUnit: number
+  quantityConsumed: number
+  lotCost: number
+}
+
 export interface ProfitLossFuelLine {
   fuelType: string
   revenue: number
   cogs: number
   grossProfit: number
+  grossMarginPerLitre: number | null
+  lotCostLines: LotCostLine[]
 }
 
 export interface ProfitLossReport {
@@ -17,6 +28,10 @@ export interface ProfitLossReport {
   totalRevenue: number
   totalCogs: number
   grossProfit: number
+  totalCashRevenue: number
+  totalUpiRevenue: number
+  totalCardRevenue: number
+  totalCreditRevenue: number
   byFuelType: ProfitLossFuelLine[]
 }
 
@@ -96,6 +111,7 @@ export interface ConsumptionLine {
 
 export interface InventoryLotLine {
   lotId: number
+  tankerReference: string
   fuelType: string
   deliveryDate: string
   originalQuantity: number
@@ -111,7 +127,36 @@ export interface InventoryLotLine {
 export interface InventoryLotsReport {
   tankId: number
   totalLots: number
+  totalRemaining: number
+  weightedAvgCostPerUnit: number | null
+  totalStockValue: number
   lots: InventoryLotLine[]
+}
+
+// ── All-Tanks Inventory Report ────────────────────────────────────────────────
+
+export interface TankSection {
+  tankId: number
+  tankIdentifier: string
+  fuelType: string
+  lotCount: number
+  totalRemaining: number
+  weightedAvgCostPerUnit: number | null
+  totalStockValue: number
+  lots: InventoryLotLine[]
+}
+
+export interface CrossTankSummaryLine {
+  fuelType: string
+  totalRemaining: number
+  weightedAvgCostPerUnit: number | null
+  totalStockValue: number
+}
+
+export interface AllTanksInventoryReport {
+  pumpId: number
+  tanks: TankSection[]
+  crossTankSummary: CrossTankSummaryLine[]
 }
 
 // ── Dip P/L Report ────────────────────────────────────────────────────────────
@@ -199,6 +244,9 @@ export const reportApi = {
 
   getInventoryLots: (pumpId: number, tankId: number) =>
     client.get<InventoryLotsReport>(`/pumps/${pumpId}/reports/inventory-lots`, { params: { tankId } }).then(r => r.data),
+
+  getAllTanksInventoryLots: (pumpId: number) =>
+    client.get<AllTanksInventoryReport>(`/pumps/${pumpId}/reports/inventory-lots/all`).then(r => r.data),
 
   getDipPl: (pumpId: number, from: string, to: string) =>
     client.get<DipPlEntry[]>(`/pumps/${pumpId}/reports/dip-pl`, { params: { from, to } }).then(r => r.data),

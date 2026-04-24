@@ -195,8 +195,21 @@ export default function DashboardPage() {
   const timeStr = formatIstDateTime(now, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
   const dateStr = formatIstDateTime(now, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 
+  // Move focus to main content on route change so screen readers announce the new page
+  useEffect(() => {
+    document.getElementById('main-content')?.focus()
+  }, [location.pathname])
+
   return (
-    <div className="ui-dashboard-shell min-h-screen bg-slate-50 flex flex-col">
+    <div className="ui-dashboard-shell h-screen bg-slate-50 flex flex-col overflow-hidden">
+
+      {/* Skip link — visible only on keyboard focus */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:rounded-lg focus:bg-white focus:text-blue-700 focus:font-medium focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
 
       {/* ── Top header ─────────────────────────────────────────────────────────── */}
       <header className="ui-dashboard-topbar print:hidden">
@@ -229,6 +242,8 @@ export default function DashboardPage() {
                 <button
                   key={p.id}
                   onClick={() => setSelectedPumpId(p.id)}
+                  aria-label={`Switch to ${p.name}`}
+                  aria-pressed={selectedPumpId === p.id}
                   className={`ui-dashboard-pump-chip cursor-pointer ${
                     selectedPumpId === p.id
                       ? 'ui-dashboard-pump-chip--active'
@@ -261,12 +276,14 @@ export default function DashboardPage() {
                   <button
                     onClick={saveName}
                     disabled={renameMutation.isPending}
+                    aria-label="Save name"
                     className="text-green-400 hover:text-green-300 p-0.5 disabled:opacity-50"
                     title="Save"
                   ><Check size={13} strokeWidth={2.5} /></button>
                   <button
                     onClick={cancelEdit}
                     disabled={renameMutation.isPending}
+                    aria-label="Cancel editing"
                     className="text-slate-400 hover:text-slate-200 p-0.5 disabled:opacity-50"
                     title="Cancel"
                   ><X size={13} strokeWidth={2} /></button>
@@ -290,6 +307,9 @@ export default function DashboardPage() {
           <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setProfileMenuOpen((open) => !open)}
+              aria-label="Open profile menu"
+              aria-expanded={profileMenuOpen}
+              aria-haspopup="true"
               className="w-9 h-9 bg-blue-500/20 border border-blue-400/40 rounded-full flex items-center justify-center hover:bg-blue-500/30 transition-colors"
               title="Open profile menu"
             >
@@ -339,6 +359,7 @@ export default function DashboardPage() {
                 <Link
                   key={item.path}
                   to={item.path}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`ui-dashboard-navlink ${
                     isActive
                       ? 'ui-dashboard-navlink--active'
@@ -362,7 +383,7 @@ export default function DashboardPage() {
         </nav>
 
         {/* ── Main content ── */}
-        <main className="flex-1 min-w-0 overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto focus:outline-none">
           <div key={location.pathname} className="ui-route-fade">
             <Outlet />
           </div>
@@ -383,7 +404,7 @@ export default function DashboardPage() {
                 <h2 className="ui-modal-title">Reset Password</h2>
                 <p className="ui-modal-subtitle">Update your password, then sign in again.</p>
               </div>
-              <button onClick={clearPasswordForm} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
+              <button onClick={clearPasswordForm} aria-label="Close" className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
             </div>
 
             <div className="ui-modal-body space-y-4">
@@ -392,6 +413,7 @@ export default function DashboardPage() {
                 <PasswordInput
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
                   className="shadow-sm"
                 />
               </div>
@@ -401,6 +423,7 @@ export default function DashboardPage() {
                 <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
                   className="shadow-sm"
                 />
                 <p className="ui-help">{PASSWORD_POLICY_MESSAGE}</p>
@@ -412,12 +435,13 @@ export default function DashboardPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword() }}
+                  autoComplete="new-password"
                   className="shadow-sm"
                 />
               </div>
 
               {passwordError && (
-                <div className="ui-alert ui-alert-danger">
+                <div className="ui-alert ui-alert-danger" role="alert">
                   <p className="text-sm text-red-600">{passwordError}</p>
                 </div>
               )}

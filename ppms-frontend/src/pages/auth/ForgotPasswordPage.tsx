@@ -57,9 +57,12 @@ export default function ForgotPasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="ui-label">Phone Number</label>
+            <label htmlFor="phoneNumber" className="ui-label">Phone Number</label>
             <input
+              id="phoneNumber"
               type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
               value={phoneNumber}
               onChange={e => setPhoneNumber(e.target.value)}
               placeholder="e.g. 9876543210"
@@ -68,7 +71,7 @@ export default function ForgotPasswordPage() {
             />
           </div>
 
-          {error && <p className="ui-error-text">{error}</p>}
+          {error && <p className="ui-error-text" role="alert">{error}</p>}
 
           <button
             type="submit"

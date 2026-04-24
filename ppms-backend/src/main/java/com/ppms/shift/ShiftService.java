@@ -92,9 +92,13 @@ public class ShiftService {
      * - Start readings come from each nozzle's stored lastReading (auto pre-filled)
      */
     @Transactional
-    public ShiftResponse openShift(OpenShiftRequest request, User currentUser) {
+    public ShiftResponse openShift(Long pumpId, OpenShiftRequest request, User currentUser) {
         DispensaryUnit du = duRepository.findById(request.getDuId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dispensary Unit not found: " + request.getDuId()));
+
+        if (!du.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Dispensary Unit does not belong to pump " + pumpId);
+        }
 
         List<Nozzle> nozzles = request.getNozzleIds().stream()
                 .map(id -> nozzleRepository.findById(id)
@@ -106,7 +110,6 @@ public class ShiftService {
 
         com.ppms.pump.PumpShiftDefinition shiftDef = lifecycleSupportService.validateShiftCanOpen(du, nozzles, operator);
 
-        Long pumpId = du.getPumpId();
         OffsetDateTime now = OffsetDateTime.now();
 
         Shift shift = Shift.builder()
@@ -126,13 +129,13 @@ public class ShiftService {
         shift = shiftRepository.save(shift);
         final Long shiftId = shift.getId();
 
-        // Persist nozzle assignments in the join table
-        for (Nozzle nozzle : nozzles) {
-            shiftNozzleRepository.save(ShiftNozzle.builder()
-                    .shiftId(shiftId)
-                    .nozzleId(nozzle.getId())
-                    .build());
-        }
+        // Persist nozzle assignments in the join table (batch insert)
+        shiftNozzleRepository.saveAll(nozzles.stream()
+                .map(nozzle -> ShiftNozzle.builder()
+                        .shiftId(shiftId)
+                        .nozzleId(nozzle.getId())
+                        .build())
+                .toList());
 
         // DB-level nozzle exclusivity guard — PRIMARY KEY conflict here means two concurrent
         // requests raced past the application-level check in validateShiftCanOpen.
@@ -176,9 +179,13 @@ public class ShiftService {
      * 7. Update each nozzle's last_reading for pre-fill on next shift open
      */
     @Transactional
-    public ShiftResponse closeShift(Long shiftId, CloseShiftRequest request, User currentUser) {
+    public ShiftResponse closeShift(Long pumpId, Long shiftId, CloseShiftRequest request, User currentUser) {
         Shift shift = shiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        if (!shift.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Shift does not belong to pump " + pumpId);
+        }
 
         if (shift.getStatus() != ShiftStatus.OPEN
                 && shift.getStatus() != ShiftStatus.OPEN_OVERDUE
@@ -243,12 +250,14 @@ public class ShiftService {
                 closingSummary.getDiscrepancyAmount(), closingSummary.getStatus());
         shiftClosedCounter.increment();
 
-        // Update each nozzle's last_reading for pre-fill on next shift open
+        // Update each nozzle's last_reading for pre-fill on next shift open.
+        // nozzleById is already populated above — no extra DB round-trip per nozzle.
         for (ShiftFuelReading reading : readings) {
-            nozzleRepository.findById(reading.getNozzleId()).ifPresent(nozzle -> {
+            Nozzle nozzle = nozzleById.get(reading.getNozzleId());
+            if (nozzle != null) {
                 nozzle.setLastReading(reading.getEndReading());
                 nozzleRepository.save(nozzle);
-            });
+            }
         }
 
         lifecycleSupportService.createCashCollectionEvent(shift, currentUser, nozzles);
@@ -304,9 +313,13 @@ public class ShiftService {
      * Adds a credit entry to an open shift mid-shift.
      */
     @Transactional
-    public ShiftResponse addCreditEntry(Long shiftId, AddCreditEntryRequest request, User currentUser) {
+    public ShiftResponse addCreditEntry(Long pumpId, Long shiftId, AddCreditEntryRequest request, User currentUser) {
         Shift shift = shiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        if (!shift.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Shift does not belong to pump " + pumpId);
+        }
 
         if (shift.getStatus() != ShiftStatus.OPEN
                 && shift.getStatus() != ShiftStatus.OPEN_OVERDUE
@@ -345,9 +358,13 @@ public class ShiftService {
      * Updates the discrepancy resolution for a CLOSED_DISCREPANCY_PENDING shift.
      */
     @Transactional
-    public ShiftResponse resolveDiscrepancy(Long shiftId, ResolveDiscrepancyRequest request, User currentUser) {
+    public ShiftResponse resolveDiscrepancy(Long pumpId, Long shiftId, ResolveDiscrepancyRequest request, User currentUser) {
         Shift shift = shiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        if (!shift.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Shift does not belong to pump " + pumpId);
+        }
 
         boolean isPending         = shift.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING;
         boolean isPendingApproval = shift.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING_APPROVAL;
@@ -388,9 +405,13 @@ public class ShiftService {
      * Voids a credit entry on an OPEN shift.
      */
     @Transactional
-    public ShiftResponse voidCreditEntry(Long shiftId, Long entryId, String voidReason, User currentUser) {
+    public ShiftResponse voidCreditEntry(Long pumpId, Long shiftId, Long entryId, String voidReason, User currentUser) {
         Shift shift = shiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        if (!shift.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Shift does not belong to pump " + pumpId);
+        }
 
         if (shift.getStatus() != ShiftStatus.OPEN
                 && shift.getStatus() != ShiftStatus.OPEN_OVERDUE
@@ -666,13 +687,13 @@ public class ShiftService {
         shift = shiftRepository.save(shift);
         final Long shiftId = shift.getId();
 
-        // ── 8. Persist ShiftNozzle join records ───────────────────────────────
-        for (Nozzle nozzle : nozzles) {
-            shiftNozzleRepository.save(ShiftNozzle.builder()
-                    .shiftId(shiftId)
-                    .nozzleId(nozzle.getId())
-                    .build());
-        }
+        // ── 8. Persist ShiftNozzle join records (batch insert) ───────────────
+        shiftNozzleRepository.saveAll(nozzles.stream()
+                .map(nozzle -> ShiftNozzle.builder()
+                        .shiftId(shiftId)
+                        .nozzleId(nozzle.getId())
+                        .build())
+                .toList());
 
         // ── 9. Persist fuel readings + FIFO deduction per nozzle ─────────────
         BigDecimal totalAmountDue = ZERO;
@@ -709,7 +730,11 @@ public class ShiftService {
             }
         }
 
-        totalAmountDue = totalAmountDue.add(request.getCreditTotal()).setScale(2, RoundingMode.HALF_UP);
+        // creditTotal is NOT added to totalAmountDue — credit sales are already captured in
+        // totalAmountDue via the meter-reading calculation (unitsSold × historicalPrice) above.
+        // Adding creditTotal here would double-count it and inflate expectedRevenue, creating
+        // phantom discrepancies on every backfilled shift that includes credit sales.
+        totalAmountDue = totalAmountDue.setScale(2, RoundingMode.HALF_UP);
 
         // ── 10. Compute discrepancy and determine final status ─────────────────
         BigDecimal totalCollected = request.getCashCollected()

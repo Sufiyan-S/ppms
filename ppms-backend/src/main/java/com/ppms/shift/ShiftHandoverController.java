@@ -2,13 +2,14 @@ package com.ppms.shift;
 
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
-import com.ppms.common.exception.BusinessException;
-import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.dto.PagedResponse;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -42,17 +43,26 @@ import java.util.stream.Collectors;
 public class ShiftHandoverController {
 
     private final ShiftHandoverRepository handoverRepository;
+    private final ShiftHandoverService handoverService;
     private final ShiftRepository shiftRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     /**
-     * GET /api/pumps/{pumpId}/handovers
-     * Returns all handover records for a pump, newest first.
+     * GET /api/pumps/{pumpId}/handovers?page=0&size=50
+     * Returns paginated handover records for a pump, newest first.
+     * Max page size is capped at 200 to prevent runaway queries.
      */
     @GetMapping
-    public ResponseEntity<List<HandoverResponse>> getHandovers(@PathVariable Long pumpId) {
-        List<ShiftHandover> handovers = handoverRepository.findByPumpIdOrderByHandoverTimeDesc(pumpId);
+    public ResponseEntity<PagedResponse<HandoverResponse>> getHandovers(
+            @PathVariable Long pumpId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        PageRequest pageable = PageRequest.of(page, Math.min(size, 200));
+        Page<ShiftHandover> handoverPage = handoverRepository.findByPumpIdOrderByHandoverTimeDesc(pumpId, pageable);
+
+        List<ShiftHandover> handovers = handoverPage.getContent();
 
         // Batch-load operator names to avoid N+1
         Set<Long> userIds = handovers.stream()
@@ -61,11 +71,9 @@ public class ShiftHandoverController {
         Map<Long, String> nameById = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
 
-        List<HandoverResponse> response = handovers.stream()
-                .map(h -> toResponse(h, nameById))
-                .toList();
+        Page<HandoverResponse> responsePage = handoverPage.map(h -> toResponse(h, nameById));
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(PagedResponse.of(responsePage));
     }
 
     /**
@@ -75,6 +83,10 @@ public class ShiftHandoverController {
      * The outgoing shift must be OPEN. Once the handover is recorded, the outgoing
      * operator's responsibility for the shift is documented. The shift itself remains
      * open — the incoming operator will close it later with their own meter readings.
+     *
+     * Business validation + save are handled in ShiftHandoverService under @Transactional
+     * to prevent a TOCTOU race where two concurrent requests both pass the "one handover
+     * per shift" guard and create duplicate records.
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -83,71 +95,25 @@ public class ShiftHandoverController {
             @Valid @RequestBody CreateHandoverRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        // Validate the outgoing shift exists and is open
-        Shift outgoingShift = shiftRepository.findById(request.outgoingShiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
-
-        if (!outgoingShift.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Shift does not belong to this pump");
-        }
-
-        if (outgoingShift.getStatus() != ShiftStatus.OPEN
-                && outgoingShift.getStatus() != ShiftStatus.OPEN_OVERDUE) {
-            throw new BusinessException(
-                    "Handover can only be created for an OPEN shift. Current status: " + outgoingShift.getStatus());
-        }
-
-        // One handover per shift — prevents accidental duplicate handover records
-        handoverRepository.findByOutgoingShiftId(request.outgoingShiftId()).ifPresent(existing -> {
-            throw new BusinessException(
-                    "A handover already exists for shift #" + request.outgoingShiftId() +
-                    " (handover ID: " + existing.getId() + ")");
-        });
-
-        // Validate incoming operator exists
-        User incomingOperator = userRepository.findById(request.incomingOperatorId())
-                .orElseThrow(() -> new ResourceNotFoundException("Incoming operator not found"));
-
-        // Incoming and outgoing must be different people
-        if (outgoingShift.getOperatorId().equals(request.incomingOperatorId())) {
-            throw new BusinessException("Incoming and outgoing operators cannot be the same person");
-        }
-
-        // Incoming operator must not already have an open shift
-        shiftRepository.findOpenShiftByOperator(request.incomingOperatorId()).ifPresent(existing -> {
-            throw new BusinessException(
-                    incomingOperator.getFullName() + " already has an open shift (ID " + existing.getId() +
-                    "). They must close it before taking a handover.");
-        });
-
-        ShiftHandover handover = ShiftHandover.builder()
-                .pumpId(pumpId)
-                .outgoingShiftId(request.outgoingShiftId())
-                .outgoingOperatorId(outgoingShift.getOperatorId())
-                .incomingOperatorId(request.incomingOperatorId())
-                .physicalCashVerified(request.physicalCashVerified())
-                .meterReadingsVerified(request.meterReadingsVerified())
-                .notes(request.notes())
-                .build();
-
-        ShiftHandover saved = handoverRepository.save(handover);
+        ShiftHandover saved = handoverService.createHandover(pumpId, request);
 
         log.info("Shift handover recorded: pump={} shift={} outgoing={} incoming={} cashVerified={} meterVerified={}",
-                pumpId, request.outgoingShiftId(), outgoingShift.getOperatorId(),
-                request.incomingOperatorId(), request.physicalCashVerified(), request.meterReadingsVerified());
+                pumpId, saved.getOutgoingShiftId(), saved.getOutgoingOperatorId(),
+                saved.getIncomingOperatorId(), saved.isPhysicalCashVerified(), saved.isMeterReadingsVerified());
+
+        Map<Long, String> nameById = userRepository
+                .findAllById(java.util.List.of(saved.getIncomingOperatorId(), saved.getOutgoingOperatorId()))
+                .stream().collect(Collectors.toMap(User::getId, User::getFullName));
+        String incomingName = nameById.getOrDefault(saved.getIncomingOperatorId(), "Unknown");
+        String outgoingName  = nameById.getOrDefault(saved.getOutgoingOperatorId(),  "Unknown");
 
         auditService.log(pumpId, AuditAction.HANDOVER_COMPLETED,
                 "ShiftHandover", saved.getId().toString(),
-                "Handover: shift #" + request.outgoingShiftId() +
-                " → operator " + incomingOperator.getFullName() +
-                " (cashVerified=" + request.physicalCashVerified() +
-                ", meterVerified=" + request.meterReadingsVerified() + ")",
+                "Handover: shift #" + saved.getOutgoingShiftId() +
+                " → operator " + incomingName +
+                " (cashVerified=" + saved.isPhysicalCashVerified() +
+                ", meterVerified=" + saved.isMeterReadingsVerified() + ")",
                 currentUser);
-
-        // Resolve user names for the response
-        User outgoingOperator = userRepository.findById(outgoingShift.getOperatorId())
-                .orElse(null);
-        String outgoingName = outgoingOperator != null ? outgoingOperator.getFullName() : "Unknown";
 
         return ResponseEntity.status(HttpStatus.CREATED).body(
                 HandoverResponse.builder()
@@ -157,7 +123,7 @@ public class ShiftHandoverController {
                         .outgoingOperatorId(saved.getOutgoingOperatorId())
                         .outgoingOperatorName(outgoingName)
                         .incomingOperatorId(saved.getIncomingOperatorId())
-                        .incomingOperatorName(incomingOperator.getFullName())
+                        .incomingOperatorName(incomingName)
                         .physicalCashVerified(saved.isPhysicalCashVerified())
                         .meterReadingsVerified(saved.isMeterReadingsVerified())
                         .notes(saved.getNotes())

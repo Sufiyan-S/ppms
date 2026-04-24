@@ -4,6 +4,8 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.shift.ShiftCreditEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -65,6 +67,7 @@ public class CreditAccountPolicyService {
      * the same pump cannot simultaneously bypass the limit check (race condition fix).
      * The lock is held for the duration of the caller's @Transactional boundary (ShiftService.addCreditEntry).
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void validateCreditSaleAllowed(Long pumpId, CreditClient client, BigDecimal amount) {
         if (client == null) {
             return;
@@ -109,7 +112,9 @@ public class CreditAccountPolicyService {
         if (client.getParentClientId() == null) {
             return client;
         }
-        return creditClientRepository.findById(client.getParentClientId()).orElse(client);
+        return creditClientRepository.findById(client.getParentClientId())
+                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException(
+                        "Parent client not found: " + client.getParentClientId()));
     }
 
     /**

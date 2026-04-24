@@ -123,7 +123,12 @@ export const creditApi = {
 
   // Applies pro-rata interest to ALL eligible clients for a pump
   applyInterestForAll: (pumpId: number) =>
-    client.post<{ clientsCharged: number }>(`/pumps/${pumpId}/credit-ledger/interest/apply-all`).then(r => r.data),
+    client.post<{
+      clientsCharged:  number
+      clientsSkipped:  number
+      clientsFailed:   number
+      failedClientIds: number[]
+    }>(`/pumps/${pumpId}/credit-ledger/interest/apply-all`).then(r => r.data),
 
   // Permanently deletes an interest charge row from the ledger (Owner/Admin only)
   deleteInterestCharge: (pumpId: number, clientId: number, chargeId: number) =>

@@ -781,7 +781,7 @@ function Th({ children, right, colSpan }: { children?: ReactNode; right?: boolea
 
 function Td({ children, right, colSpan }: { children?: ReactNode; right?: boolean; colSpan?: number }) {
   return (
-    <td colSpan={colSpan} className={`px-2 py-2 print:px-1 print:py-1 text-slate-700 ${right ? 'text-right whitespace-nowrap' : ''}`}>
+    <td colSpan={colSpan} className={`px-2 py-2 print:px-1 print:py-1 text-slate-700 ${right ? 'text-right whitespace-nowrap tabular-nums' : ''}`}>
       {children}
     </td>
   )
@@ -790,7 +790,7 @@ function Td({ children, right, colSpan }: { children?: ReactNode; right?: boolea
 function DiscrepancyTd({ value }: { value: number }) {
   const color = value === 0 ? 'text-emerald-600' : value < 0 ? 'text-red-600' : 'text-amber-600'
   return (
-    <td className={`px-2 py-2 print:px-1 print:py-1 text-right font-medium whitespace-nowrap ${color}`}>
+    <td className={`px-2 py-2 print:px-1 print:py-1 text-right font-medium whitespace-nowrap tabular-nums ${color}`}>
       {value === 0 ? '—' : fmtMoney(Math.abs(value))}
       {value !== 0 && <span className="text-xs ml-1">{value < 0 ? 'Short' : 'Over'}</span>}
     </td>
