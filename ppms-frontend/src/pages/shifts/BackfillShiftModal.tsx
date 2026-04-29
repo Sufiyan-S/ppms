@@ -8,6 +8,7 @@ import { fuelPriceApi } from '../../api/fuelPriceApi'
 import type { BackfillShiftRequest, BackfillNozzleReading, CreditEntryInput } from '../../types/shift'
 import type { DUOption, NozzleDetail } from '../../types/shift'
 import { ModalPortal } from '../../components/ModalPortal'
+import { SearchableSelect } from '../../components/SearchableSelect'
 import { parseApiError } from '../../utils/apiError'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -394,44 +395,30 @@ export default function BackfillShiftModal({ pumpId, onClose }: Props) {
 
                   <div>
                     <label className="ui-label">Dispensary Unit <span className="text-red-500">*</span></label>
-                    {dusLoading ? (
-                      <div className="ui-input text-slate-400 text-sm">Loading…</div>
-                    ) : (
-                      <select
-                        value={selectedDU?.id ?? ''}
-                        onChange={(e) => setSelectedDU(dus.find((d) => d.id === Number(e.target.value)) ?? null)}
-                        className="ui-input"
-                        required
-                      >
-                        <option value="">Select DU…</option>
-                        {dus.map((du) => (
-                          <option key={du.id} value={du.id}>{du.name} (DU #{du.duNumber})</option>
-                        ))}
-                      </select>
-                    )}
+                    <SearchableSelect
+                      value={String(selectedDU?.id ?? '')}
+                      onChange={(v) => setSelectedDU(dus.find((d) => String(d.id) === v) ?? null)}
+                      options={dus.map((du) => ({ value: String(du.id), label: `${du.name} (DU #${du.duNumber})` }))}
+                      placeholder={dusLoading ? 'Loading…' : 'Select DU…'}
+                      disabled={dusLoading}
+                    />
                   </div>
                 </div>
 
                 <div>
                   <label className="ui-label">Shift Window <span className="text-red-500">*</span></label>
-                  {defsLoading ? (
-                    <div className="ui-input text-slate-400 text-sm">Loading windows…</div>
-                  ) : definitions.length === 0 ? (
+                  {definitions.length === 0 && !defsLoading ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                       No shift definitions found for this pump. Configure shift windows in Setup first.
                     </div>
                   ) : (
-                    <select
-                      value={shiftDefinitionId ?? ''}
-                      onChange={(e) => setShiftDefinitionId(Number(e.target.value))}
-                      className="ui-input"
-                      required
-                    >
-                      <option value="">Select shift window…</option>
-                      {definitions.map((def) => (
-                        <option key={def.id} value={def.id}>{def.name} · {def.windowLabel}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={String(shiftDefinitionId ?? '')}
+                      onChange={(v) => setShiftDefinitionId(v ? Number(v) : null)}
+                      options={definitions.map((def) => ({ value: String(def.id), label: `${def.name} · ${def.windowLabel}` }))}
+                      placeholder={defsLoading ? 'Loading windows…' : 'Select shift window…'}
+                      disabled={defsLoading}
+                    />
                   )}
                 </div>
               </div>

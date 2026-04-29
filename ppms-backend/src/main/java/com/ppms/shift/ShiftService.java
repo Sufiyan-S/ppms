@@ -388,11 +388,27 @@ public class ShiftService {
                     "A mandatory reason is required when waiving a discrepancy (Business Rule 19).");
         }
 
+        // CASH_RECOVERY only makes sense for SHORT discrepancies — the operator
+        // physically returns the cash they failed to hand in. An OVER discrepancy
+        // means the operator handed in excess money; there is nothing to recover.
+        if (request.resolutionAction() == DiscrepancyResolution.CASH_RECOVERY
+                && shift.getDiscrepancyType() != DiscrepancyType.SHORT) {
+            throw new BusinessException(
+                    "CASH_RECOVERY can only be applied to SHORT discrepancies. " +
+                    "Use WAIVED or PENDING_INVESTIGATION for OVER discrepancies.");
+        }
+
         shift.setDiscrepancyResolution(request.resolutionAction());
         shift.setDiscrepancyResolutionNote(request.resolutionNote() != null ? request.resolutionNote().trim() : null);
         shift.setDiscrepancyResolvedById(currentUser.getId());
         shift.setDiscrepancyResolvedAt(OffsetDateTime.now());
         shift.setStatus(ShiftStatus.CLOSED_DISCREPANCY_RESOLVED);
+
+        // Record the physically received cash so balance sheets can include it
+        // as a separate inflow on the day the recovery was made.
+        if (request.resolutionAction() == DiscrepancyResolution.CASH_RECOVERY) {
+            shift.setCashRecoveryAmount(shift.getDiscrepancyAmount());
+        }
         shift = shiftRepository.save(shift);
 
         log.info("Discrepancy resolved: shiftId={}, action={}, resolvedBy={}",
@@ -794,6 +810,42 @@ public class ShiftService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
+     * Called when no ACTIVE inventory lots exist for a tank that shows non-zero current_stock.
+     * This happens when a tank was seeded directly in the DB or had stock set via DIP check
+     * without a corresponding delivery record. Creates a single synthetic lot equal to
+     * current_stock (costPrice=0 since the purchase cost is unknown) so shift-close can proceed.
+     */
+    private List<InventoryLot> healMissingLots(Long tankId, FuelType fuelType, Long pumpId) {
+        return tankRepository.findById(tankId)
+                .filter(tank -> tank.getCurrentStock().compareTo(ZERO) > 0)
+                .map(tank -> {
+                    BigDecimal stock = tank.getCurrentStock().setScale(3, RoundingMode.HALF_UP);
+                    // Use the most recent real delivery's cost price so COGS in the balance
+                    // sheet is a reasonable approximation rather than ₹0.
+                    BigDecimal costPrice = inventoryLotRepository
+                            .findFirstByPumpIdAndFuelTypeAndIsDipAdjustmentFalseOrderByDeliveryDateDesc(pumpId, fuelType)
+                            .map(InventoryLot::getCostPricePerUnit)
+                            .orElse(BigDecimal.ZERO);
+                    InventoryLot lot = inventoryLotRepository.save(InventoryLot.builder()
+                            .tankerDeliveryId(null)
+                            .tankId(tankId)
+                            .fuelType(fuelType)
+                            .pumpId(pumpId)
+                            .originalQuantity(stock)
+                            .remainingQuantity(stock)
+                            .costPricePerUnit(costPrice)
+                            .deliveryDate(OffsetDateTime.now())
+                            .isDipAdjustment(true)
+                            .status(LotStatus.ACTIVE)
+                            .build());
+                    log.warn("Tank {} has {}L stock but no inventory lots — created synthetic lot (id={}, costPrice={}) to unblock shift close. " +
+                             "Record a tanker delivery to enable proper COGS tracking.", tankId, stock, lot.getId(), costPrice);
+                    return List.of(lot);
+                })
+                .orElse(List.of());
+    }
+
+    /**
      * FIFO inventory deduction.
      *
      * When tankId is non-null (frozen at shift open), deduction is scoped to that
@@ -807,6 +859,13 @@ public class ShiftService {
         List<InventoryLot> lots = tankId != null
                 ? inventoryLotRepository.findActiveLotsByTankFifo(tankId)
                 : inventoryLotRepository.findActiveLotsByPumpAndFuelTypeFifo(pumpId, fuelType);
+
+        // No lots found but tank has stock — the tank was seeded or DIP-adjusted without a
+        // corresponding delivery record. Auto-create a synthetic lot from current_stock so
+        // the shift can close. COGS for this lot will be ₹0; record a delivery later to fix.
+        if (lots.isEmpty() && tankId != null) {
+            lots = healMissingLots(tankId, fuelType, pumpId);
+        }
 
         BigDecimal totalAvailable = lots.stream()
                 .map(InventoryLot::getRemainingQuantity)

@@ -59,6 +59,8 @@ public class ShiftResponse {
     private String discrepancyReason;
     private String discrepancyResolution;
     private String discrepancyResolutionNote;
+    /** Non-null only when discrepancyResolution = CASH_RECOVERY on a SHORT shift. */
+    private BigDecimal cashRecoveryAmount;
 
     private String status;
 

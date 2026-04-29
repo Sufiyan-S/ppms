@@ -120,4 +120,11 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             ORDER BY l.deliveryDate ASC, l.id ASC
             """)
     List<InventoryLot> findActiveLotsByTankForDisplay(Long tankId);
+
+    /** Finds the single lot created for a specific tanker delivery. Used by the edit-delivery flow. */
+    java.util.Optional<InventoryLot> findByTankerDeliveryId(Long tankerDeliveryId);
+
+    /** Most recent lot (any status) for a pump + fuelType — used to approximate cost price for synthetic healing lots. */
+    java.util.Optional<InventoryLot> findFirstByPumpIdAndFuelTypeAndIsDipAdjustmentFalseOrderByDeliveryDateDesc(
+            Long pumpId, FuelType fuelType);
 }

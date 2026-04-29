@@ -5,6 +5,7 @@ import { usePumpStore } from '../../store/usePumpStore'
 import { creditApi } from '../../api/creditApi'
 import type { CreditClient, CreditTransaction, RecordPaymentRequest, UpdateInterestSettingsRequest, CreditExtension, CreateExtensionRequest, CreditExtensionType } from '../../api/creditApi'
 import { pumpApi } from '../../api/pumpApi'
+import type { CreditClient as PumpCreditClient, UpdateCreditClientRequest } from '../../api/pumpApi'
 import type { PagedResponse } from '../../types/paged'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
@@ -25,10 +26,11 @@ interface RecordPaymentModalProps {
   client: CreditClient
   pumpId: number
   outstandingBalanceOverride?: number
+  subClients?: CreditClient[]
   onClose: () => void
 }
 
-function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, onClose }: RecordPaymentModalProps) {
+function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, subClients = [], onClose }: RecordPaymentModalProps) {
   const qc = useQueryClient()
   const { addToast } = useToastStore()
   const [amount, setAmount] = useState('')
@@ -36,15 +38,26 @@ function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, onClos
   const [paidAt, setPaidAt] = useState(() => localDateInputValue())
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const outstandingBalance = outstandingBalanceOverride ?? client.outstandingBalance
+  const [targetClientId, setTargetClientId] = useState<number>(client.id)
+
+  const targetClient = targetClientId === client.id
+    ? client
+    : (subClients.find(c => c.id === targetClientId) ?? client)
+
+  const outstandingBalance = targetClientId === client.id
+    ? (outstandingBalanceOverride ?? client.outstandingBalance)
+    : (targetClient.outstandingBalance ?? 0)
 
   const mutation = useMutation({
     mutationFn: (req: RecordPaymentRequest) =>
-      creditApi.recordPayment(pumpId, client.id, req),
+      creditApi.recordPayment(pumpId, targetClientId, req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['credit-ledger', pumpId] })
       qc.invalidateQueries({ queryKey: ['credit-transactions', pumpId, client.id] })
-      addToast(`Payment recorded for ${client.name}`, 'success')
+      if (targetClientId !== client.id) {
+        qc.invalidateQueries({ queryKey: ['credit-transactions', pumpId, targetClientId] })
+      }
+      addToast(`Payment recorded for ${targetClient.name}`, 'success')
       onClose()
     },
     onError: (err: any) => {
@@ -81,6 +94,20 @@ function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, onClos
         </div>
 
         <div className="ui-modal-body space-y-4">
+          {subClients.length > 0 && (
+            <div className="ui-inline-form">
+              <label className="ui-label">Record Payment For</label>
+              <SearchableSelect
+                value={String(targetClientId)}
+                onChange={v => { setTargetClientId(Number(v)); setAmount(''); setError(null) }}
+                options={[
+                  { value: String(client.id), label: `${client.name} (Parent)` },
+                  ...subClients.map(c => ({ value: String(c.id), label: c.name })),
+                ]}
+              />
+            </div>
+          )}
+
           {/* Outstanding + Remaining live feedback */}
           <div className="ui-card p-0 overflow-hidden border-amber-200">
             <div className="bg-amber-50 px-4 py-3 flex items-center justify-between">
@@ -746,11 +773,10 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
   })
   const ownTransactions = ownTxPage?.content ?? []
 
-  const { data: totalInterestRecovered = 0 } = useQuery({
-    queryKey: ['credit-interest-recovered', pumpId, clientId],
-    queryFn: () => creditApi.getTotalInterestRecovered(pumpId, clientId),
-    enabled: !!pumpId && !!clientId,
-  })
+  // outstandingInterest and totalInterestRecovered are now embedded in the client response —
+  // no separate API call needed. Fall back to 0 while the client data is loading.
+  const outstandingInterest   = client?.outstandingInterest   ?? 0
+  const totalInterestRecovered = client?.totalInterestRecovered ?? 0
 
   // Fetch each child's transactions in parallel (only runs when viewing a parent account)
   // Large page size since this is already a complex merged view
@@ -805,7 +831,9 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
 
   // ── Filter state ──────────────────────────────────────────────────────────
   type FilterMode = 'all' | 'month' | 'range'
+  type TxTypeFilter = 'ALL' | 'SALE' | 'PAYMENT' | 'INTEREST'
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const [txTypeFilter, setTxTypeFilter] = useState<TxTypeFilter>('ALL')
   const [selectedMonth, setSelectedMonth] = useState<string>('')
   const [fromDate, setFromDate]         = useState(yesterday)
   const [toDate, setToDate]             = useState(today)
@@ -817,6 +845,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
 
   // Apply filter
   const filtered = transactions.filter(tx => {
+    if (txTypeFilter !== 'ALL' && tx.type !== txTypeFilter) return false
     if (filterMode === 'month' && selectedMonth) {
       return getMonthKey(tx.occurredAt) === selectedMonth
     }
@@ -843,20 +872,8 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
   // Group filtered transactions by week (already sorted newest→oldest from API)
   const weekGroups = buildWeekGroups(filtered)
 
-  // For parent view: apply the same filter to each child's transactions and to parent's own
-  const childFilteredTxs = childClients.map((_, i) => {
-    const childTxs = childTransactionsByIndex[i] ?? []
-    return childTxs.filter(tx => {
-      if (filterMode === 'month' && selectedMonth) return getMonthKey(tx.occurredAt) === selectedMonth
-      if (filterMode === 'range') {
-        const d = tx.occurredAt.slice(0, 10)
-        if (fromDate && d < fromDate) return false
-        if (toDate   && d > toDate)   return false
-      }
-      return true
-    })
-  })
-  const filteredOwn = ownTransactions.filter(tx => {
+  const applyFilters = <T extends { type: string; occurredAt: string }>(tx: T): boolean => {
+    if (txTypeFilter !== 'ALL' && tx.type !== txTypeFilter) return false
     if (filterMode === 'month' && selectedMonth) return getMonthKey(tx.occurredAt) === selectedMonth
     if (filterMode === 'range') {
       const d = tx.occurredAt.slice(0, 10)
@@ -864,7 +881,14 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
       if (toDate   && d > toDate)   return false
     }
     return true
+  }
+
+  // For parent view: apply the same filter to each child's transactions and to parent's own
+  const childFilteredTxs = childClients.map((_, i) => {
+    const childTxs = childTransactionsByIndex[i] ?? []
+    return childTxs.filter(applyFilters)
   })
+  const filteredOwn = ownTransactions.filter(applyFilters)
 
   const formatDate = (iso: string) =>
     formatIstDate(iso, { day: '2-digit', month: 'short' })
@@ -1001,6 +1025,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
           client={client}
           pumpId={pumpId}
           outstandingBalanceOverride={effectiveOutstandingBalance}
+          subClients={allClients.filter(c => c.parentClientId === clientId)}
           onClose={() => setShowPaymentModal(false)}
         />
       )}
@@ -1129,25 +1154,20 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
             <p className="text-xs text-slate-400 mt-0.5">parent + all sub-accounts</p>
           )}
         </div>
+        <div className={`ui-card ${outstandingInterest > 0 ? 'border-purple-200 bg-purple-50/30' : ''}`}>
+          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Interest Due</p>
+          <p className={`text-lg font-bold ${outstandingInterest > 0 ? 'text-purple-700' : 'text-slate-300'}`}>
+            ₹{formatAmount(outstandingInterest)}
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">of outstanding balance</p>
+        </div>
         <div className="ui-card">
-          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Credit Limit</p>
-          {client.parentClientId ? (() => {
-            // Child account — limit is governed by the parent, not by the child itself
-            const parent = allClients.find(c => c.id === client.parentClientId)
-            return (
-              <>
-                <p className="text-lg font-bold text-slate-700">
-                  {parent && parent.creditLimit > 0
-                    ? `₹${formatAmount(parent.creditLimit)}`
-                    : 'Unlimited'}
-                </p>
-                <p className="text-xs text-blue-500 mt-0.5">shared with parent</p>
-              </>
-            )
-          })() : (
-            <p className="text-lg font-bold text-slate-700">
-              {client.creditLimit > 0 ? `₹${formatAmount(client.creditLimit)}` : 'Unlimited'}
-            </p>
+          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Interest Recovered</p>
+          <p className={`text-lg font-bold ${totalInterestRecovered > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+            ₹{formatAmount(totalInterestRecovered)}
+          </p>
+          {client.isParent && childClients.length > 0 && (
+            <p className="text-xs text-slate-400 mt-0.5">parent + all sub-accounts</p>
           )}
         </div>
         <div
@@ -1169,21 +1189,12 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
             {isParent ? transactions.length : (ownTxPage?.totalElements ?? transactions.length)}
           </p>
         </div>
-        <div className="ui-card">
-          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Interest Recovered</p>
-          <p className={`text-lg font-bold ${totalInterestRecovered > 0 ? 'text-purple-700' : 'text-slate-400'}`}>
-            ₹{formatAmount(totalInterestRecovered)}
-          </p>
-          {client.isParent && childClients.length > 0 && (
-            <p className="text-xs text-slate-400 mt-0.5">parent + all sub-accounts</p>
-          )}
-        </div>
       </div>
 
       {/* Transaction ledger */}
       <div className="px-6">
         {/* Filter toolbar */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-3">
           <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Ledger History</h3>
           <div className="flex items-center gap-1 ml-auto bg-slate-100 rounded-lg p-0.5">
             {(['all', 'month', 'range'] as FilterMode[]).map(m => (
@@ -1200,6 +1211,33 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
               </button>
             ))}
           </div>
+        </div>
+        {/* Transaction type filter */}
+        <div className="flex items-center gap-2 mb-4">
+          {([
+            { value: 'ALL',      label: 'All Types',  color: 'slate' },
+            { value: 'SALE',     label: '↑ Sales',    color: 'orange' },
+            { value: 'PAYMENT',  label: '↓ Payments', color: 'green' },
+            { value: 'INTEREST', label: '% Interest', color: 'purple' },
+          ] as { value: TxTypeFilter; label: string; color: string }[]).map(({ value, label, color }) => (
+            <button
+              key={value}
+              onClick={() => setTxTypeFilter(value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                txTypeFilter === value
+                  ? color === 'slate'
+                    ? 'bg-slate-700 border-slate-700 text-white'
+                    : color === 'orange'
+                    ? 'bg-orange-100 border-orange-400 text-orange-700'
+                    : color === 'green'
+                    ? 'bg-green-100 border-green-400 text-green-700'
+                    : 'bg-purple-100 border-purple-400 text-purple-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Filter controls */}
@@ -1368,34 +1406,378 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
   )
 }
 
+// ─── Credit Clients Tab ───────────────────────────────────────────────────────
+
+interface CreditClientsTabProps {
+  pumpId: number
+  isOwnerOrAdmin: boolean
+}
+
+function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
+  const qc = useQueryClient()
+
+  const [name, setName]               = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [notes, setNotes]             = useState('')
+  const [addError, setAddError]       = useState<string | null>(null)
+
+  const [editingId, setEditingId]     = useState<number | null>(null)
+  const [editName, setEditName]       = useState('')
+  const [editPhone, setEditPhone]     = useState('')
+  const [editNotes, setEditNotes]     = useState('')
+  const [editError, setEditError]     = useState<string | null>(null)
+
+  const [expandedParentId, setExpandedParentId] = useState<number | null>(null)
+  const toggleCollapse = (id: number) =>
+    setExpandedParentId(prev => prev === id ? null : id)
+
+  const [addSubParentId, setAddSubParentId] = useState<number | null>(null)
+  const [addSubName,     setAddSubName]     = useState('')
+  const [addSubPhone,    setAddSubPhone]    = useState('')
+  const [addSubNotes,    setAddSubNotes]    = useState('')
+  const [addSubError,    setAddSubError]    = useState<string | null>(null)
+
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ['creditClients', pumpId],
+    queryFn:  () => pumpApi.getCreditClients(pumpId),
+  })
+
+  const addMutation = useMutation({
+    mutationFn: (req: { name: string; phone?: string; notes?: string; parentClientId?: number }) =>
+      pumpApi.createCreditClient(pumpId, req),
+    onSuccess: () => {
+      setName(''); setPhoneNumber(''); setNotes(''); setAddError(null)
+      setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null); setAddSubParentId(null)
+      qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
+    },
+    onError: (err: any, variables) => {
+      const msg = err?.response?.data?.message ?? 'Failed to add client'
+      variables.parentClientId != null ? setAddSubError(msg) : setAddError(msg)
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ clientId, req }: { clientId: number; req: UpdateCreditClientRequest }) =>
+      pumpApi.updateCreditClient(pumpId, clientId, req),
+    onSuccess: () => {
+      setEditingId(null); setEditError(null)
+      qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
+    },
+    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to update client'),
+  })
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ clientId, isActive }: { clientId: number; isActive: boolean }) =>
+      pumpApi.toggleCreditClientStatus(pumpId, clientId, isActive),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['creditClients', pumpId] }),
+    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to update client status'),
+  })
+
+  const startEdit = (c: PumpCreditClient) => {
+    setEditingId(c.id); setEditName(c.name); setEditPhone(c.phone ?? ''); setEditNotes(c.notes ?? '')
+    setEditError(null)
+  }
+
+  const submitEdit = (e: React.FormEvent, clientId: number) => {
+    e.preventDefault(); setEditError(null)
+    if (!/^\d{10}$/.test(editPhone.trim())) { setEditError('Phone must be exactly 10 digits.'); return }
+    updateMutation.mutate({ clientId, req: { name: editName.trim(), phone: editPhone.trim(), notes: editNotes.trim() || undefined } })
+  }
+
+  const submitAdd = (e: React.FormEvent) => {
+    e.preventDefault(); setAddError(null)
+    const trimmedName = name.trim(); const trimmedPhone = phoneNumber.trim()
+    if (!/^\d{10}$/.test(trimmedPhone)) { setAddError('Phone number must be exactly 10 digits.'); return }
+    if (clients.some(c => c.name.toLowerCase() === trimmedName.toLowerCase())) {
+      setAddError(`A client named "${trimmedName}" already exists.`); return
+    }
+    addMutation.mutate({ name: trimmedName, phone: trimmedPhone, notes: notes.trim() || undefined })
+  }
+
+  const submitAddSub = (e: React.FormEvent, parentId: number) => {
+    e.preventDefault(); setAddSubError(null)
+    const trimmedName = addSubName.trim(); const trimmedPhone = addSubPhone.trim()
+    if (!/^\d{10}$/.test(trimmedPhone)) { setAddSubError('Phone number must be exactly 10 digits.'); return }
+    if (clients.some(c => c.parentClientId === parentId && c.name.toLowerCase() === trimmedName.toLowerCase())) {
+      setAddSubError(`A sub-account named "${trimmedName}" already exists under this parent.`); return
+    }
+    addMutation.mutate({ name: trimmedName, phone: trimmedPhone, notes: addSubNotes.trim() || undefined, parentClientId: parentId })
+  }
+
+  // Active clients first, disabled clients at bottom — each group sorted by name
+  const rootClients = clients
+    .filter(c => c.parentClientId === null)
+    .sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
+  const childrenByParent = clients.reduce<Record<number, PumpCreditClient[]>>((acc, c) => {
+    if (c.parentClientId !== null) {
+      acc[c.parentClientId] = [...(acc[c.parentClientId] ?? []), c]
+    }
+    return acc
+  }, {})
+
+  const editForm = (clientId: number, indent = false) => (
+    <form onSubmit={e => submitEdit(e, clientId)}
+      className={`${indent ? 'pl-7 pr-3' : 'px-3'} py-3 border-t border-slate-100 bg-white space-y-2`}>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="ui-label">Name <span className="text-red-500">*</span></label>
+          <input required value={editName} onChange={e => setEditName(e.target.value)} className="text-xs min-h-10" />
+        </div>
+        <div>
+          <label className="ui-label">Phone <span className="text-red-500">*</span></label>
+          <input required value={editPhone}
+            onChange={e => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            inputMode="numeric" maxLength={10} className="text-xs min-h-10" />
+        </div>
+      </div>
+      <div>
+        <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
+        <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
+          placeholder="e.g. Fleet manager, lorry owner" className="text-xs min-h-10" />
+      </div>
+      {editError && <p className="ui-error-text">{editError}</p>}
+      <button type="submit" disabled={updateMutation.isPending}
+        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
+        {updateMutation.isPending ? 'Saving...' : 'Save'}
+      </button>
+    </form>
+  )
+
+  if (isLoading) return <div className="px-5 py-4"><SkeletonRows count={4} /></div>
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-400">
+        Parties who take fuel on credit. Operators pick from this list when closing a shift.
+        {isOwnerOrAdmin ? ' Disabled clients are hidden from shift dropdowns. Client records are never deleted.' : ''}
+      </p>
+
+      {rootClients.length > 0 && (
+        <div className="space-y-3">
+          {rootClients.map(parent => {
+            const children    = childrenByParent[parent.id] ?? []
+            const hasChildren = children.length > 0
+            const isExpanded  = expandedParentId === parent.id
+            return (
+              <div key={parent.id} className="ui-card p-0 overflow-hidden">
+                <div
+                  className={`ui-accordion-trigger ${hasChildren ? 'cursor-pointer select-none' : ''}`}
+                  onClick={hasChildren ? () => toggleCollapse(parent.id) : undefined}
+                >
+                  <div className="min-w-0 flex items-center gap-2">
+                    {hasChildren && (
+                      <svg className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm font-semibold ${parent.isActive ? 'text-slate-700' : 'text-slate-400'}`}>{parent.name}</p>
+                        {parent.isParent && (
+                          <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                            parent · {children.length} sub-account{children.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {!parent.isActive && (
+                          <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Disabled</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        {parent.phone && <span className="text-xs text-slate-400">{parent.phone}</span>}
+                        {parent.notes && <span className="text-xs text-slate-400 italic truncate max-w-xs">{parent.notes}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  {isOwnerOrAdmin && (
+                    <div className="flex items-center gap-2 ml-3 shrink-0" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          const next = addSubParentId === parent.id ? null : parent.id
+                          setAddSubParentId(next)
+                          if (next === parent.id) setExpandedParentId(parent.id)
+                          setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null)
+                        }}
+                        className="ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400"
+                      >
+                        + Sub-account
+                      </button>
+                      <button
+                        onClick={() => editingId === parent.id ? setEditingId(null) : startEdit(parent)}
+                        className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        {editingId === parent.id ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        onClick={() => toggleStatusMutation.mutate({ clientId: parent.id, isActive: !parent.isActive })}
+                        disabled={toggleStatusMutation.isPending}
+                        className={`ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs border ${
+                          parent.isActive
+                            ? 'text-slate-500 hover:text-slate-700 border-slate-200'
+                            : 'text-emerald-600 hover:text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        {parent.isActive ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {isOwnerOrAdmin && editingId === parent.id && editForm(parent.id)}
+
+                {isExpanded && children.map(child => (
+                  <div key={child.id} className="border-t border-slate-100">
+                    <div className="flex items-center justify-between pl-7 pr-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-slate-300 shrink-0">└</span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className={`text-sm font-medium ${child.isActive ? 'text-slate-600' : 'text-slate-400'}`}>{child.name}</p>
+                            {!child.isActive && (
+                              <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Disabled</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {child.phone && <span className="text-xs text-slate-400">{child.phone}</span>}
+                            {child.notes && <span className="text-xs text-slate-400 italic truncate max-w-xs">{child.notes}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      {isOwnerOrAdmin && (
+                        <div className="flex items-center gap-2 ml-3 shrink-0">
+                          <button
+                            onClick={() => editingId === child.id ? setEditingId(null) : startEdit(child)}
+                            className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800">
+                            {editingId === child.id ? 'Cancel' : 'Edit'}
+                          </button>
+                          <button
+                            onClick={() => toggleStatusMutation.mutate({ clientId: child.id, isActive: !child.isActive })}
+                            disabled={toggleStatusMutation.isPending}
+                            className={`ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs border ${
+                              child.isActive
+                                ? 'text-slate-500 hover:text-slate-700 border-slate-200'
+                                : 'text-emerald-600 hover:text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            {child.isActive ? 'Disable' : 'Enable'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {isOwnerOrAdmin && editingId === child.id && editForm(child.id, true)}
+                  </div>
+                ))}
+
+                {isOwnerOrAdmin && addSubParentId === parent.id && (
+                  <form onSubmit={e => submitAddSub(e, parent.id)}
+                    className="border-t border-blue-100 bg-blue-50/40 px-3 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-blue-700">Add sub-account under {parent.name}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="ui-label">Name <span className="text-red-500">*</span></label>
+                        <input required value={addSubName} onChange={e => setAddSubName(e.target.value)}
+                          placeholder="e.g. Driver 1" className="text-xs min-h-10" />
+                      </div>
+                      <div>
+                        <label className="ui-label">Phone <span className="text-red-500">*</span></label>
+                        <input required value={addSubPhone}
+                          onChange={e => setAddSubPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          inputMode="numeric" maxLength={10} placeholder="e.g. 9876543210" className="text-xs min-h-10" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
+                      <input value={addSubNotes} onChange={e => setAddSubNotes(e.target.value)}
+                        placeholder="e.g. truck number, driver name" className="text-xs min-h-10" />
+                    </div>
+                    {addSubError && <p className="ui-error-text">{addSubError}</p>}
+                    <div className="flex gap-2">
+                      <button type="submit" disabled={addMutation.isPending}
+                        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
+                        {addMutation.isPending ? 'Adding...' : 'Add Sub-account'}
+                      </button>
+                      <button type="button" onClick={() => setAddSubParentId(null)}
+                        className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {isOwnerOrAdmin && (
+        <div className={clients.length > 0 ? 'border-t border-slate-200 pt-4' : ''}>
+          <p className="ui-label mb-3">
+            {clients.length === 0 ? 'Add the first credit client' : 'Add another client'}
+          </p>
+          <form onSubmit={submitAdd} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="ui-label">Client Name <span className="text-red-500">*</span></label>
+                <input required value={name} onChange={e => setName(e.target.value)}
+                  placeholder="e.g. ABC Transports" className="text-sm" />
+              </div>
+              <div>
+                <label className="ui-label">Phone <span className="text-red-500">*</span></label>
+                <input required value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="e.g. 9876543210" inputMode="numeric" maxLength={10} className="text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
+              <input value={notes} onChange={e => setNotes(e.target.value)}
+                placeholder="e.g. Fleet manager, lorry owner" className="text-sm" />
+            </div>
+            {addError && <p className="ui-error-text">{addError}</p>}
+            <button type="submit" disabled={addMutation.isPending} className="ui-btn ui-btn-primary">
+              {addMutation.isPending ? 'Adding...' : 'Add Client'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {!isOwnerOrAdmin && rootClients.length === 0 && (
+        <EmptyState icon="generic" title="No credit clients yet"
+          subtitle="Contact the Owner or Admin to add credit clients." />
+      )}
+    </div>
+  )
+}
+
 // ─── Main Credit Page ────────────────────────────────────────────────────────
 
 export default function CreditPage() {
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
+  const canSeeLedger   = isOwnerOrAdmin || user?.role === 'ACCOUNTANT'
 
   const { selectedPumpId } = usePumpStore()
   const [selectedClient, setSelectedClient] = useState<CreditClient | null>(null)
   const [showLimitModal, setShowLimitModal] = useState<CreditClient | null>(null)
   const [showInterestModal, setShowInterestModal] = useState<CreditClient | null>(null)
-  // Search query for filtering clients in the main list
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearch = useDeferredValue(searchQuery)
 
-  // Only one parent can be expanded at a time; null = all collapsed
   const [expandedParentId, setExpandedParentId] = useState<number | null>(null)
   const toggleParent = (id: number) =>
     setExpandedParentId(prev => prev === id ? null : id)
 
-
-
+  const [activeTab, setActiveTab] = useState<'ledger' | 'clients'>(() => canSeeLedger ? 'ledger' : 'clients')
 
   const pumpId = selectedPumpId
 
   const { data: clients = [], isLoading, error } = useQuery({
     queryKey: ['credit-ledger', pumpId],
     queryFn: () => creditApi.getLedgerSummary(pumpId!),
-    enabled: !!pumpId,
+    enabled: !!pumpId && canSeeLedger,
   })
 
   // Fetch the full client list for reliable parentClientId / isParent structure.
@@ -1432,23 +1814,24 @@ export default function CreditPage() {
     )
   }
 
-  const totalOutstanding = clients.reduce((sum, c) => sum + c.outstandingBalance, 0)
-  const rootClientCount = (() => {
-    if (allCreditClients.length === 0) return clients.length
-    const structureMap = new Map(allCreditClients.map(c => [c.id, c]))
-    return clients.filter(c => !structureMap.get(c.id)?.parentClientId).length
-  })()
+  // Only sum root accounts — parent outstandingBalance already includes sub-account balances,
+  // so adding sub-accounts separately would double-count them.
+  const rootClients = clients.filter(c => c.parentClientId === null)
+  const totalOutstanding = rootClients.reduce((sum, c) => sum + c.outstandingBalance, 0)
+const rootClientCount  = allCreditClients.length > 0
+    ? allCreditClients.filter(c => !c.parentClientId).length
+    : clients.filter(c => !c.parentClientId).length
 
   return (
     <div className="ui-page ui-page--narrow space-y-5">
-      {showLimitModal && pumpId && (
+      {activeTab === 'ledger' && showLimitModal && pumpId && (
         <SetCreditLimitModal
           client={showLimitModal}
           pumpId={pumpId}
           onClose={() => setShowLimitModal(null)}
         />
       )}
-      {showInterestModal && pumpId && (
+      {activeTab === 'ledger' && showInterestModal && pumpId && (
         <SetInterestSettingsModal
           client={showInterestModal}
           pumpId={pumpId}
@@ -1456,261 +1839,290 @@ export default function CreditPage() {
         />
       )}
 
-      {/* Page title */}
+      {/* Page header */}
       <Reveal delay={60}>
       <div className="ui-section-hero">
         <div>
-          <p className="ui-section-kicker">Client balances</p>
-          <h1 className="ui-title-sm">Credit Ledger</h1>
-          <p className="ui-subtitle">Track outstanding balances and record payments</p>
+          <p className="ui-section-kicker">{canSeeLedger ? 'Client balances' : 'Credit management'}</p>
+          <h1 className="ui-title-sm">Credit {canSeeLedger ? 'Ledger' : 'Clients'}</h1>
+          <p className="ui-subtitle">
+            {canSeeLedger ? 'Track outstanding balances and record payments' : 'View credit client accounts'}
+          </p>
         </div>
         <div className="ui-section-meta">
           <div className="ui-section-meta-pill">
             <span className="ui-section-meta-label">Accounts</span>
             <span className="ui-section-meta-value">{rootClientCount}</span>
           </div>
-          <div className="ui-section-meta-pill">
-            <span className="ui-section-meta-label">Outstanding</span>
-            <span className="ui-section-meta-value">₹{formatAmount(totalOutstanding)}</span>
-          </div>
-        </div>
-      </div>
-      </Reveal>
-
-      {/* Search bar */}
-      <Reveal delay={120}>
-      <div className="ui-search-shell">
-        <svg className="ui-search-shell__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-        </svg>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search by client name or phone…"
-          className="ui-search-shell__input text-sm leading-5"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="ui-search-shell__clear"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
-      </div>
-      </Reveal>
-
-      {isLoading && (
-        <Reveal delay={150}>
-        <div className="ui-card px-5 py-4">
-          <SkeletonRows count={5} />
-        </div>
-        </Reveal>
-      )}
-
-      {error && (
-        <div className="ui-alert ui-alert-danger text-sm">
-          Failed to load credit data. Please try again.
-        </div>
-      )}
-
-      {!isLoading && clients.length === 0 && (
-        <Reveal delay={150}>
-        <div className="ui-card">
-          <EmptyState
-            icon="transactions"
-            title="No credit clients yet"
-            subtitle="Add clients in Setup → Credit Clients, then they'll appear here."
-          />
-        </div>
-        </Reveal>
-      )}
-
-      {!isLoading && clients.length > 0 && (() => {
-        // Use allCreditClients (full list) for reliable parentClientId / isParent structure.
-        // clients (ledger) has balances; allCreditClients has the hierarchy.
-        const structureMap = new Map(allCreditClients.map(c => [c.id, c]))
-
-        // A client is a child if allCreditClients says so — never rely on ledger's parentClientId
-        const isChildId = (id: number) => !!structureMap.get(id)?.parentClientId
-
-        // Build a map: parentId → ledger entries for each child
-        const childMap = new Map<number, typeof clients>()
-        allCreditClients.forEach(sc => {
-          if (!sc.parentClientId) return
-          const ledgerEntry = clients.find(c => c.id === sc.id)
-          if (ledgerEntry) {
-            const arr = childMap.get(sc.parentClientId) ?? []
-            arr.push(ledgerEntry)
-            childMap.set(sc.parentClientId, arr)
-          }
-        })
-
-        // Root clients = those that are NOT children in the full structure, filtered by search.
-        // A parent matches if its own name/phone matches OR any of its sub-accounts match.
-        const q = deferredSearch.trim().toLowerCase()
-        const rootClients = clients
-          .filter(c => {
-            if (isChildId(c.id)) return false
-            if (!q) return true
-            const matchesSelf = c.name.toLowerCase().includes(q) || (c.phone ?? '').includes(q)
-            const children = childMap.get(c.id) ?? []
-            const matchesChild = children.some(ch => ch.name.toLowerCase().includes(q) || (ch.phone ?? '').includes(q))
-            return matchesSelf || matchesChild
-          })
-
-        const renderClientCard = (client: typeof clients[0], isChild = false) => {
-          // Use the reliable structure map to determine child status — not the isChild param alone
-          const isActualChild = isChild || isChildId(client.id)
-          const limitPct = client.creditLimit > 0
-            ? Math.min(100, (client.outstandingBalance / client.creditLimit) * 100)
-            : null
-          const isNearLimit  = limitPct !== null && limitPct >= 80
-          const children     = childMap.get(client.id) ?? []
-          const hasChildren  = !isActualChild && children.length > 0
-          const isExpanded   = expandedParentId === client.id
-
-          return (
-            <div
-              key={client.id}
-              onClick={hasChildren ? () => toggleParent(client.id) : undefined}
-              className={`ui-card px-5 py-4 flex items-center gap-4 transition-all ${
-                isActualChild ? 'ml-8 border-l-4 border-l-blue-200 hover:border-blue-300 hover:shadow-sm' :
-                hasChildren   ? 'cursor-pointer hover:border-blue-400 hover:shadow-sm select-none' :
-                                'hover:border-blue-300 hover:shadow-sm'
-              }`}
-            >
-              {/* Avatar */}
-              <div className={`w-10 h-10 rounded-full font-bold flex items-center justify-center flex-shrink-0 text-sm ${
-                isActualChild ? 'bg-blue-50 text-blue-500' : 'bg-blue-100 text-blue-700'
-              }`}>
-                {client.name.charAt(0).toUpperCase()}
-              </div>
-
-              {/* Name + phone */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{client.name}</p>
-                  {isActualChild && (
-                    <span className="text-xs bg-blue-50 text-blue-500 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
-                      sub-account
-                    </span>
-                  )}
-                  {hasChildren && (
-                    <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
-                      {children.length} sub-account{children.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400">{client.phone}</p>
-                {/* Credit usage bar — only for root accounts with their own limit */}
-                {!isActualChild && client.creditLimit > 0 && (
-                  <div className="mt-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${isNearLimit ? 'bg-red-500' : 'bg-blue-400'}`}
-                          style={{ width: `${limitPct}%` }}
-                        />
-                      </div>
-                      <span className={`text-xs ${isNearLimit ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
-                        {limitPct?.toFixed(0)}% of limit
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Credit limit + interest rate */}
-              <div className="text-right flex-shrink-0 hidden sm:block space-y-0.5">
-                <div>
-                  <p className="text-xs text-slate-400 mb-0.5">Credit Limit</p>
-                  {isActualChild ? (
-                    <p className="text-sm font-medium text-blue-500">Shared with parent</p>
-                  ) : (
-                    <p className="text-sm font-medium text-slate-600">
-                      {client.creditLimit > 0 ? `₹${formatAmount(client.creditLimit)}` : 'Unlimited'}
-                    </p>
-                  )}
-                </div>
-                {client.monthlyInterestRate > 0 && (
-                  <p className="text-xs text-purple-600 font-medium">{client.monthlyInterestRate}%/mo interest</p>
-                )}
-              </div>
-
-              {/* Outstanding */}
-              <div className="text-right flex-shrink-0 w-28">
-                <p className="text-xs text-slate-400 mb-0.5">Outstanding</p>
-                <p className={`text-base font-bold ${client.outstandingBalance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  ₹{formatAmount(client.outstandingBalance)}
-                </p>
-              </div>
-
-              {/* Actions — stopPropagation so buttons don't trigger the parent expand/collapse */}
-              <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                {/* Edit credit limit — only for root accounts; children inherit parent's limit */}
-                {isOwnerOrAdmin && !isActualChild && (
-                  <button
-                    onClick={() => setShowLimitModal(client)}
-                    title="Set credit limit"
-                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedClient(client)}
-                  className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
-                >
-                  View Ledger
-                </button>
-              </div>
-
-              {/* Chevron outside stopPropagation — clicking it also triggers the card's onClick */}
-              {hasChildren && (
-                <svg
-                  className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
-                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              )}
+          {canSeeLedger && (
+            <div className="ui-section-meta-pill">
+              <span className="ui-section-meta-label">Outstanding</span>
+              <span className="ui-section-meta-value">₹{formatAmount(totalOutstanding)}</span>
             </div>
-          )
-        }
+          )}
+        </div>
+      </div>
+      </Reveal>
 
-        if (rootClients.length === 0 && q) {
-          return (
+      {/* Tab bar — only shown for roles with ledger access */}
+      {canSeeLedger && (
+        <Reveal delay={100}>
+        <div className="ui-tabbar w-fit">
+          {(['clients', 'ledger'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`ui-tabbar__button ${activeTab === tab ? 'ui-tabbar__button--active' : ''}`}
+            >
+              {tab === 'clients' ? 'Clients' : 'Ledger'}
+            </button>
+          ))}
+        </div>
+        </Reveal>
+      )}
+
+      {/* ── Ledger tab ── */}
+      {activeTab === 'ledger' && (
+        <>
+          <Reveal delay={120}>
+          <div className="ui-search-shell">
+            <svg className="ui-search-shell__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by client name or phone…"
+              className="ui-search-shell__input text-sm leading-5"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="ui-search-shell__clear"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          </Reveal>
+
+          {isLoading && (
+            <Reveal delay={150}>
+            <div className="ui-card px-5 py-4">
+              <SkeletonRows count={5} />
+            </div>
+            </Reveal>
+          )}
+
+          {error && (
+            <div className="ui-alert ui-alert-danger text-sm">
+              Failed to load credit data. Please try again.
+            </div>
+          )}
+
+          {!isLoading && clients.length === 0 && (
+            <Reveal delay={150}>
             <div className="ui-card">
               <EmptyState
-                icon="generic"
-                title={`No clients match "${deferredSearch.trim()}"`}
-                subtitle="Try a different name or phone number."
+                icon="transactions"
+                title="No credit clients yet"
+                subtitle="Go to the Clients tab to add credit clients."
               />
             </div>
-          )
-        }
+            </Reveal>
+          )}
 
-        return (
-          <div className="space-y-3">
-            {rootClients.map(root => {
-              const children   = childMap.get(root.id) ?? []
-              const isExpanded = expandedParentId === root.id
+          {!isLoading && clients.length > 0 && (() => {
+            // Use allCreditClients (full list) for reliable parentClientId / isParent structure.
+            // clients (ledger) has balances; allCreditClients has the hierarchy.
+            const structureMap = new Map(allCreditClients.map(c => [c.id, c]))
+
+            // A client is a child if allCreditClients says so — never rely on ledger's parentClientId
+            const isChildId = (id: number) => !!structureMap.get(id)?.parentClientId
+
+            // Build a map: parentId → ledger entries for each child
+            const childMap = new Map<number, typeof clients>()
+            allCreditClients.forEach(sc => {
+              if (!sc.parentClientId) return
+              const ledgerEntry = clients.find(c => c.id === sc.id)
+              if (ledgerEntry) {
+                const arr = childMap.get(sc.parentClientId) ?? []
+                arr.push(ledgerEntry)
+                childMap.set(sc.parentClientId, arr)
+              }
+            })
+
+            // Root clients = those that are NOT children in the full structure, filtered by search.
+            // A parent matches if its own name/phone matches OR any of its sub-accounts match.
+            const q = deferredSearch.trim().toLowerCase()
+            const rootClients = clients
+              .filter(c => {
+                if (isChildId(c.id)) return false
+                if (!q) return true
+                const matchesSelf = c.name.toLowerCase().includes(q) || (c.phone ?? '').includes(q)
+                const children = childMap.get(c.id) ?? []
+                const matchesChild = children.some(ch => ch.name.toLowerCase().includes(q) || (ch.phone ?? '').includes(q))
+                return matchesSelf || matchesChild
+              })
+
+            const renderClientCard = (client: typeof clients[0], isChild = false) => {
+              const isActualChild = isChild || isChildId(client.id)
+              const limitPct = client.creditLimit > 0
+                ? Math.min(100, (client.outstandingBalance / client.creditLimit) * 100)
+                : null
+              const isNearLimit  = limitPct !== null && limitPct >= 80
+              const children     = childMap.get(client.id) ?? []
+              const hasChildren  = !isActualChild && children.length > 0
+              const isExpanded   = expandedParentId === client.id
+
               return (
-                <div key={root.id} className="space-y-2">
-                  {renderClientCard(root)}
-                  {children.length > 0 && isExpanded && children.map(child => renderClientCard(child, true))}
+                <div
+                  key={client.id}
+                  onClick={hasChildren ? () => toggleParent(client.id) : undefined}
+                  className={`ui-card px-5 py-4 flex items-center gap-4 transition-all ${
+                    isActualChild ? 'ml-8 border-l-4 border-l-blue-200 hover:border-blue-300 hover:shadow-sm' :
+                    hasChildren   ? 'cursor-pointer hover:border-blue-400 hover:shadow-sm select-none' :
+                                    'hover:border-blue-300 hover:shadow-sm'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-full font-bold flex items-center justify-center flex-shrink-0 text-sm ${
+                    isActualChild ? 'bg-blue-50 text-blue-500' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {client.name.charAt(0).toUpperCase()}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{client.name}</p>
+                      {isActualChild && (
+                        <span className="text-xs bg-blue-50 text-blue-500 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
+                          sub-account
+                        </span>
+                      )}
+                      {hasChildren && (
+                        <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
+                          {children.length} sub-account{children.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400">{client.phone}</p>
+                    {!isActualChild && client.creditLimit > 0 && (
+                      <div className="mt-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${isNearLimit ? 'bg-red-500' : 'bg-blue-400'}`}
+                              style={{ width: `${limitPct}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs ${isNearLimit ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
+                            {limitPct?.toFixed(0)}% of limit
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right flex-shrink-0 hidden sm:block space-y-0.5">
+                    <div>
+                      <p className="text-xs text-slate-400 mb-0.5">Credit Limit</p>
+                      {isActualChild ? (
+                        <p className="text-sm font-medium text-blue-500">Shared with parent</p>
+                      ) : (
+                        <p className="text-sm font-medium text-slate-600">
+                          {client.creditLimit > 0 ? `₹${formatAmount(client.creditLimit)}` : 'Unlimited'}
+                        </p>
+                      )}
+                    </div>
+                    {client.monthlyInterestRate > 0 && (
+                      <p className="text-xs text-purple-600 font-medium">{client.monthlyInterestRate}%/mo interest</p>
+                    )}
+                  </div>
+
+                  <div className="text-right flex-shrink-0 w-28">
+                    <p className="text-xs text-slate-400 mb-0.5">Outstanding</p>
+                    <p className={`text-base font-bold ${client.outstandingBalance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                      ₹{formatAmount(client.outstandingBalance)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    {isOwnerOrAdmin && !isActualChild && (
+                      <button
+                        onClick={() => setShowLimitModal(client)}
+                        title="Set credit limit"
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setSelectedClient(client)}
+                      className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
+                    >
+                      View Ledger
+                    </button>
+                  </div>
+
+                  {hasChildren && (
+                    <svg
+                      className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
                 </div>
               )
-            })}
-          </div>
-        )
-      })()}
+            }
+
+            if (rootClients.length === 0 && q) {
+              return (
+                <div className="ui-card">
+                  <EmptyState
+                    icon="generic"
+                    title={`No clients match "${deferredSearch.trim()}"`}
+                    subtitle="Try a different name or phone number."
+                  />
+                </div>
+              )
+            }
+
+            return (
+              <div className="space-y-3">
+                {rootClients.map(root => {
+                  const children   = childMap.get(root.id) ?? []
+                  const isExpanded = expandedParentId === root.id
+                  return (
+                    <div key={root.id} className="space-y-2">
+                      {renderClientCard(root)}
+                      {children.length > 0 && isExpanded && children.map(child => renderClientCard(child, true))}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </>
+      )}
+
+      {/* ── Clients tab ── */}
+      {activeTab === 'clients' && (
+        <Reveal delay={120}>
+        <div className="ui-card">
+          {pumpId ? (
+            <CreditClientsTab pumpId={pumpId} isOwnerOrAdmin={isOwnerOrAdmin} />
+          ) : (
+            <div className="ui-empty">No pump selected. Use the pump selector in the top navigation bar.</div>
+          )}
+        </div>
+        </Reveal>
+      )}
     </div>
   )
 }

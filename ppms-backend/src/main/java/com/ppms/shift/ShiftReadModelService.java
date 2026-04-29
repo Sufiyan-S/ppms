@@ -100,6 +100,7 @@ public class ShiftReadModelService {
                 .discrepancyReason(shift.getDiscrepancyReason())
                 .discrepancyResolution(shift.getDiscrepancyResolution() != null ? shift.getDiscrepancyResolution().name() : null)
                 .discrepancyResolutionNote(shift.getDiscrepancyResolutionNote())
+                .cashRecoveryAmount(shift.getCashRecoveryAmount())
                 .status(shift.getStatus().name())
                 .isBackfilled(shift.isBackfilled())
                 .creditEntries(creditEntryResponses)

@@ -22,4 +22,7 @@ public interface TankerDeliveryRepository extends JpaRepository<TankerDelivery, 
 
     /** Duplicate guard: checks whether the same fuel type is already recorded under this invoice for this pump */
     boolean existsByPumpIdAndInvoiceReferenceAndFuelType(Long pumpId, String invoiceReference, FuelType fuelType);
+
+    /** Duplicate guard for edits: same as above but excludes the delivery being edited */
+    boolean existsByPumpIdAndInvoiceReferenceAndFuelTypeAndIdNot(Long pumpId, String invoiceReference, FuelType fuelType, Long id);
 }

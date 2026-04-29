@@ -32,16 +32,31 @@ export interface PayrollRecord {
   updatedAt: string
 }
 
+export interface PendingDiscrepancy {
+  id: number
+  shiftDate: string
+  duNumber: number | null
+  duName: string | null
+  discrepancyType: 'SHORT' | 'OVER'
+  discrepancyAmount: number
+  discrepancyReason: string | null
+}
+
 export interface GeneratePayrollRequest {
   userId: number
   periodFrom: string
   periodTo: string
   notes: string | null
+  /** Shift IDs the owner chose to resolve as SALARY_DEDUCTION in this payroll run. */
+  deductFromSalaryShiftIds?: number[]
 }
 
 export const payrollApi = {
   getPayroll: (pumpId: number): Promise<PayrollRecord[]> =>
     client.get(`/pumps/${pumpId}/payroll`).then(r => r.data),
+
+  getPendingDiscrepancies: (pumpId: number, userId: number): Promise<PendingDiscrepancy[]> =>
+    client.get(`/pumps/${pumpId}/payroll/pending-discrepancies`, { params: { userId } }).then(r => r.data),
 
   generatePayroll: (pumpId: number, data: GeneratePayrollRequest): Promise<PayrollRecord> =>
     client.post(`/pumps/${pumpId}/payroll/generate`, data).then(r => r.data),

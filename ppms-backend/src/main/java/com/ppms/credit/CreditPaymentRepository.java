@@ -42,6 +42,10 @@ public interface CreditPaymentRepository extends JpaRepository<CreditPayment, Lo
     @Query("SELECT p.clientId, COALESCE(SUM(p.amount), 0) FROM CreditPayment p WHERE p.clientId IN :clientIds AND p.paymentApprovalStatus = 'APPROVED' GROUP BY p.clientId")
     List<Object[]> sumAmountsByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
+    /** All APPROVED payments for a set of clients — used for chronological interest-first allocation simulation. */
+    @Query("SELECT p FROM CreditPayment p WHERE p.clientId IN :clientIds AND p.paymentApprovalStatus = 'APPROVED'")
+    List<CreditPayment> findApprovedByClientIdIn(@Param("clientIds") java.util.Collection<Long> clientIds);
+
     /** Returns all payments pending approval for a pump — for Owner/Admin approval queue. */
     @Query("SELECT p FROM CreditPayment p WHERE p.pumpId = :pumpId AND p.paymentApprovalStatus = 'PENDING_APPROVAL' ORDER BY p.createdAt ASC")
     List<CreditPayment> findPendingApprovalByPumpId(@Param("pumpId") Long pumpId);

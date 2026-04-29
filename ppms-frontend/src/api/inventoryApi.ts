@@ -36,6 +36,13 @@ export interface RecordDeliveryRequest {
   invoiceReference: string
 }
 
+export interface UpdateDeliveryRequest {
+  quantityDelivered: number
+  costPricePerUnit: number
+  deliveryDate: string   // YYYY-MM-DD
+  invoiceReference: string
+}
+
 export interface RecordBatchDeliveryRequest {
   deliveryDate: string   // YYYY-MM-DD
   invoiceReference: string
@@ -99,6 +106,9 @@ export const inventoryApi = {
 
   getDeliveries: (pumpId: number, page = 0, size = 10) =>
     client.get<PagedResponse<TankerDelivery>>(`/inventory/${pumpId}/deliveries`, { params: { page, size } }).then(r => r.data),
+
+  updateDelivery: (pumpId: number, deliveryId: number, req: UpdateDeliveryRequest) =>
+    client.patch<TankerDelivery>(`/inventory/${pumpId}/deliveries/${deliveryId}`, req).then(r => r.data),
 
   recordDipCheck: (pumpId: number, req: RecordDipCheckRequest) =>
     client.post<DipCheck>(`/inventory/${pumpId}/dip-checks`, req).then(r => r.data),

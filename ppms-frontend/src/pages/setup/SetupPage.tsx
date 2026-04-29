@@ -2,18 +2,18 @@ import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown, ChevronRight, Plus, AlertTriangle, Check, X,
-  Gauge, Database, IndianRupee, Users, UserCheck, Clock,
-  Wrench, Ruler, CircleOff, Settings, CalendarDays, RotateCcw,
+  Gauge, Database, IndianRupee, Users, Clock,
+  Wrench, Ruler, CircleOff, Settings, CalendarDays, RotateCcw, Pencil,
 } from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { userApi } from '../../api/userApi'
 import { shiftPlanApi } from '../../api/shiftPlanApi'
 import type { PreferredDayOff } from '../../api/shiftPlanApi'
 import { DAY_LABELS } from '../../api/shiftPlanApi'
-import type { CreateUserRequest, StaffMember, UserGender } from '../../api/userApi'
+import type { CreateUserRequest, StaffMember, UpdateStaffDetailsRequest, UserGender } from '../../api/userApi'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
-import type { PumpSummary, CreditClient, TankInfo, UpdateCreditClientRequest, PriceDeviationWarning } from '../../api/pumpApi'
+import type { PumpSummary, TankInfo, PriceDeviationWarning } from '../../api/pumpApi'
 import type { FuelType, DUOption, NozzleDetail } from '../../types/shift'
 import { dipApi } from '../../api/dipApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
@@ -109,7 +109,7 @@ export default function SetupPage() {
 
 // ── Pump management accordion panel ──────────────────────────────────────────
 
-type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'clients' | 'shifts' | 'settings'
+type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'shifts' | 'settings'
 
 function PumpManagementPanel({
   pump,
@@ -129,11 +129,6 @@ function PumpManagementPanel({
     queryKey: ['staff', pump.id],
     queryFn:  () => userApi.getStaff(pump.id),
   })
-  const { data: clients = [] } = useQuery({
-    queryKey: ['creditClients', pump.id],
-    queryFn:  () => pumpApi.getCreditClients(pump.id),
-  })
-  const rootClientCount = clients.filter((client) => client.parentClientId === null).length
   const { data: shiftDefs = [] } = useQuery({
     queryKey: ['shift-definitions', pump.id],
     queryFn:  () => shiftDefinitionApi.getAll(pump.id),
@@ -217,19 +212,6 @@ function PumpManagementPanel({
           badgeColor="bg-blue-50 text-blue-700"
         >
           <StaffContent pump={pump} />
-        </AccordionSection>
-
-        {/* ── Credit Clients ── */}
-        <AccordionSection
-          sectionKey="clients"
-          open={openSection === 'clients'}
-          onToggle={() => toggle('clients')}
-          icon={<div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0"><UserCheck size={14} strokeWidth={2} className="text-orange-600" /></div>}
-          title="Credit Clients"
-          summary={rootClientCount > 0 ? `${rootClientCount} client${rootClientCount !== 1 ? 's' : ''}` : 'None added'}
-          badgeColor="bg-orange-50 text-orange-700"
-        >
-          <CreditClientsContent pump={pump} />
         </AccordionSection>
 
         {/* ── Shift Definitions ── */}
@@ -1534,14 +1516,15 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuthStore()
   const isOwner = currentUser?.role === 'OWNER'
+  const isOwnerOrAdmin = isOwner || currentUser?.role === 'ADMIN'
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
 
-  // Preferences / leave / pay-rates panel — only one staff member open at a time
-  type StaffPanel = 'preferences' | 'leave' | 'rates'
+  // Preferences / leave / pay-rates / edit panel — only one staff member open at a time
+  type StaffPanel = 'preferences' | 'leave' | 'rates' | 'edit'
   const [openStaffPanel, setOpenStaffPanel] = useState<{ userId: number; panel: StaffPanel } | null>(null)
   const [openStaffMenu, setOpenStaffMenu] = useState<number | null>(null)
   const [prefShiftDefId, setPrefShiftDefId] = useState<number | null>(null)
@@ -1556,6 +1539,14 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
   const [rateStandard, setRateStandard]   = useState('')
   const [rateDaily, setRateDaily]         = useState('')
   const [rateError, setRateError]         = useState<string | null>(null)
+
+  // Edit details panel state
+  const [editFullName, setEditFullName]               = useState('')
+  const [editPhone, setEditPhone]                     = useState('')
+  const [editRole, setEditRole]                       = useState('')
+  const [editGender, setEditGender]                   = useState<UserGender | ''>('')
+  const [editNightShiftConsent, setEditNightShiftConsent] = useState(false)
+  const [editError, setEditError]                     = useState<string | null>(null)
 
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ['staff', pump.id],
@@ -1641,10 +1632,22 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
     onError: (err: any) => setRateError(err?.response?.data?.message ?? 'Failed to save rates'),
   })
 
+  const detailsMutation = useMutation({
+    mutationFn: ({ userId, req }: { userId: number; req: UpdateStaffDetailsRequest }) =>
+      userApi.updateStaffDetails(userId, req),
+    onSuccess: () => {
+      setEditError(null)
+      setOpenStaffPanel(null)
+      queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
+      queryClient.invalidateQueries({ queryKey: ['operators', pump.id] })
+    },
+    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to save details'),
+  })
+
   const openPanel = (userId: number, panel: StaffPanel, pref?: typeof openPref, member?: StaffMember) => {
     setOpenStaffMenu(null)
     setOpenStaffPanel(prev => prev?.userId === userId && prev?.panel === panel ? null : { userId, panel })
-    setPrefError(null); setLeaveError(null); setRateError(null)
+    setPrefError(null); setLeaveError(null); setRateError(null); setEditError(null)
     if (panel === 'preferences' && pref) {
       setPrefShiftDefId(pref.preferredShiftDefinitionId ?? null)
       setPrefDayOff(pref.preferredDayOff ?? '')
@@ -1653,6 +1656,13 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       setRateShift1(member.shift1HourlyRate != null ? String(member.shift1HourlyRate) : '')
       setRateStandard(member.standardHourlyRate != null ? String(member.standardHourlyRate) : '')
       setRateDaily(member.dailyRate != null ? String(member.dailyRate) : '')
+    }
+    if (panel === 'edit' && member) {
+      setEditFullName(member.fullName)
+      setEditPhone(member.phoneNumber)
+      setEditRole(member.role)
+      setEditGender((member.gender as UserGender | null) ?? '')
+      setEditNightShiftConsent(member.nightShiftConsent)
     }
   }
 
@@ -1725,7 +1735,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                       </div>
                     </div>
                   </div>
-                  {isOwner && (
+                  {isOwnerOrAdmin && (
                     <div className="md:ml-auto">
                       <div className="relative">
                         <button
@@ -1743,7 +1753,22 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                               onClick={() => setOpenStaffMenu(null)}
                             />
                             <div className="absolute right-0 top-full z-[6] mt-2 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur">
-                              {isOperator && (
+                              <button
+                                type="button"
+                                onClick={() => openPanel(member.id, 'edit', undefined, member)}
+                                className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                                  openStaffPanel?.userId === member.id && openStaffPanel?.panel === 'edit'
+                                    ? 'bg-violet-50 text-violet-700'
+                                    : 'text-slate-700 hover:bg-violet-50 hover:text-violet-700'
+                                }`}
+                              >
+                                <span className="mt-0.5 shrink-0 leading-none"><Pencil size={14} strokeWidth={2} /></span>
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-semibold leading-5">Edit Details</span>
+                                  <span className="block text-[11px] leading-4 text-slate-400">Update name, phone number, or role</span>
+                                </span>
+                              </button>
+                              {isOwner && isOperator && (
                                 <button
                                   type="button"
                                   onClick={() => openPanel(member.id, 'preferences')}
@@ -1758,57 +1783,63 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                                   </span>
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => openPanel(member.id, 'leave')}
-                                className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                                  isLeaveOpen ? 'bg-amber-50 text-amber-700' : 'text-slate-700 hover:bg-amber-50 hover:text-amber-700'
-                                }`}
-                              >
-                                <span className="mt-0.5 shrink-0 leading-none"><CalendarDays size={14} strokeWidth={2} /></span>
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-semibold leading-5">Manage Leave</span>
-                                  <span className="block text-[11px] leading-4 text-slate-400">Add or remove leave dates for this staff member</span>
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openPanel(member.id, 'rates', undefined, member)}
-                                className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                                  openStaffPanel?.userId === member.id && openStaffPanel?.panel === 'rates'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
-                                }`}
-                              >
-                                <span className="mt-0.5 shrink-0 text-sm leading-none">₹</span>
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-semibold leading-5">
-                                    Pay Rates{(member.role === 'OPERATOR' ? member.shift1HourlyRate == null : member.dailyRate == null) ? (
-                                      <span className="ml-1 text-red-400">!</span>
-                                    ) : null}
+                              {isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => openPanel(member.id, 'leave')}
+                                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                                    isLeaveOpen ? 'bg-amber-50 text-amber-700' : 'text-slate-700 hover:bg-amber-50 hover:text-amber-700'
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0 leading-none"><CalendarDays size={14} strokeWidth={2} /></span>
+                                  <span className="min-w-0">
+                                    <span className="block text-xs font-semibold leading-5">Manage Leave</span>
+                                    <span className="block text-[11px] leading-4 text-slate-400">Add or remove leave dates for this staff member</span>
                                   </span>
-                                  <span className="block text-[11px] leading-4 text-slate-400">Configure hourly or daily pay rates</span>
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenStaffMenu(null)
-                                  statusMutation.mutate({ userId: member.id, status: isInactive ? 'ACTIVE' : 'INACTIVE' })
-                                }}
-                                disabled={statusMutation.isPending}
-                                className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors disabled:opacity-50 ${
-                                  isInactive ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'
-                                }`}
-                              >
-                                <span className="mt-0.5 shrink-0 leading-none">{isInactive ? <RotateCcw size={14} strokeWidth={2} /> : <CircleOff size={14} strokeWidth={2} />}</span>
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-semibold leading-5">{isInactive ? 'Activate Staff' : 'Deactivate Staff'}</span>
-                                  <span className="block text-[11px] leading-4 text-slate-400">
-                                    {isInactive ? 'Allow this staff member to work again' : 'Temporarily remove this staff member from active use'}
+                                </button>
+                              )}
+                              {isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => openPanel(member.id, 'rates', undefined, member)}
+                                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                                    openStaffPanel?.userId === member.id && openStaffPanel?.panel === 'rates'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0 text-sm leading-none">₹</span>
+                                  <span className="min-w-0">
+                                    <span className="block text-xs font-semibold leading-5">
+                                      Pay Rates{(member.role === 'OPERATOR' ? member.shift1HourlyRate == null : member.dailyRate == null) ? (
+                                        <span className="ml-1 text-red-400">!</span>
+                                      ) : null}
+                                    </span>
+                                    <span className="block text-[11px] leading-4 text-slate-400">Configure hourly or daily pay rates</span>
                                   </span>
-                                </span>
-                              </button>
+                                </button>
+                              )}
+                              {isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenStaffMenu(null)
+                                    statusMutation.mutate({ userId: member.id, status: isInactive ? 'ACTIVE' : 'INACTIVE' })
+                                  }}
+                                  disabled={statusMutation.isPending}
+                                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors disabled:opacity-50 ${
+                                    isInactive ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0 leading-none">{isInactive ? <RotateCcw size={14} strokeWidth={2} /> : <CircleOff size={14} strokeWidth={2} />}</span>
+                                  <span className="min-w-0">
+                                    <span className="block text-xs font-semibold leading-5">{isInactive ? 'Activate Staff' : 'Deactivate Staff'}</span>
+                                    <span className="block text-[11px] leading-4 text-slate-400">
+                                      {isInactive ? 'Allow this staff member to work again' : 'Temporarily remove this staff member from active use'}
+                                    </span>
+                                  </span>
+                                </button>
+                              )}
                             </div>
                           </>
                         )}
@@ -1816,6 +1847,137 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
                     </div>
                   )}
                 </div>
+
+                {/* Edit details panel */}
+                {openStaffPanel?.userId === member.id && openStaffPanel?.panel === 'edit' && (
+                  <div className="border-t border-violet-100 bg-violet-50/30 px-4 py-4">
+                    {/* Panel header */}
+                    <div className="mb-4 flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600">
+                        <Pencil size={13} strokeWidth={2.5} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Edit Staff Details</p>
+                        <p className="text-[11px] text-slate-400">Changes are saved when you click Save Changes</p>
+                      </div>
+                    </div>
+
+                    <div className="max-w-md space-y-3">
+                      {/* Row 1: Name + Phone */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="ui-label">Full Name</label>
+                          <input
+                            type="text"
+                            value={editFullName}
+                            onChange={e => setEditFullName(e.target.value)}
+                            placeholder="Full name"
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="ui-label">Phone Number</label>
+                          <input
+                            type="text"
+                            value={editPhone}
+                            onChange={e => setEditPhone(e.target.value)}
+                            placeholder="10-digit number"
+                            maxLength={10}
+                            className="text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row 2: Role + Gender */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="ui-label">Role</label>
+                          <SearchableSelect
+                            value={editRole}
+                            onChange={v => {
+                              setEditRole(v)
+                              if (v !== 'OPERATOR') setEditNightShiftConsent(false)
+                            }}
+                            placeholder="Select role"
+                            size="sm"
+                            options={[
+                              { value: 'OPERATOR',   label: 'Operator' },
+                              { value: 'MANAGER',    label: 'Manager' },
+                              ...(isOwner ? [{ value: 'ADMIN', label: 'Admin' }] : []),
+                              { value: 'ACCOUNTANT', label: 'Accountant' },
+                            ]}
+                          />
+                        </div>
+                        <div>
+                          <label className="ui-label">Gender</label>
+                          <SearchableSelect
+                            value={editGender}
+                            onChange={v => {
+                              setEditGender(v as UserGender | '')
+                              if (v !== 'FEMALE') setEditNightShiftConsent(false)
+                            }}
+                            placeholder="Select gender"
+                            size="sm"
+                            options={[
+                              { value: 'MALE',   label: 'Male' },
+                              { value: 'FEMALE', label: 'Female' },
+                              { value: 'OTHER',  label: 'Other' },
+                            ]}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Night shift consent — only for female operators */}
+                      {editRole === 'OPERATOR' && editGender === 'FEMALE' && (
+                        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 px-3.5 py-3">
+                          <input
+                            type="checkbox"
+                            checked={editNightShiftConsent}
+                            onChange={e => setEditNightShiftConsent(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 accent-amber-600"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-amber-900">Okay for night shift</span>
+                            <span className="mt-1 block text-xs leading-5 text-amber-800">
+                              If left unchecked, shift planning will skip night-shift assignment for this operator.
+                            </span>
+                          </span>
+                        </label>
+                      )}
+
+                      {editError && <p className="ui-error-text">{editError}</p>}
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          disabled={detailsMutation.isPending || !editFullName.trim() || !editPhone.trim() || !editRole}
+                          onClick={() => detailsMutation.mutate({
+                            userId: member.id,
+                            req: {
+                              fullName: editFullName.trim(),
+                              phoneNumber: editPhone.trim(),
+                              role: editRole as UpdateStaffDetailsRequest['role'],
+                              gender: editGender || undefined,
+                              nightShiftConsent: editRole === 'OPERATOR' && editGender === 'FEMALE'
+                                ? editNightShiftConsent
+                                : false,
+                            },
+                          })}
+                          className="ui-btn ui-btn-primary min-h-0 px-4 py-2 text-sm"
+                        >
+                          {detailsMutation.isPending ? 'Saving…' : 'Save Changes'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOpenStaffPanel(null)}
+                          className="ui-btn ui-btn-secondary min-h-0 px-4 py-2 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Preferences panel */}
                 {isPrefOpen && (
@@ -2455,425 +2617,6 @@ function TanksContent({ pump }: { pump: PumpSummary }) {
             </button>
           </div>
           {createError && <p className="ui-error-text">{createError}</p>}
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ── Credit clients content ────────────────────────────────────────────────────
-
-function CreditClientsContent({ pump }: { pump: PumpSummary }) {
-  const queryClient = useQueryClient()
-
-  // Add form state
-  const [name, setName] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [notes, setNotes] = useState('')
-  const [addError, setAddError] = useState<string | null>(null)
-
-  // Edit state — which client is expanded for editing, and its field values
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editError, setEditError] = useState<string | null>(null)
-
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
-
-  // Accordion state — only one parent can be expanded at a time; null = all collapsed
-  const [expandedParentId, setExpandedParentId] = useState<number | null>(null)
-  const toggleCollapse = (id: number) =>
-    setExpandedParentId(prev => prev === id ? null : id)
-
-  // Sub-account add form state — tracks which parent's inline add form is open
-  const [addSubParentId,   setAddSubParentId]  = useState<number | null>(null)
-  const [addSubName,       setAddSubName]       = useState('')
-  const [addSubPhone,      setAddSubPhone]      = useState('')
-  const [addSubNotes,      setAddSubNotes]      = useState('')
-  const [addSubError,      setAddSubError]      = useState<string | null>(null)
-
-  const { data: clients = [], isLoading } = useQuery({
-    queryKey: ['creditClients', pump.id],
-    queryFn:  () => pumpApi.getCreditClients(pump.id),
-  })
-
-  const addMutation = useMutation({
-    mutationFn: (req: { name: string; phone: string; notes?: string; parentClientId?: number }) =>
-      pumpApi.createCreditClient(pump.id, req),
-    onSuccess: () => {
-      setName(''); setPhoneNumber(''); setNotes(''); setAddError(null)
-      setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null); setAddSubParentId(null)
-      queryClient.invalidateQueries({ queryKey: ['creditClients', pump.id] })
-    },
-    onError: (err: any, variables) => {
-      const msg = err?.response?.data?.message ?? 'Failed to add client'
-      if (variables.parentClientId != null) {
-        setAddSubError(msg)
-      } else {
-        setAddError(msg)
-      }
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ clientId, req }: { clientId: number; req: UpdateCreditClientRequest }) =>
-      pumpApi.updateCreditClient(pump.id, clientId, req),
-    onSuccess: () => {
-      setEditingId(null); setEditError(null)
-      queryClient.invalidateQueries({ queryKey: ['creditClients', pump.id] })
-    },
-    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to update client'),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (clientId: number) => pumpApi.deleteCreditClient(pump.id, clientId),
-    onSuccess: () => {
-      setConfirmDeleteId(null)
-      queryClient.invalidateQueries({ queryKey: ['creditClients', pump.id] })
-    },
-    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to delete client'),
-  })
-
-  const startEdit = (c: CreditClient) => {
-    setEditingId(c.id)
-    setEditName(c.name)
-    setEditPhone(c.phone ?? '')
-    setEditNotes(c.notes ?? '')
-    setEditError(null)
-    setConfirmDeleteId(null)
-  }
-
-  const submitEdit = (e: React.FormEvent, clientId: number) => {
-    e.preventDefault(); setEditError(null)
-    if (!/^\d{10}$/.test(editPhone.trim())) {
-      setEditError('Phone must be exactly 10 digits.'); return
-    }
-    updateMutation.mutate({
-      clientId,
-      req: {
-        name: editName.trim(),
-        phone: editPhone.trim(),
-        notes: editNotes.trim() || undefined,
-      },
-    })
-  }
-
-  const submitAdd = (e: React.FormEvent) => {
-    e.preventDefault(); setAddError(null)
-    const trimmedName  = name.trim()
-    const trimmedPhone = phoneNumber.trim()
-    if (!/^\d{10}$/.test(trimmedPhone)) {
-      setAddError('Phone number must be exactly 10 digits.'); return
-    }
-    const duplicate = (clients as CreditClient[]).some(
-      (c) => c.name.toLowerCase() === trimmedName.toLowerCase()
-    )
-    if (duplicate) {
-      setAddError(`A client named "${trimmedName}" already exists.`); return
-    }
-    addMutation.mutate({ name: trimmedName, phone: trimmedPhone, notes: notes.trim() || undefined })
-  }
-
-  const submitAddSub = (e: React.FormEvent, parentId: number) => {
-    e.preventDefault(); setAddSubError(null)
-    const trimmedName  = addSubName.trim()
-    const trimmedPhone = addSubPhone.trim()
-    if (!/^\d{10}$/.test(trimmedPhone)) {
-      setAddSubError('Phone number must be exactly 10 digits.'); return
-    }
-    const duplicate = (clients as CreditClient[]).some(
-      (c) => c.parentClientId === parentId && c.name.toLowerCase() === trimmedName.toLowerCase()
-    )
-    if (duplicate) {
-      setAddSubError(`A sub-account named "${trimmedName}" already exists under this parent.`); return
-    }
-    addMutation.mutate(
-      { name: trimmedName, phone: trimmedPhone, notes: addSubNotes.trim() || undefined, parentClientId: parentId },
-    )
-  }
-
-  // Group clients: root accounts with their children
-  const rootClients = (clients as CreditClient[]).filter(c => c.parentClientId === null)
-  const childrenByParent = (clients as CreditClient[]).reduce<Record<number, CreditClient[]>>((acc, c) => {
-    if (c.parentClientId !== null) {
-      acc[c.parentClientId] = [...(acc[c.parentClientId] ?? []), c]
-    }
-    return acc
-  }, {})
-
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-400">
-        Parties who take fuel on credit. Operators pick from this list when closing a shift.
-        Only Owner/Admin can add, edit, or remove clients.
-      </p>
-
-      {/* Client list — grouped by parent/child hierarchy */}
-      {!isLoading && rootClients.length > 0 && (
-        <div className="space-y-3">
-          {rootClients.map((parent) => {
-            const children = childrenByParent[parent.id] ?? []
-            const hasChildren = children.length > 0
-            const isExpanded = expandedParentId === parent.id
-            return (
-              <div key={parent.id} className="ui-card p-0 overflow-hidden">
-
-                {/* ── Parent account row ── */}
-                <div
-                  className={`ui-accordion-trigger ${hasChildren ? 'cursor-pointer select-none' : ''}`}
-                  onClick={hasChildren ? () => toggleCollapse(parent.id) : undefined}
-                >
-                  <div className="min-w-0 flex items-center gap-2">
-                    {hasChildren && (
-                      <svg
-                        className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    )}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-slate-700">{parent.name}</p>
-                        {parent.isParent && (
-                          <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
-                            parent · {children.length} sub-account{children.length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        {parent.phone && <span className="text-xs text-slate-400">{parent.phone}</span>}
-                        {parent.notes && <span className="text-xs text-slate-400 italic truncate max-w-xs">{parent.notes}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-3 shrink-0" onClick={e => e.stopPropagation()}>
-                    {confirmDeleteId === parent.id ? (
-                      <>
-                        <span className="text-xs text-red-600">Remove?</span>
-                        <button onClick={() => deleteMutation.mutate(parent.id)} disabled={deleteMutation.isPending}
-                          className="ui-btn ui-btn-danger min-h-0 px-2 py-1 text-xs">Yes</button>
-                        <button onClick={() => setConfirmDeleteId(null)}
-                          className="ui-btn ui-btn-secondary min-h-0 px-2 py-1 text-xs">No</button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => {
-                            const nextParentId = addSubParentId === parent.id ? null : parent.id
-                            setAddSubParentId(nextParentId)
-                            if (nextParentId === parent.id) {
-                              setExpandedParentId(parent.id)
-                            }
-                            setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null)
-                          }}
-                          className="ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400"
-                        >
-                          + Sub-account
-                        </button>
-                        <button
-                          onClick={() => editingId === parent.id ? setEditingId(null) : startEdit(parent)}
-                          className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          {editingId === parent.id ? 'Cancel' : 'Edit'}
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteId(parent.id)}
-                          className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-red-400 hover:text-red-600"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inline edit form for parent */}
-                {editingId === parent.id && (
-                  <form onSubmit={(e) => submitEdit(e, parent.id)}
-                    className="px-3 py-3 border-t border-slate-100 bg-white space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="ui-label">Name <span className="text-red-500">*</span></label>
-                        <input required value={editName} onChange={(e) => setEditName(e.target.value)}
-                          className="text-xs min-h-10" />
-                      </div>
-                      <div>
-                        <label className="ui-label">Phone <span className="text-red-500">*</span></label>
-                        <input required value={editPhone}
-                          onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          inputMode="numeric" maxLength={10}
-                          className="text-xs min-h-10" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
-                      <input value={editNotes} onChange={(e) => setEditNotes(e.target.value)}
-                        placeholder="e.g. Fleet manager, lorry owner"
-                        className="text-xs min-h-10" />
-                    </div>
-                    {editError && <p className="ui-error-text">{editError}</p>}
-                    <button type="submit" disabled={updateMutation.isPending}
-                      className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-                      {updateMutation.isPending ? 'Saving...' : 'Save'}
-                    </button>
-                  </form>
-                )}
-
-                {/* ── Sub-accounts ── */}
-                {isExpanded && children.map((child) => (
-                  <div key={child.id} className="border-t border-slate-100">
-                    <div className="flex items-center justify-between pl-7 pr-3 py-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-slate-300 shrink-0">└</span>
-                        <div>
-                          <p className="text-sm font-medium text-slate-600">{child.name}</p>
-                          <div className="flex items-center gap-3">
-                            {child.phone && <span className="text-xs text-slate-400">{child.phone}</span>}
-                            {child.notes && <span className="text-xs text-slate-400 italic truncate max-w-xs">{child.notes}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 ml-3 shrink-0">
-                        {confirmDeleteId === child.id ? (
-                          <>
-                            <span className="text-xs text-red-600">Remove?</span>
-                            <button onClick={() => deleteMutation.mutate(child.id)} disabled={deleteMutation.isPending}
-                              className="ui-btn ui-btn-danger min-h-0 px-2 py-1 text-xs">Yes</button>
-                            <button onClick={() => setConfirmDeleteId(null)}
-                              className="ui-btn ui-btn-secondary min-h-0 px-2 py-1 text-xs">No</button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => editingId === child.id ? setEditingId(null) : startEdit(child)}
-                              className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800">
-                              {editingId === child.id ? 'Cancel' : 'Edit'}
-                            </button>
-                            <button onClick={() => setConfirmDeleteId(child.id)}
-                              className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-red-400 hover:text-red-600">
-                              Remove
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {/* Inline edit form for child */}
-                    {editingId === child.id && (
-                      <form onSubmit={(e) => submitEdit(e, child.id)}
-                        className="pl-7 pr-3 py-3 border-t border-slate-100 bg-white space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="ui-label">Name <span className="text-red-500">*</span></label>
-                            <input required value={editName} onChange={(e) => setEditName(e.target.value)}
-                              className="text-xs min-h-10" />
-                          </div>
-                          <div>
-                            <label className="ui-label">Phone <span className="text-red-500">*</span></label>
-                            <input required value={editPhone}
-                              onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                              inputMode="numeric" maxLength={10}
-                              className="text-xs min-h-10" />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
-                          <input value={editNotes} onChange={(e) => setEditNotes(e.target.value)}
-                            placeholder="e.g. Fleet manager, lorry owner"
-                            className="text-xs min-h-10" />
-                        </div>
-                        {editError && <p className="ui-error-text">{editError}</p>}
-                        <button type="submit" disabled={updateMutation.isPending}
-                          className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-                          {updateMutation.isPending ? 'Saving...' : 'Save'}
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                ))}
-
-                {/* ── Inline add sub-account form ── */}
-                {addSubParentId === parent.id && (
-                  <form onSubmit={(e) => submitAddSub(e, parent.id)}
-                    className="border-t border-blue-100 bg-blue-50/40 px-3 py-3 space-y-2">
-                    <p className="text-xs font-semibold text-blue-700">
-                      Add sub-account under {parent.name}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="ui-label">Name <span className="text-red-500">*</span></label>
-                        <input required value={addSubName} onChange={(e) => setAddSubName(e.target.value)}
-                          placeholder="e.g. Driver 1"
-                          className="text-xs min-h-10" />
-                      </div>
-                      <div>
-                        <label className="ui-label">Phone <span className="text-red-500">*</span></label>
-                        <input required value={addSubPhone}
-                          onChange={(e) => setAddSubPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          inputMode="numeric" maxLength={10}
-                          placeholder="e.g. 9876543210"
-                          className="text-xs min-h-10" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
-                      <input value={addSubNotes} onChange={(e) => setAddSubNotes(e.target.value)}
-                        placeholder="e.g. truck number, driver name"
-                        className="text-xs min-h-10" />
-                    </div>
-                    {addSubError && <p className="ui-error-text">{addSubError}</p>}
-                    <div className="flex gap-2">
-                      <button type="submit" disabled={addMutation.isPending}
-                        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-                        {addMutation.isPending ? 'Adding...' : 'Add Sub-account'}
-                      </button>
-                      <button type="button" onClick={() => setAddSubParentId(null)}
-                        className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs">
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Add form */}
-      <div className={clients.length > 0 ? 'border-t border-slate-200 pt-4' : ''}>
-        <p className="ui-label mb-3">
-          {clients.length === 0 ? 'Add the first credit client' : 'Add another client'}
-        </p>
-        <form onSubmit={submitAdd} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="ui-label">Client Name <span className="text-red-500">*</span></label>
-              <input required value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. ABC Transports"
-                className="text-sm" />
-            </div>
-            <div>
-              <label className="ui-label">Phone <span className="text-red-500">*</span></label>
-              <input required value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="e.g. 9876543210"
-                inputMode="numeric"
-                maxLength={10}
-                className="text-sm" />
-            </div>
-          </div>
-          <div>
-            <label className="ui-label">Notes <span className="text-slate-400">(optional)</span></label>
-            <input value={notes} onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Fleet manager, lorry owner"
-              className="text-sm" />
-          </div>
-          {addError && <p className="ui-error-text">{addError}</p>}
-          <button type="submit" disabled={addMutation.isPending}
-            className="ui-btn ui-btn-primary">
-            {addMutation.isPending ? 'Adding...' : 'Add Client'}
-          </button>
         </form>
       </div>
     </div>

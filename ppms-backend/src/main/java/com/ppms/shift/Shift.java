@@ -124,6 +124,14 @@ public class Shift {
     @Column(name = "discrepancy_resolved_at")
     private OffsetDateTime discrepancyResolvedAt;
 
+    /**
+     * Amount physically returned as cash when a SHORT discrepancy is resolved via CASH_RECOVERY.
+     * Always equals discrepancyAmount for that resolution. Null for all other cases.
+     * Used by the balance sheet to show inbound cash on the day the recovery was made.
+     */
+    @Column(name = "cash_recovery_amount")
+    private BigDecimal cashRecoveryAmount;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", nullable = false)

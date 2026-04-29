@@ -119,6 +119,11 @@ public class BalanceSheet {
     @Builder.Default
     private BigDecimal totalDipLossAmount = BigDecimal.ZERO;
 
+    /** Sum of cash physically returned by operators for SHORT discrepancies resolved via CASH_RECOVERY on the report date. DAY reports only; always 0 for SHIFT reports. */
+    @Column(name = "total_cash_recovery", nullable = false)
+    @Builder.Default
+    private BigDecimal totalCashRecovery = BigDecimal.ZERO;
+
     @PrePersist
     protected void onCreate() {
         if (generatedAt == null) {

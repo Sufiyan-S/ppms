@@ -1,31 +1,20 @@
 /**
  * Extracts a safe, user-facing error message from an Axios error response.
- * Passes through known business messages from the backend; falls back to a
- * generic message so raw stack traces or DB errors are never shown to users.
+ *
+ * 4xx responses are business/validation errors from the backend — their message
+ * is always safe to show directly to the user (no stack traces, no DB internals).
+ *
+ * 5xx and unexpected errors fall back to a generic message so raw server errors
+ * are never exposed.
  */
-
-const KNOWN_PREFIXES = [
-  'Invalid phone',
-  'Invalid credentials',
-  'Too many failed',
-  'Shift is not open',
-  'End reading cannot',
-  'Each credit entry',
-  'Void reason is required',
-  'Cannot void',
-  'Discrepancy reason',
-  'Password must',
-  'Current password',
-  'User not found',
-  'Pump not found',
-]
-
 export function parseApiError(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  const status: unknown  = (err as any)?.response?.status
   const message: unknown = (err as any)?.response?.data?.message
-  if (typeof message === 'string' && message.trim().length > 0) {
-    // Only surface the message if it starts with a known safe prefix
-    const isSafe = KNOWN_PREFIXES.some((p) => message.startsWith(p))
-    if (isSafe) return message
+  if (
+    typeof status === 'number' && status >= 400 && status < 500 &&
+    typeof message === 'string' && message.trim().length > 0
+  ) {
+    return message.trim()
   }
   return fallback
 }

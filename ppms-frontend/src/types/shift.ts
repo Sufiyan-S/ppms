@@ -106,6 +106,8 @@ export interface Shift {
   discrepancyReason: string | null
   discrepancyResolution: string | null
   discrepancyResolutionNote: string | null
+  /** Non-null when discrepancyResolution = CASH_RECOVERY on a SHORT shift. */
+  cashRecoveryAmount: number | null
   status: ShiftStatus
   /** True when this shift was entered retroactively by Admin/Owner via the backfill flow. */
   isBackfilled: boolean

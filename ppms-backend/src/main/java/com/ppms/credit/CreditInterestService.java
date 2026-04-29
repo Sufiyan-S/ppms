@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +94,91 @@ public class CreditInterestService {
                         .subtract(paymentsMap.getOrDefault(id, BigDecimal.ZERO))
                         .setScale(2, RoundingMode.HALF_UP)
         ));
+    }
+
+    /**
+     * Holds the interest breakdown for a single client account:
+     *   outstandingInterest  — portion of the outstanding balance that is unpaid interest
+     *   totalInterestRecovered — total interest covered by payments (interest-first allocation)
+     */
+    public record InterestBreakdown(BigDecimal outstandingInterest, BigDecimal totalInterestRecovered) {
+        public static final InterestBreakdown ZERO =
+            new InterestBreakdown(BigDecimal.ZERO, BigDecimal.ZERO);
+
+        public InterestBreakdown add(InterestBreakdown other) {
+            return new InterestBreakdown(
+                this.outstandingInterest.add(other.outstandingInterest),
+                this.totalInterestRecovered.add(other.totalInterestRecovered)
+            );
+        }
+    }
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * Batch version — resolves interest breakdown for all clients in 2 DB queries total.
+     * Uses chronological simulation: processes interest charges and payments in date order
+     * so that a payment made BEFORE an interest charge is NOT counted as recovering that interest.
+     * On the same date, interest charges are processed before payments.
+     */
+    public Map<Long, InterestBreakdown> computeInterestBreakdownBatch(Collection<Long> clientIds) {
+        if (clientIds.isEmpty()) return Map.of();
+
+        List<CreditInterestCharge> allCharges = interestChargeRepository.findByClientIdIn(clientIds);
+        List<CreditPayment> allPayments = paymentRepository.findApprovedByClientIdIn(clientIds);
+
+        Map<Long, List<CreditInterestCharge>> chargesByClient = allCharges.stream()
+                .collect(Collectors.groupingBy(CreditInterestCharge::getClientId));
+        Map<Long, List<CreditPayment>> paymentsByClient = allPayments.stream()
+                .collect(Collectors.groupingBy(CreditPayment::getClientId));
+
+        return clientIds.stream().collect(Collectors.toMap(
+                id -> id,
+                id -> simulateInterestFirstAllocation(
+                        chargesByClient.getOrDefault(id, List.of()),
+                        paymentsByClient.getOrDefault(id, List.of())
+                )
+        ));
+    }
+
+    /**
+     * Simulates interest-first payment allocation in chronological order.
+     * Each interest charge adds to an "interest bucket"; each payment drains it first.
+     * Only the portion of payments that overlaps with an existing interest bucket counts as recovered.
+     */
+    private InterestBreakdown simulateInterestFirstAllocation(
+            List<CreditInterestCharge> charges,
+            List<CreditPayment> payments) {
+
+        if (charges.isEmpty()) return InterestBreakdown.ZERO;
+
+        record Event(LocalDate date, BigDecimal amount, boolean isInterest) {}
+
+        List<Event> events = new ArrayList<>();
+        charges.forEach(c -> events.add(new Event(
+                c.getCreatedAt().atZoneSameInstant(IST).toLocalDate(), c.getAmount(), true)));
+        payments.forEach(p -> events.add(new Event(p.getPaidAt(), p.getAmount(), false)));
+
+        // Same-date: interest charges before payments so they can be immediately drained
+        events.sort(Comparator.comparing(Event::date).thenComparing(e -> e.isInterest() ? 0 : 1));
+
+        BigDecimal interestBucket = BigDecimal.ZERO;
+        BigDecimal recovered = BigDecimal.ZERO;
+
+        for (Event event : events) {
+            if (event.isInterest()) {
+                interestBucket = interestBucket.add(event.amount());
+            } else {
+                BigDecimal interestPaid = event.amount().min(interestBucket);
+                interestBucket = interestBucket.subtract(interestPaid);
+                recovered = recovered.add(interestPaid);
+            }
+        }
+
+        return new InterestBreakdown(
+                interestBucket.setScale(2, RoundingMode.HALF_UP),
+                recovered.setScale(2, RoundingMode.HALF_UP)
+        );
     }
 
     /**

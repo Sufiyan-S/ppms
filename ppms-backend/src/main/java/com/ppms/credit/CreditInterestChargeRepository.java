@@ -31,6 +31,9 @@ public interface CreditInterestChargeRepository extends JpaRepository<CreditInte
     @Query("SELECT c.clientId, COALESCE(SUM(c.amount), 0) FROM CreditInterestCharge c WHERE c.clientId IN :clientIds GROUP BY c.clientId")
     List<Object[]> sumAmountsByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
+    /** All interest charges for a set of clients — used for chronological interest-first allocation simulation. */
+    List<CreditInterestCharge> findByClientIdIn(java.util.Collection<Long> clientIds);
+
     /**
      * All interest charges for a pump within a period_from date range, sorted oldest first.
      * Used by the Interest Accrual Report — finds charges whose period starts within [from, to].

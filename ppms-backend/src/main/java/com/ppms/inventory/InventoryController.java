@@ -41,6 +41,7 @@ public class InventoryController {
     private final UndergroundTankRepository tankRepository;
     private final TankerDeliveryRepository tankerDeliveryRepository;
     private final InventoryLotRepository inventoryLotRepository;
+    private final LotConsumptionRepository lotConsumptionRepository;
     private final DipCheckRepository dipCheckRepository;
     private final UserRepository userRepository;
     private final GlobalFuelPriceRepository globalFuelPriceRepository;
@@ -293,6 +294,99 @@ public class InventoryController {
     }
 
     /**
+     * PATCH /api/inventory/{pumpId}/deliveries/{deliveryId}
+     * Corrects a previously recorded tanker delivery. Owner/Admin only.
+     *
+     * What this does:
+     * 1. Updates the TankerDelivery record (invoice ref, qty, cost, date)
+     * 2. Syncs the corresponding InventoryLot (cost price, delivery date)
+     * 3. Adjusts lot quantities and tank current_stock by the qty delta
+     *
+     * Constraint: new quantity must be >= already-consumed quantity (originalQty - remainingQty).
+     * Reducing below what's been sold would make stock tracking inconsistent.
+     */
+    @PatchMapping("/{pumpId}/deliveries/{deliveryId}")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<TankerDeliveryResponse> updateDelivery(
+            @PathVariable Long pumpId,
+            @PathVariable Long deliveryId,
+            @Valid @RequestBody UpdateDeliveryRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        TankerDelivery delivery = tankerDeliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Delivery not found"));
+
+        if (!delivery.getPumpId().equals(pumpId)) {
+            throw new BusinessException("Delivery does not belong to this pump");
+        }
+
+        UndergroundTank tank = tankRepository.findById(delivery.getTankId())
+                .orElseThrow(() -> new ResourceNotFoundException("Tank not found"));
+
+        InventoryLot lot = inventoryLotRepository.findByTankerDeliveryId(deliveryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory lot not found for this delivery"));
+
+        // Prevent reducing quantity below what has already been consumed via FIFO deductions
+        BigDecimal consumed = lot.getOriginalQuantity().subtract(lot.getRemainingQuantity());
+        BigDecimal newQty = request.getQuantityDelivered().setScale(3, RoundingMode.HALF_UP);
+        if (newQty.compareTo(consumed) < 0) {
+            throw new BusinessException(
+                    "Cannot reduce quantity to " + newQty + "L — " + consumed.setScale(3, RoundingMode.HALF_UP) +
+                    "L of this lot has already been consumed. New quantity must be at least " +
+                    consumed.setScale(3, RoundingMode.HALF_UP) + "L.");
+        }
+
+        // Duplicate invoice guard — same invoice + same fuel type + same pump on a DIFFERENT delivery
+        String invoiceRefTrimmed = request.getInvoiceReference().trim();
+        if (tankerDeliveryRepository.existsByPumpIdAndInvoiceReferenceAndFuelTypeAndIdNot(
+                pumpId, invoiceRefTrimmed, delivery.getFuelType(), deliveryId)) {
+            throw new BusinessException(
+                    "Invoice '" + invoiceRefTrimmed + "' already has a " + delivery.getFuelType().name() +
+                    " delivery recorded for this pump. Use a different invoice reference.");
+        }
+
+        // Adjust tank stock by the quantity delta
+        BigDecimal oldQty = lot.getOriginalQuantity();
+        BigDecimal deltaQty = newQty.subtract(oldQty);
+        BigDecimal newStock = tank.getCurrentStock().add(deltaQty).setScale(3, RoundingMode.HALF_UP);
+        if (newStock.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Reducing this delivery would bring tank stock below zero.");
+        }
+        tank.setCurrentStock(newStock);
+        tankRepository.save(tank);
+
+        // Sync InventoryLot
+        var newDeliveryDateTime = request.getDeliveryDate()
+                .atStartOfDay(businessClock.zone())
+                .toOffsetDateTime();
+        lot.setOriginalQuantity(newQty);
+        lot.setRemainingQuantity(lot.getRemainingQuantity().add(deltaQty).setScale(3, RoundingMode.HALF_UP));
+        lot.setCostPricePerUnit(request.getCostPricePerUnit());
+        lot.setDeliveryDate(newDeliveryDateTime);
+        inventoryLotRepository.save(lot);
+
+        // Update the TankerDelivery record
+        delivery.setQuantityDelivered(newQty);
+        delivery.setCostPricePerUnit(request.getCostPricePerUnit());
+        delivery.setDeliveryDate(newDeliveryDateTime);
+        delivery.setInvoiceReference(invoiceRefTrimmed);
+        delivery = tankerDeliveryRepository.save(delivery);
+
+        log.info("Delivery updated: pump={}, delivery={}, fuel={}, oldQty={}L, newQty={}L, invoice={}, by={}",
+                pumpId, deliveryId, delivery.getFuelType(), oldQty, newQty, invoiceRefTrimmed, currentUser.getId());
+
+        auditService.log(pumpId, AuditAction.DELIVERY_RECORDED,
+                "TankerDelivery", delivery.getId().toString(),
+                "Delivery updated: " + delivery.getFuelType() + " qty " + oldQty + "→" + newQty + "L, " +
+                "cost ₹" + request.getCostPricePerUnit() + "/L, invoice=" + invoiceRefTrimmed,
+                currentUser);
+
+        String loggedByName = currentUser.getFullName();
+        return ResponseEntity.ok(toDeliveryResponse(delivery, tank, loggedByName));
+    }
+
+    /**
      * GET /api/inventory/{pumpId}/deliveries?page=0&size=50
      * Returns paginated tanker deliveries for a pump, newest first.
      */
@@ -354,6 +448,12 @@ public class InventoryController {
                     "Re-enable it in Setup before recording a DIP check.");
         }
 
+        if (tank.getCurrentStock().compareTo(BigDecimal.ZERO) == 0) {
+            throw new BusinessException(
+                    "Tank '" + tank.getTankIdentifier() + "' has no recorded stock. " +
+                    "Record a tanker delivery first before performing a DIP check.");
+        }
+
         BigDecimal systemStockNow = tank.getCurrentStock().setScale(3, RoundingMode.HALF_UP);
         BigDecimal measured = request.getMeasuredQuantity().setScale(3, RoundingMode.HALF_UP);
         BigDecimal variance = measured.subtract(systemStockNow);
@@ -391,6 +491,57 @@ public class InventoryController {
         // Physical measurement is the source of truth — update tank stock immediately
         tank.setCurrentStock(measured);
         tankRepository.save(tank);
+
+        // Keep InventoryLot ledger in sync with the corrected stock.
+        // Without this, a positive DIP check would show fuel in the tank but have no
+        // active lots — causing shift-close FIFO to report 0 L available.
+        if (variance.compareTo(BigDecimal.ZERO) > 0) {
+            // Physical stock is HIGHER — create a DIP-adjustment lot for the delta
+            BigDecimal adjustmentCost = inventoryLotRepository.findActiveLotsByTankForDisplay(tank.getId())
+                    .stream()
+                    .reduce((a, b) -> b)
+                    .map(InventoryLot::getCostPricePerUnit)
+                    .orElse(BigDecimal.ZERO);
+            InventoryLot adjustmentLot = InventoryLot.builder()
+                    .tankerDeliveryId(null)
+                    .tankId(tank.getId())
+                    .fuelType(tank.getFuelType())
+                    .pumpId(pumpId)
+                    .originalQuantity(variance.setScale(3, RoundingMode.HALF_UP))
+                    .remainingQuantity(variance.setScale(3, RoundingMode.HALF_UP))
+                    .costPricePerUnit(adjustmentCost)
+                    .deliveryDate(checkedAt)
+                    .isDipAdjustment(true)
+                    .status(LotStatus.ACTIVE)
+                    .build();
+            inventoryLotRepository.save(adjustmentLot);
+            log.info("DIP adjustment lot created: pump={}, tank={}, +{}L at cost {}",
+                    pumpId, tank.getId(), variance.setScale(3, RoundingMode.HALF_UP), adjustmentCost);
+
+        } else if (variance.compareTo(BigDecimal.ZERO) < 0) {
+            // Physical stock is LOWER — FIFO-consume the negative delta from active lots
+            BigDecimal toDeduct = variance.abs();
+            List<InventoryLot> lots = inventoryLotRepository.findActiveLotsByTankFifo(tank.getId());
+            for (InventoryLot lot : lots) {
+                if (toDeduct.compareTo(BigDecimal.ZERO) <= 0) break;
+                BigDecimal consume = toDeduct.min(lot.getRemainingQuantity());
+                lot.setRemainingQuantity(lot.getRemainingQuantity().subtract(consume).setScale(3, RoundingMode.HALF_UP));
+                if (lot.getRemainingQuantity().compareTo(BigDecimal.ZERO) == 0) {
+                    lot.setStatus(LotStatus.EXHAUSTED);
+                }
+                inventoryLotRepository.save(lot);
+                lotConsumptionRepository.save(LotConsumption.builder()
+                        .lotId(lot.getId())
+                        .sourceType(LotConsumptionSource.DIP_CORRECTION)
+                        .dipCorrectionId(check.getId())
+                        .quantityConsumed(consume)
+                        .costPricePerUnit(lot.getCostPricePerUnit())
+                        .build());
+                toDeduct = toDeduct.subtract(consume);
+            }
+            log.info("DIP adjustment: FIFO-consumed {}L from lots, tank={}, pump={}",
+                    variance.abs().setScale(3, RoundingMode.HALF_UP), tank.getId(), pumpId);
+        }
 
         log.info("DIP check recorded: pump={}, tank={}, measured={}L, system={}L, variance={}L, status={}, by={}, checkedBy={}",
                 pumpId, tank.getId(), measured, systemStockNow, variance, status, currentUser.getId(), request.getCheckedByUserId());

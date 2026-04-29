@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ChevronDown, Plus, History, Printer } from 'lucide-react'
@@ -73,7 +73,7 @@ export default function ShiftsPage() {
   const [shiftToClose,      setShiftToClose]      = useState<Shift | null>(null)
   const [shiftForCredit,    setShiftForCredit]    = useState<Shift | null>(null)
   const [historyOpen,    setHistoryOpen]    = useState(true)
-  const [historyTab,     setHistoryTab]     = useState<'day' | 'all'>('day')
+  const [historyTab,     setHistoryTab]     = useState<'day' | 'all' | 'discrepancies'>('day')
 
   const { data: rawPumps = [] } = useQuery({
     queryKey: ['myPumps'],
@@ -237,13 +237,13 @@ export default function ShiftsPage() {
               <div className="ui-accordion-content">
                 {/* Tab row */}
                 <div className="ui-tabbar">
-                  {(['day', 'all'] as const).map((tab) => (
+                  {(['day', 'all', 'discrepancies'] as const).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setHistoryTab(tab)}
                       className={`ui-tabbar__button ${historyTab === tab ? 'ui-tabbar__button--active' : ''}`}
                     >
-                      {tab === 'day' ? 'By Day' : 'All Shifts'}
+                      {tab === 'day' ? 'By Day' : tab === 'all' ? 'All Shifts' : 'Discrepancies'}
                     </button>
                   ))}
                 </div>
@@ -255,8 +255,10 @@ export default function ShiftsPage() {
                     <div className="ui-empty p-6">No shift history yet.</div>
                   ) : historyTab === 'day' ? (
                     <DayViewHistory shifts={historyShifts} />
-                  ) : (
+                  ) : historyTab === 'all' ? (
                     <AllShiftsHistory shifts={historyShifts} />
+                  ) : (
+                    <DiscrepanciesHistory shifts={historyShifts} />
                   )}
                 </div>
               </div>
@@ -532,6 +534,216 @@ function AllShiftsHistory({ shifts }: { shifts: Shift[] }) {
             >
               »
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Discrepancies History ─────────────────────────────────────────────────────
+
+const RESOLUTION_LABELS: Record<string, string> = {
+  PENDING_INVESTIGATION: 'Pending Investigation',
+  SALARY_DEDUCTION:      'Salary Deduction',
+  CASH_RECOVERY:         'Cash Recovery',
+  WAIVED:                'Waived',
+}
+
+function DiscrepanciesHistory({ shifts }: { shifts: Shift[] }) {
+  const [page,     setPage]     = useState(0)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate,   setToDate]   = useState('')
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'SHORT' | 'OVER'>('ALL')
+
+  const discrepancyShifts = shifts.filter((s) => s.discrepancyAmount != null)
+
+  const filtered = discrepancyShifts.filter((s) => {
+    if (fromDate && s.shiftDate < fromDate) return false
+    if (toDate   && s.shiftDate > toDate)   return false
+    if (typeFilter !== 'ALL' && s.discrepancyType !== typeFilter) return false
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage   = Math.min(page, totalPages - 1)
+  const paged      = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+  const clearFilter = () => { setFromDate(''); setToDate(''); setTypeFilter('ALL'); setPage(0) }
+
+  const totalShort = filtered.filter(s => s.discrepancyType === 'SHORT').reduce((sum, s) => sum + (s.discrepancyAmount ?? 0), 0)
+  const totalOver  = filtered.filter(s => s.discrepancyType === 'OVER').reduce((sum, s) => sum + (s.discrepancyAmount ?? 0), 0)
+  const resolved   = filtered.filter(s => s.discrepancyResolution && s.discrepancyResolution !== 'PENDING_INVESTIGATION').length
+  const cashRecovered = filtered.filter(s => s.discrepancyResolution === 'CASH_RECOVERY').reduce((sum, s) => sum + (s.cashRecoveryAmount ?? 0), 0)
+
+  if (discrepancyShifts.length === 0) {
+    return <div className="ui-empty p-6">No discrepancies recorded yet.</div>
+  }
+
+  return (
+    <div>
+      {/* Summary bar */}
+      <div className="flex flex-wrap gap-4 px-6 py-3 border-t border-slate-100 bg-red-50/40">
+        <div className="text-xs">
+          <span className="text-slate-500">SHORT total: </span>
+          <span className="font-semibold text-red-700">{fmtAmt(totalShort)}</span>
+        </div>
+        <div className="text-xs">
+          <span className="text-slate-500">OVER total: </span>
+          <span className="font-semibold text-amber-700">{fmtAmt(totalOver)}</span>
+        </div>
+        <div className="text-xs">
+          <span className="text-slate-500">Resolved: </span>
+          <span className="font-semibold text-slate-700">{resolved} / {filtered.length}</span>
+        </div>
+        {cashRecovered > 0 && (
+          <div className="text-xs">
+            <span className="text-slate-500">Cash recovered: </span>
+            <span className="font-semibold text-green-700">{fmtAmt(cashRecovered)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-t border-slate-100 bg-slate-50/60">
+        <span className="text-xs font-medium text-slate-500">Filter:</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => { setFromDate(e.target.value); setPage(0) }}
+            className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <span className="text-slate-400 text-xs">to</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => { setToDate(e.target.value); setPage(0) }}
+            className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          {(['ALL', 'SHORT', 'OVER'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => { setTypeFilter(t); setPage(0) }}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                typeFilter === t
+                  ? t === 'SHORT' ? 'bg-red-600 border-red-600 text-white'
+                    : t === 'OVER' ? 'bg-amber-500 border-amber-500 text-white'
+                    : 'bg-blue-600 border-blue-600 text-white'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        {(fromDate || toDate || typeFilter !== 'ALL') && (
+          <button onClick={clearFilter} className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-slate-500 hover:text-slate-700 underline">
+            Clear
+          </button>
+        )}
+        <span className="ml-auto text-xs text-slate-400">{filtered.length} shift{filtered.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto border-t border-slate-100">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-xs text-slate-500">
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">ID</th>
+              <th className="text-left px-5 py-3 font-medium">Date</th>
+              <th className="text-left px-5 py-3 font-medium">Operator</th>
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">DU</th>
+              <th className="text-left px-5 py-3 font-medium">Type</th>
+              <th className="text-left px-5 py-3 font-medium">Amount</th>
+              <th className="text-left px-5 py-3 font-medium">Resolution</th>
+              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="ui-empty px-6 py-6">No discrepancies match the selected filters.</td>
+              </tr>
+            ) : (
+              paged.map((shift) => (
+                <tr key={shift.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                  <td className="px-5 py-3 text-slate-400 text-xs font-mono hidden md:table-cell">{shift.id}</td>
+                  <td className="px-5 py-3 text-xs text-slate-600">{shift.shiftDate}</td>
+                  <td className="px-5 py-3 text-sm text-slate-700 font-medium">{shift.operatorName}</td>
+                  <td className="px-5 py-3 text-xs text-slate-500 hidden md:table-cell">
+                    {shift.duName ?? `DU #${shift.duNumber}`}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                      shift.discrepancyType === 'SHORT' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {shift.discrepancyType}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-sm font-semibold">
+                    <span className={shift.discrepancyType === 'SHORT' ? 'text-red-700' : 'text-amber-700'}>
+                      {fmtAmt(shift.discrepancyAmount)}
+                    </span>
+                    {shift.cashRecoveryAmount != null && shift.cashRecoveryAmount > 0 && (
+                      <span className="block text-xs text-green-600 font-normal mt-0.5">
+                        Recovered: {fmtAmt(shift.cashRecoveryAmount)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3">
+                    {shift.discrepancyResolution ? (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        shift.discrepancyResolution === 'CASH_RECOVERY'   ? 'bg-green-100 text-green-700' :
+                        shift.discrepancyResolution === 'SALARY_DEDUCTION'? 'bg-blue-100 text-blue-700' :
+                        shift.discrepancyResolution === 'WAIVED'          ? 'bg-slate-100 text-slate-600' :
+                                                                            'bg-orange-100 text-orange-700'
+                      }`}>
+                        {RESOLUTION_LABELS[shift.discrepancyResolution] ?? shift.discrepancyResolution}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-orange-600 font-medium">Pending</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-xs text-slate-500 hidden md:table-cell max-w-xs truncate">
+                    {shift.discrepancyResolutionNote ?? shift.discrepancyReason ?? '—'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/60">
+          <span className="text-xs text-slate-500">
+            Page {safePage + 1} of {totalPages}
+            <span className="ml-2 text-slate-400">
+              (showing {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length})
+            </span>
+          </span>
+          <div className="flex gap-1">
+            <button onClick={() => setPage(0)} disabled={safePage === 0} className="ui-btn ui-btn-secondary min-h-0 px-2.5 py-1 text-xs disabled:opacity-30">«</button>
+            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="ui-btn ui-btn-secondary min-h-0 px-3 py-1 text-xs disabled:opacity-30">Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i)
+              .filter((i) => Math.abs(i - safePage) <= 2)
+              .map((i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i)}
+                  className={`ui-btn min-h-0 px-3 py-1 text-xs rounded-md border transition-colors ${
+                    i === safePage ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={safePage === totalPages - 1} className="ui-btn ui-btn-secondary min-h-0 px-3 py-1 text-xs disabled:opacity-30">Next</button>
+            <button onClick={() => setPage(totalPages - 1)} disabled={safePage === totalPages - 1} className="ui-btn ui-btn-secondary min-h-0 px-2.5 py-1 text-xs disabled:opacity-30">»</button>
           </div>
         </div>
       )}
@@ -1344,21 +1556,40 @@ function HandoverModal({ shift, onClose }: { shift: Shift; onClose: () => void }
   const fmtAmt = (v: number | null | undefined) =>
     v != null ? `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
 
+  // Tag <body> while this modal is open so @media print can isolate it:
+  // hide #root and free the panel from its max-height/overflow constraints.
+  useEffect(() => {
+    document.body.classList.add('handover-printing')
+    return () => document.body.classList.remove('handover-printing')
+  }, [])
+
   return (
     <ModalPortal>
-      <div className="ui-modal-backdrop" onClick={onClose} />
-      <div className="ui-modal-panel max-w-xl w-full print:shadow-none print:max-w-full">
+      <div className="ui-modal-backdrop" onClick={onClose}>
+      <div className="ui-modal-panel max-w-xl w-full" onClick={(e) => e.stopPropagation()}>
 
         {/* Screen header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 print:hidden">
-          <h2 className="ui-modal-title">Shift Handover Report</h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => window.print()} className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-              <Printer size={13} strokeWidth={2} className="mr-1" /> Print
+        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--primary print:hidden">
+          <div className="ui-modal-heading">
+            <h2 className="ui-modal-title">Shift Handover Report</h2>
+            <p className="ui-modal-subtitle">
+              Shift #{shift.id} · {shift.operatorName} · {shift.shiftDate}
+              {' · '}
+              {formatIstDateTime(shift.actualStartTime, { hour: '2-digit', minute: '2-digit' })}
+              {' → '}
+              {shift.actualEndTime
+                ? formatIstDateTime(shift.actualEndTime, { hour: '2-digit', minute: '2-digit' })
+                : 'Open'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 hover:bg-white/30 border border-white/30 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+            >
+              <Printer size={13} strokeWidth={2} /> Print
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
-              <span className="text-lg leading-none">×</span>
-            </button>
+            <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">×</button>
           </div>
         </div>
 
@@ -1473,6 +1704,7 @@ function HandoverModal({ shift, onClose }: { shift: Shift; onClose: () => void }
             </div>
           </div>
         </div>
+      </div>
       </div>
     </ModalPortal>
   )

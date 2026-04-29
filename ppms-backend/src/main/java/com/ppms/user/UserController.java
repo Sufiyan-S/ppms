@@ -159,6 +159,73 @@ public class UserController {
     }
 
     /**
+     * PATCH /api/users/{userId}/details
+     * Updates name, phone number, and role for a staff member.
+     * Owner and Admin can update staff. Phone must remain unique across all users.
+     * Role escalation rules apply — caller cannot assign a role at or above their own.
+     */
+    @PatchMapping("/{userId}/details")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'OWNER', 'ADMIN')")
+    public ResponseEntity<StaffResponse> updateStaffDetails(
+            @PathVariable Long userId,
+            @Valid @RequestBody UpdateStaffDetailsRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException("User not found"));
+
+        if (user.getRole() == UserRole.OWNER || user.getRole() == UserRole.SUPER_ADMIN) {
+            throw new BusinessException("Owner and super-admin accounts cannot be edited through this endpoint");
+        }
+
+        // ADMIN can only edit staff on their own pump
+        if (currentUser.getRole() == UserRole.ADMIN) {
+            if (!currentUser.getAssignedPumpId().equals(user.getAssignedPumpId())) {
+                throw new BusinessException("You can only edit staff assigned to your pump");
+            }
+        }
+
+        if (request.getPhoneNumber() != null) {
+            String newPhone = request.getPhoneNumber().trim();
+            if (!newPhone.equals(user.getPhoneNumber()) &&
+                    userRepository.existsByPhoneNumberAndIdNot(newPhone, userId)) {
+                throw new BusinessException("Phone number " + newPhone + " is already in use by another user");
+            }
+            user.setPhoneNumber(newPhone);
+        }
+
+        if (request.getFullName() != null && !request.getFullName().isBlank()) {
+            user.setFullName(request.getFullName().trim());
+        }
+
+        if (request.getRole() != null) {
+            assertCanAssignRole(currentUser.getRole(), request.getRole());
+            user.setRole(request.getRole());
+        }
+
+        if (request.getGender() != null) {
+            user.setGender(request.getGender());
+        }
+
+        // Recompute night-shift consent based on final role + gender state.
+        // Only an OPERATOR who identifies as FEMALE can have consent = true.
+        if (user.getRole() == UserRole.OPERATOR && user.getGender() == UserGender.FEMALE) {
+            user.setNightShiftConsent(Boolean.TRUE.equals(request.getNightShiftConsent()));
+        } else {
+            user.setNightShiftConsent(false);
+        }
+
+        user = userRepository.save(user);
+
+        auditService.log(user.getAssignedPumpId(), AuditAction.USER_UPDATED,
+                "User", user.getId().toString(),
+                "User details updated: " + user.getFullName() + " (" + user.getRole() + ")",
+                currentUser);
+
+        return ResponseEntity.ok(StaffResponse.from(user));
+    }
+
+    /**
      * PATCH /api/users/me/profile
      * Allows any authenticated user to update their own display name.
      * No role restriction — every user can rename themselves.
@@ -321,6 +388,15 @@ public class UserController {
     @lombok.Data
     public static class UpdateProfileRequest {
         private String fullName;
+    }
+
+    @lombok.Data
+    public static class UpdateStaffDetailsRequest {
+        private String fullName;
+        private String phoneNumber;
+        private UserRole role;
+        private UserGender gender;
+        private Boolean nightShiftConsent;
     }
 
     @lombok.Data

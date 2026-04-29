@@ -158,6 +158,8 @@ export interface BalanceSheetDetail {
   totalFleetCardCollected: number
   totalCreditSold: number
   totalCreditRecovered: number
+  /** Cash returned by operators for SHORT discrepancies resolved via CASH_RECOVERY on the report date. DAY reports only. */
+  totalCashRecovery: number
   cashDiscrepancy: number
   totalLitresSold: number
   totalLitresDelivered: number

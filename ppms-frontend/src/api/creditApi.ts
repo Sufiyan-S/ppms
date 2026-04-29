@@ -9,6 +9,10 @@ export interface CreditClient {
   notes: string | null
   creditLimit: number
   outstandingBalance: number
+  /** Unpaid interest portion of the outstanding balance (interest-first allocation). Subset of outstandingBalance. */
+  outstandingInterest: number
+  /** Total interest covered by payments historically. */
+  totalInterestRecovered: number
   /** Monthly simple interest rate in %. 0 = no interest configured. */
   monthlyInterestRate: number
   /** Days after first credit entry before interest starts. */

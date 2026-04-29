@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Plus, AlertTriangle, AlertCircle, Check, X } from 'lucide-react'
+import { ChevronDown, Plus, AlertTriangle, AlertCircle, Check, X, Pencil } from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { usePumpStore } from '../../store/usePumpStore'
 import { inventoryApi } from '../../api/inventoryApi'
 import { userApi } from '../../api/userApi'
-import type { TankStock, TankerDelivery, DipCheck, RecordBatchDeliveryRequest, InventoryLotDetail } from '../../api/inventoryApi'
+import type { TankStock, TankerDelivery, DipCheck, RecordBatchDeliveryRequest, InventoryLotDetail, UpdateDeliveryRequest } from '../../api/inventoryApi'
 import { useAuthStore } from '../../store/authStore'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
@@ -374,15 +374,16 @@ export default function InventoryPage() {
                               {!isCollapsed && (
                                 <div className="ui-accordion-content ui-card p-0 overflow-hidden">
                                   <div className="px-4 py-3">
-                                    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                                       <span>Tank</span>
                                       <span>Fuel</span>
                                       <span className="text-right">Quantity</span>
                                       <span className="text-right">Rate</span>
                                       <span className="text-right">Amount</span>
+                                      <span />
                                     </div>
                                     <div className="space-y-2 pt-2">
-                                      {rows.map(d => <DeliveryItem key={d.id} delivery={d} />)}
+                                      {rows.map(d => <DeliveryItem key={d.id} delivery={d} pumpId={pumpId!} canEdit={isOwnerOrAdmin} />)}
                                     </div>
                                   </div>
                                 </div>
@@ -778,24 +779,167 @@ function FuelLotsDialog({
   )
 }
 
+// ── Edit Delivery Modal ────────────────────────────────────────────────────────
+
+function EditDeliveryModal({ delivery, pumpId, onClose }: {
+  delivery: TankerDelivery
+  pumpId: number
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [invoiceReference, setInvoiceReference] = useState(delivery.invoiceReference)
+  const [qty,   setQty]   = useState(String(delivery.quantityDelivered))
+  const [cost,  setCost]  = useState(String(delivery.costPricePerUnit))
+  const [date,  setDate]  = useState(delivery.deliveryDate.slice(0, 10))
+  const [error, setError] = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: (req: UpdateDeliveryRequest) => inventoryApi.updateDelivery(pumpId, delivery.id, req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deliveries', pumpId] })
+      qc.invalidateQueries({ queryKey: ['tankStocks', pumpId] })
+      onClose()
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setError(msg ?? 'Failed to update delivery.')
+    },
+  })
+
+  function handleSave() {
+    const q = parseFloat(qty)
+    const c = parseFloat(cost)
+    if (!invoiceReference.trim()) { setError('Invoice reference is required.'); return }
+    if (isNaN(q) || q <= 0) { setError('Quantity must be greater than 0.'); return }
+    if (isNaN(c) || c <= 0) { setError('Cost price must be greater than 0.'); return }
+    if (!date) { setError('Delivery date is required.'); return }
+    setError(null)
+    mutation.mutate({ invoiceReference: invoiceReference.trim(), quantityDelivered: q, costPricePerUnit: c, deliveryDate: date })
+  }
+
+  return (
+    <ModalPortal>
+      <div className="ui-modal-backdrop" onClick={onClose}>
+        <div className="ui-modal-panel w-full max-w-md" onClick={e => e.stopPropagation()}>
+          <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
+            <div className="ui-modal-heading">
+              <h2 className="ui-modal-title">Edit Delivery</h2>
+              <p className="ui-modal-subtitle">
+                {delivery.tankIdentifier} · {delivery.fuelType}
+              </p>
+            </div>
+            <button onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">×</button>
+          </div>
+
+          <div className="ui-modal-body space-y-4">
+
+            <div className="space-y-1">
+              <label className="ui-label">Invoice / Bill No.</label>
+              <input
+                className="ui-input"
+                value={invoiceReference}
+                onChange={e => setInvoiceReference(e.target.value)}
+                placeholder="e.g. INV-2026-001"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="ui-label">Quantity (L)</label>
+                <input
+                  className="ui-input"
+                  type="number"
+                  min="0.001"
+                  step="0.001"
+                  value={qty}
+                  onChange={e => setQty(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="ui-label">Cost (₹/L)</label>
+                <input
+                  className="ui-input"
+                  type="number"
+                  min="0.0001"
+                  step="0.0001"
+                  value={cost}
+                  onChange={e => setCost(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="ui-label">Delivery Date</label>
+              <input
+                className="ui-input"
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+              />
+            </div>
+
+            {error && <p className="ui-error-text">{error}</p>}
+          </div>
+
+          <div className="ui-modal-footer justify-end gap-2">
+            <button onClick={onClose} className="ui-btn ui-btn-secondary">Cancel</button>
+            <button
+              onClick={handleSave}
+              disabled={mutation.isPending}
+              className="ui-btn ui-btn-primary"
+            >
+              {mutation.isPending ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  )
+}
+
 // ── Delivery item (compact card inside invoice group) ─────────────────────────
 
-function DeliveryItem({ delivery }: { delivery: TankerDelivery }) {
+function DeliveryItem({ delivery, pumpId, canEdit }: {
+  delivery: TankerDelivery
+  pumpId: number
+  canEdit: boolean
+}) {
   const cols = FUEL_COLORS[delivery.fuelType] ?? FUEL_COLORS.PETROL
+  const [editing, setEditing] = useState(false)
   return (
-    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs items-center">
-      <span className="font-semibold text-slate-700">{delivery.tankIdentifier}</span>
-      <span className={`font-medium px-2 py-0.5 rounded-full justify-self-start ${cols.badge}`}>
-        {delivery.fuelType}
-      </span>
-      <span className="text-right text-slate-600">
-        {delivery.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-      </span>
-      <span className="text-right text-slate-400">₹{delivery.costPricePerUnit.toFixed(4)}/L</span>
-      <span className="text-right font-semibold text-slate-800">
-        ₹{delivery.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-      </span>
-    </div>
+    <>
+      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs items-center">
+        <span className="font-semibold text-slate-700">{delivery.tankIdentifier}</span>
+        <span className={`font-medium px-2 py-0.5 rounded-full justify-self-start ${cols.badge}`}>
+          {delivery.fuelType}
+        </span>
+        <span className="text-right text-slate-600">
+          {delivery.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+        </span>
+        <span className="text-right text-slate-400">₹{delivery.costPricePerUnit.toFixed(4)}/L</span>
+        <span className="text-right font-semibold text-slate-800">
+          ₹{delivery.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </span>
+        {canEdit ? (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-slate-400 hover:text-blue-600 transition-colors p-0.5"
+            title="Edit delivery"
+          >
+            <Pencil size={13} />
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+      {editing && (
+        <EditDeliveryModal
+          delivery={delivery}
+          pumpId={pumpId}
+          onClose={() => setEditing(false)}
+        />
+      )}
+    </>
   )
 }
 

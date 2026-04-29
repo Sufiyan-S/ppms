@@ -82,6 +82,7 @@ public class BalanceSheetDetailAssembler {
                 .totalFleetCardCollected(supportService.orZero(balanceSheet.getTotalFleetCardCollected()))
                 .totalCreditSold(balanceSheet.getTotalCreditSold())
                 .totalCreditRecovered(balanceSheet.getTotalCreditRecovered())
+                .totalCashRecovery(supportService.orZero(balanceSheet.getTotalCashRecovery()))
                 .cashDiscrepancy(balanceSheet.getCashDiscrepancy())
                 .totalLitresSold(balanceSheet.getTotalLitresSold())
                 .totalLitresDelivered(balanceSheet.getTotalLitresDelivered())

@@ -17,6 +17,10 @@ public class CreditClientResponse {
     private BigDecimal creditLimit;
     // Total credit sales + interest charges minus total payments — computed on the fly
     private BigDecimal outstandingBalance;
+    // Unpaid portion of applied interest charges (interest-first allocation). Subset of outstandingBalance.
+    private BigDecimal outstandingInterest;
+    // Total interest that has been covered by payments historically
+    private BigDecimal totalInterestRecovered;
     // Simple interest rate charged per month (0 = no interest)
     private BigDecimal monthlyInterestRate;
     // Days after first credit entry before interest begins accruing
@@ -30,4 +34,6 @@ public class CreditClientResponse {
     private String parentClientName;
     /** True if this root account has one or more sub-accounts under it. */
     private Boolean isParent;
+    /** False when the client has been soft-disabled by an Owner/Admin. */
+    private Boolean isActive;
 }

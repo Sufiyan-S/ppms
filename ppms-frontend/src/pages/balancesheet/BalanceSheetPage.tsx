@@ -463,6 +463,9 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
             {detail.reportType === 'DAY' && (
               <SummaryTile label="Credit Recovered" value={fmtMoney(detail.totalCreditRecovered)} accent="green" />
             )}
+            {detail.reportType === 'DAY' && (detail.totalCashRecovery ?? 0) > 0 && (
+              <SummaryTile label="Cash Recovery" value={fmtMoney(detail.totalCashRecovery)} accent="green" sublabel="Short discrepancy repaid" />
+            )}
             <SummaryTile
               label="Cash Discrepancy"
               value={fmtMoney(Math.abs(detail.cashDiscrepancy))}

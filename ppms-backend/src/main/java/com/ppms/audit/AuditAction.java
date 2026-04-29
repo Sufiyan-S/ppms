@@ -8,6 +8,7 @@ package com.ppms.audit;
 public enum AuditAction {
     // ── User management ──────────────────────────────────────────────────────
     USER_CREATED,
+    USER_UPDATED,
     USER_DEACTIVATED,
     USER_STATUS_CHANGED,
 

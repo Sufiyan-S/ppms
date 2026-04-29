@@ -230,6 +230,12 @@ public class BalanceSheetService {
                 ? creditPaymentRepository.sumAmountByPumpIdAndDate(pumpId, reportDate)
                 : BigDecimal.ZERO;
 
+        // ── 7b. Cash recoveries for SHORT discrepancies resolved today (DAY only) ─
+        BigDecimal totalCashRecovery = !isShift
+                ? shiftRepository.sumCashRecoveriesOnDate(pumpId, reportDate)
+                : BigDecimal.ZERO;
+        if (totalCashRecovery == null) totalCashRecovery = BigDecimal.ZERO;
+
         // ── 8. Current tank stocks per fuel type ──────────────────────────────
         List<UndergroundTank> tanks = tankRepository.findByPumpId(pumpId);
         Map<FuelType, BigDecimal> currentStockByFuel = new EnumMap<>(FuelType.class);
@@ -354,6 +360,7 @@ public class BalanceSheetService {
                 .totalFleetCardCollected(totalFleetCard)
                 .totalCreditSold(totalCredit)
                 .totalCreditRecovered(creditRecovered)
+                .totalCashRecovery(totalCashRecovery.setScale(2, RoundingMode.HALF_UP))
                 .cashDiscrepancy(cashDiscrepancy)
                 .totalLitresSold(totalLitresSold.setScale(3, RoundingMode.HALF_UP))
                 .totalLitresDelivered(totalDeliveredLitres.setScale(3, RoundingMode.HALF_UP))

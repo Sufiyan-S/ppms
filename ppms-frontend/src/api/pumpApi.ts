@@ -74,6 +74,8 @@ export interface CreditClient {
   parentClientName: string | null
   /** True if this root account has sub-accounts. */
   isParent: boolean
+  /** False when the client has been soft-disabled. */
+  isActive: boolean
 }
 
 export interface CreateCreditClientRequest {
@@ -202,6 +204,9 @@ export const pumpApi = {
 
   deleteCreditClient: (pumpId: number, clientId: number) =>
     client.delete(`/pumps/${pumpId}/credit-clients/${clientId}`).then((r) => r.data),
+
+  toggleCreditClientStatus: (pumpId: number, clientId: number, isActive: boolean) =>
+    client.patch<CreditClient>(`/pumps/${pumpId}/credit-clients/${clientId}/status`, { isActive }).then((r) => r.data),
 
   reassignCreditEntry: (pumpId: number, entryId: number, toClientId: number, reason: string) =>
     client.post(`/pumps/${pumpId}/credit-ledger/entries/${entryId}/reassign`, { toClientId, reason }).then((r) => r.data),

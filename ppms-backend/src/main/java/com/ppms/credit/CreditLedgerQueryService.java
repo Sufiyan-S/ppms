@@ -32,6 +32,7 @@ public class CreditLedgerQueryService {
         List<CreditClient> clients = clientRepository.findByPumpIdOrderByNameAsc(pumpId);
         List<Long> clientIds = clients.stream().map(CreditClient::getId).toList();
         Map<Long, BigDecimal> outstandingMap = interestService.computeOutstandingBatch(clientIds);
+        Map<Long, CreditInterestService.InterestBreakdown> breakdownMap = interestService.computeInterestBreakdownBatch(clientIds);
         Map<Long, List<CreditClient>> childrenByParentId = clients.stream()
                 .filter(client -> client.getParentClientId() != null)
                 .collect(Collectors.groupingBy(CreditClient::getParentClientId));
@@ -39,7 +40,7 @@ public class CreditLedgerQueryService {
                 .collect(Collectors.toMap(CreditClient::getId, CreditClient::getName));
 
         return clients.stream()
-                .map(client -> toClientResponse(client, clients, outstandingMap, childrenByParentId, nameById))
+                .map(client -> toClientResponse(client, clients, outstandingMap, breakdownMap, childrenByParentId, nameById))
                 .sorted(Comparator
                         .comparing(CreditClientResponse::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(CreditClientResponse::getName, String.CASE_INSENSITIVE_ORDER))
@@ -63,14 +64,15 @@ public class CreditLedgerQueryService {
     }
 
     public CreditClientResponse toClientResponse(CreditClient client, List<CreditClient> allPumpClients) {
-        Map<Long, BigDecimal> outstandingByClientId = interestService.computeOutstandingBatch(
-                allPumpClients.stream().map(CreditClient::getId).toList());
+        List<Long> ids = allPumpClients.stream().map(CreditClient::getId).toList();
+        Map<Long, BigDecimal> outstandingByClientId = interestService.computeOutstandingBatch(ids);
+        Map<Long, CreditInterestService.InterestBreakdown> breakdownMap = interestService.computeInterestBreakdownBatch(ids);
         Map<Long, List<CreditClient>> childrenByParentId = allPumpClients.stream()
                 .filter(item -> item.getParentClientId() != null)
                 .collect(Collectors.groupingBy(CreditClient::getParentClientId));
         Map<Long, String> nameById = allPumpClients.stream()
                 .collect(Collectors.toMap(CreditClient::getId, CreditClient::getName));
-        return toClientResponse(client, allPumpClients, outstandingByClientId, childrenByParentId, nameById);
+        return toClientResponse(client, allPumpClients, outstandingByClientId, breakdownMap, childrenByParentId, nameById);
     }
 
     public List<CreditTransactionResponse> getStatementTransactions(Long clientId, LocalDate fromDate, LocalDate toDate) {
@@ -172,15 +174,24 @@ public class CreditLedgerQueryService {
     private CreditClientResponse toClientResponse(CreditClient client,
                                                   List<CreditClient> allPumpClients,
                                                   Map<Long, BigDecimal> outstandingByClientId,
+                                                  Map<Long, CreditInterestService.InterestBreakdown> breakdownMap,
                                                   Map<Long, List<CreditClient>> childrenByParentId,
                                                   Map<Long, String> nameById) {
         boolean isParent = client.getParentClientId() == null && childrenByParentId.containsKey(client.getId());
         BigDecimal outstanding = outstandingByClientId.getOrDefault(client.getId(), BigDecimal.ZERO);
+        CreditInterestService.InterestBreakdown breakdown = breakdownMap.getOrDefault(client.getId(), CreditInterestService.InterestBreakdown.ZERO);
+
         if (isParent) {
-            BigDecimal childOutstanding = childrenByParentId.get(client.getId()).stream()
+            List<CreditClient> children = childrenByParentId.get(client.getId());
+            BigDecimal childOutstanding = children.stream()
                     .map(child -> outstandingByClientId.getOrDefault(child.getId(), BigDecimal.ZERO))
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             outstanding = outstanding.add(childOutstanding);
+
+            CreditInterestService.InterestBreakdown childBreakdown = children.stream()
+                    .map(child -> breakdownMap.getOrDefault(child.getId(), CreditInterestService.InterestBreakdown.ZERO))
+                    .reduce(CreditInterestService.InterestBreakdown.ZERO, CreditInterestService.InterestBreakdown::add);
+            breakdown = breakdown.add(childBreakdown);
         }
 
         return CreditClientResponse.builder()
@@ -191,6 +202,8 @@ public class CreditLedgerQueryService {
                 .notes(client.getNotes())
                 .creditLimit(client.getCreditLimit())
                 .outstandingBalance(outstanding.setScale(2, RoundingMode.HALF_UP))
+                .outstandingInterest(breakdown.outstandingInterest())
+                .totalInterestRecovered(breakdown.totalInterestRecovered())
                 .monthlyInterestRate(client.getMonthlyInterestRate())
                 .interestGraceDays(client.getInterestGraceDays())
                 .createdAt(client.getCreatedAt())

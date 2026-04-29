@@ -5,7 +5,11 @@ import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.planning.StaffLeaveRepository;
+import com.ppms.pump.DispensaryUnitRepository;
+import com.ppms.shift.DiscrepancyResolution;
+import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftRepository;
+import com.ppms.shift.ShiftStatus;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import com.ppms.user.UserRole;
@@ -20,9 +24,11 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -31,11 +37,23 @@ import java.util.Map;
 @PreAuthorize("hasRole('OWNER')")
 public class PayrollController {
 
-    private final PayrollRepository    payrollRepository;
-    private final UserRepository       userRepository;
-    private final ShiftRepository      shiftRepository;
-    private final StaffLeaveRepository staffLeaveRepository;
-    private final AuditService         auditService;
+    private final PayrollRepository        payrollRepository;
+    private final UserRepository           userRepository;
+    private final ShiftRepository          shiftRepository;
+    private final StaffLeaveRepository     staffLeaveRepository;
+    private final DispensaryUnitRepository duRepository;
+    private final AuditService             auditService;
+
+    /** Lightweight summary of a shift with an unresolved discrepancy, returned to the payroll UI. */
+    public record PendingDiscrepancy(
+            Long    id,
+            String  shiftDate,
+            Integer duNumber,
+            String  duName,
+            String  discrepancyType,
+            BigDecimal discrepancyAmount,
+            String  discrepancyReason
+    ) {}
 
     /**
      * GET /api/pumps/{pumpId}/payroll
@@ -46,6 +64,41 @@ public class PayrollController {
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {
         return payrollRepository.findByPumpIdOrderByPeriodFromDescCreatedAtDesc(pumpId);
+    }
+
+    /**
+     * GET /api/pumps/{pumpId}/payroll/pending-discrepancies?userId={userId}
+     * Returns all unresolved discrepancy shifts for a user on this pump.
+     * Called by the payroll UI before generating a payroll draft so the owner can choose
+     * which discrepancies to resolve as SALARY_DEDUCTION in the current pay run.
+     */
+    @GetMapping("/{pumpId}/payroll/pending-discrepancies")
+    public List<PendingDiscrepancy> getPendingDiscrepancies(
+            @PathVariable Long pumpId,
+            @RequestParam Long userId,
+            @AuthenticationPrincipal User currentUser) {
+        List<Shift> pending = shiftRepository.findPendingDiscrepanciesByPumpAndOperator(pumpId, userId);
+
+        Set<Long> duIds = new java.util.HashSet<>();
+        pending.forEach(s -> duIds.add(s.getDuId()));
+        Map<Long, com.ppms.pump.DispensaryUnit> duById = duIds.isEmpty()
+                ? Map.of()
+                : duRepository.findAllById(duIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                com.ppms.pump.DispensaryUnit::getId, du -> du));
+
+        return pending.stream().map(s -> {
+            com.ppms.pump.DispensaryUnit du = duById.get(s.getDuId());
+            return new PendingDiscrepancy(
+                    s.getId(),
+                    s.getShiftDate().toString(),
+                    du != null ? du.getDuNumber() : null,
+                    du != null ? du.getName()     : null,
+                    s.getDiscrepancyType() != null ? s.getDiscrepancyType().name() : null,
+                    s.getDiscrepancyAmount(),
+                    s.getDiscrepancyReason()
+            );
+        }).toList();
     }
 
     /**
@@ -78,14 +131,19 @@ public class PayrollController {
         User staff = userRepository.findById(req.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Staff member not found"));
 
+        // Resolve any explicitly-selected pending discrepancies as SALARY_DEDUCTION before
+        // computing the payroll figures so that in-period resolutions are picked up by the
+        // period-scoped deduction query.
+        BigDecimal extraDeductions = resolveAndComputeExtraDeductions(pumpId, req, currentUser);
+
         // Route to the appropriate calculation based on the staff member's role.
         // OPERATOR → hourly rates per shift window (SHIFT_1 = night, SHIFT_2/3 = standard)
         // MANAGER / ADMIN / ACCOUNTANT → flat daily rate minus recorded leave days
         boolean isOperator = staff.getRole() == UserRole.OPERATOR;
 
         PayrollRecord record = isOperator
-                ? generateHourlyShiftPayroll(pumpId, req, staff)
-                : generateDailyPayroll(pumpId, req, staff);
+                ? generateHourlyShiftPayroll(pumpId, req, staff, extraDeductions)
+                : generateDailyPayroll(pumpId, req, staff, extraDeductions);
 
         PayrollRecord saved = payrollRepository.save(record);
         log.info("Payroll generated: pump={} user={} role={} type={} period={}/{} gross={} status=DRAFT",
@@ -179,10 +237,52 @@ public class PayrollController {
     }
 
     /**
+     * Resolves the explicitly-chosen shifts as SALARY_DEDUCTION and returns the deduction
+     * amount for shifts that fall OUTSIDE the payroll period (shifts inside the period are
+     * found by {@code findSalaryDeductionShifts} after resolution, so they must not be
+     * double-counted here).
+     */
+    private BigDecimal resolveAndComputeExtraDeductions(
+            Long pumpId, GeneratePayrollRequest req, User resolvedBy) {
+        List<Long> ids = req.getDeductFromSalaryShiftIds();
+        if (ids == null || ids.isEmpty()) return BigDecimal.ZERO;
+
+        List<Shift> shifts = shiftRepository.findAllById(ids);
+        BigDecimal extra = BigDecimal.ZERO;
+
+        for (Shift s : shifts) {
+            if (!s.getPumpId().equals(pumpId) || !s.getOperatorId().equals(req.getUserId())) {
+                throw new BusinessException(
+                        "Shift #" + s.getId() + " does not belong to this pump / operator.");
+            }
+            boolean isPending = s.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING
+                    || s.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING_APPROVAL;
+            if (!isPending) {
+                throw new BusinessException(
+                        "Shift #" + s.getId() + " is not in a pending discrepancy state.");
+            }
+            s.setDiscrepancyResolution(DiscrepancyResolution.SALARY_DEDUCTION);
+            s.setDiscrepancyResolvedById(resolvedBy.getId());
+            s.setDiscrepancyResolvedAt(OffsetDateTime.now());
+            s.setStatus(ShiftStatus.CLOSED_DISCREPANCY_RESOLVED);
+            shiftRepository.save(s);
+
+            // Shifts inside the period will be found by findSalaryDeductionShifts after this save;
+            // only accumulate amounts for shifts that fall outside the period to avoid double-counting.
+            boolean outsidePeriod = s.getShiftDate().isBefore(req.getPeriodFrom())
+                    || s.getShiftDate().isAfter(req.getPeriodTo());
+            if (outsidePeriod) {
+                extra = extra.add(s.getDiscrepancyAmount() != null ? s.getDiscrepancyAmount() : BigDecimal.ZERO);
+            }
+        }
+        return extra;
+    }
+
+    /**
      * Hourly-shift calculation for OPERATOR role.
      * Actual hours worked per closed shift × shift-window hourly rate.
      */
-    private PayrollRecord generateHourlyShiftPayroll(Long pumpId, GeneratePayrollRequest req, User staff) {
+    private PayrollRecord generateHourlyShiftPayroll(Long pumpId, GeneratePayrollRequest req, User staff, BigDecimal extraDeductions) {
         if (staff.getShift1HourlyRate() == null || staff.getShift1HourlyRate().compareTo(BigDecimal.ZERO) <= 0
                 || staff.getStandardHourlyRate() == null || staff.getStandardHourlyRate().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(
@@ -215,14 +315,13 @@ public class PayrollController {
                 .add(standardHours.multiply(standardRate))
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Sum discrepancy_amount for all SALARY_DEDUCTION shifts in this period.
-        // These are shortfall amounts the operator is responsible for, deducted from their pay.
-        BigDecimal deductions = shiftRepository.findSalaryDeductionShifts(
+        // Sum SALARY_DEDUCTION shifts in the period plus any out-of-period shifts resolved above.
+        BigDecimal periodDeductions = shiftRepository.findSalaryDeductionShifts(
                         pumpId, req.getUserId(), req.getPeriodFrom(), req.getPeriodTo())
                 .stream()
                 .map(s -> s.getDiscrepancyAmount() != null ? s.getDiscrepancyAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal deductions = periodDeductions.add(extraDeductions).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal netPay = gross.subtract(deductions).max(BigDecimal.ZERO);
 
@@ -247,7 +346,7 @@ public class PayrollController {
      * Daily calculation for MANAGER / ADMIN / ACCOUNTANT roles.
      * gross = (total_calendar_days − leave_days) × daily_rate
      */
-    private PayrollRecord generateDailyPayroll(Long pumpId, GeneratePayrollRequest req, User staff) {
+    private PayrollRecord generateDailyPayroll(Long pumpId, GeneratePayrollRequest req, User staff, BigDecimal extraDeductions) {
         if (staff.getDailyRate() == null || staff.getDailyRate().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(
                     staff.getFullName() + " does not have a daily rate configured. " +
@@ -263,12 +362,12 @@ public class PayrollController {
         BigDecimal gross     = dailyRate.multiply(BigDecimal.valueOf(daysWorked))
                 .setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal deductions = shiftRepository.findSalaryDeductionShifts(
+        BigDecimal periodDeductions2 = shiftRepository.findSalaryDeductionShifts(
                         pumpId, req.getUserId(), req.getPeriodFrom(), req.getPeriodTo())
                 .stream()
                 .map(s -> s.getDiscrepancyAmount() != null ? s.getDiscrepancyAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal deductions = periodDeductions2.add(extraDeductions).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal netPay = gross.subtract(deductions).max(BigDecimal.ZERO);
 

@@ -17,6 +17,14 @@ export interface StaffMember {
   standardHourlyRate: number | null  // OPERATOR — day shifts
 }
 
+export interface UpdateStaffDetailsRequest {
+  fullName?: string
+  phoneNumber?: string
+  role?: 'OPERATOR' | 'MANAGER' | 'ADMIN' | 'ACCOUNTANT'
+  gender?: UserGender
+  nightShiftConsent?: boolean
+}
+
 export interface CreateUserRequest {
   fullName: string
   phoneNumber: string
@@ -46,6 +54,10 @@ export const userApi = {
   // Update the currently logged-in user's own display name
   updateMyProfile: (fullName: string) =>
     client.patch<StaffMember>('/users/me/profile', { fullName }).then((r) => r.data),
+
+  // Update name, phone, or role for a staff member (Owner / Admin)
+  updateStaffDetails: (userId: number, req: UpdateStaffDetailsRequest) =>
+    client.patch<StaffMember>(`/users/${userId}/details`, req).then((r) => r.data),
 
   // Set pay rates for a staff member (Owner only).
   // Operators: pass shift1HourlyRate + standardHourlyRate.

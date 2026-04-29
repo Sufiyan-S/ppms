@@ -49,7 +49,9 @@ public class CreditClientController {
         List<CreditClientResponse> clients = allClients.stream()
                 .map(c -> toResponse(c, nameById, idsWithChildren))
                 .sorted(Comparator
-                        .comparing(CreditClientResponse::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                        // Active clients first, disabled last
+                        .comparing((CreditClientResponse r) -> Boolean.TRUE.equals(r.getIsActive()) ? 0 : 1)
+                        .thenComparing(CreditClientResponse::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(CreditClientResponse::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
 
@@ -195,6 +197,41 @@ public class CreditClientController {
     }
 
     /**
+     * PATCH /api/pumps/{pumpId}/credit-clients/{clientId}/status
+     * Enables or disables a credit client (soft toggle). Owner/Admin/Manager only.
+     * Disabled clients are hidden from shift credit-entry dropdowns and shown at the
+     * bottom of the Clients list. All historical data (ledger, entries) is preserved.
+     * Disabling a parent also implicitly hides it from dropdowns — sub-accounts retain
+     * their own individual active flags.
+     */
+    @PatchMapping("/{clientId}/status")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public ResponseEntity<CreditClientResponse> toggleStatus(
+            @PathVariable Long pumpId,
+            @PathVariable Long clientId,
+            @RequestBody Map<String, Boolean> body) {
+
+        Boolean active = body.get("isActive");
+        if (active == null) throw new com.ppms.common.exception.BusinessException("isActive is required");
+
+        CreditClient client = creditClientRepository.findById(clientId)
+                .orElseThrow(() -> new com.ppms.common.exception.BusinessException("Credit client not found"));
+
+        if (!client.getPumpId().equals(pumpId)) {
+            throw new com.ppms.common.exception.BusinessException("Client does not belong to this pump");
+        }
+
+        client.setActive(active);
+        client = creditClientRepository.save(client);
+
+        Map<Long, String> nameById = creditClientRepository.findByPumpIdOrderByNameAsc(pumpId)
+                .stream().collect(Collectors.toMap(CreditClient::getId, CreditClient::getName));
+        boolean hasChildren = !creditClientRepository.findByParentClientId(clientId).isEmpty();
+
+        return ResponseEntity.ok(toResponse(client, nameById, hasChildren ? Set.of(clientId) : Set.of()));
+    }
+
+    /**
      * DELETE /api/pumps/{pumpId}/credit-clients/{clientId}
      * Removes a credit client. Restricted to OWNER and ADMIN.
      * Blocked if the client has sub-accounts — remove those first.
@@ -257,6 +294,7 @@ public class CreditClientController {
                 .parentClientId(c.getParentClientId())
                 .parentClientName(c.getParentClientId() != null ? nameById.get(c.getParentClientId()) : null)
                 .isParent(isParent)
+                .isActive(c.isActive())
                 .build();
     }
 }

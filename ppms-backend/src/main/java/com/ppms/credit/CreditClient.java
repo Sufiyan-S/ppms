@@ -87,6 +87,15 @@ public class CreditClient {
     @Column(name = "parent_client_id")
     private Long parentClientId;
 
+    /**
+     * False when the owner has soft-disabled this client.
+     * Disabled clients are excluded from shift credit-entry dropdowns and sorted
+     * to the bottom of the Clients list. All historical data is preserved.
+     */
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean isActive = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

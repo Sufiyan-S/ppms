@@ -37,6 +37,8 @@ public class BalanceSheetDetailResponse {
     private BigDecimal totalFleetCardCollected;
     private BigDecimal totalCreditSold;
     private BigDecimal totalCreditRecovered;
+    /** Cash physically returned by operators for SHORT discrepancies resolved via CASH_RECOVERY on the report date. DAY reports only; 0 for SHIFT reports. */
+    private BigDecimal totalCashRecovery;
     private BigDecimal cashDiscrepancy;
 
     // ── Fuel / profit summary ─────────────────────────────────────────────────

@@ -115,16 +115,20 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
      * Returns closed shifts for an operator in a date range where the discrepancy was resolved
      * via SALARY_DEDUCTION. Used by PayrollController to compute payroll deductions:
      * deductions = SUM(discrepancy_amount) for these shifts.
+     *
+     * Native query required: Hibernate maps the JPQL enum literal to
+     * 'SALARY_DEDUCTION'::DiscrepancyResolution (Java class name), but the PostgreSQL
+     * type is discrepancy_resolution (snake_case), causing a type-not-found error.
      */
-    @Query("""
-            SELECT s FROM Shift s
-            WHERE s.pumpId = :pumpId
-              AND s.operatorId = :operatorId
-              AND s.shiftDate BETWEEN :from AND :to
-              AND s.discrepancyResolution = com.ppms.shift.DiscrepancyResolution.SALARY_DEDUCTION
-              AND s.discrepancyAmount IS NOT NULL
-            ORDER BY s.shiftDate ASC
-            """)
+    @Query(value = """
+            SELECT * FROM shifts
+            WHERE pump_id = :pumpId
+              AND operator_id = :operatorId
+              AND shift_date BETWEEN :from AND :to
+              AND discrepancy_resolution = 'SALARY_DEDUCTION'::discrepancy_resolution
+              AND discrepancy_amount IS NOT NULL
+            ORDER BY shift_date ASC
+            """, nativeQuery = true)
     List<Shift> findSalaryDeductionShifts(
             @Param("pumpId") Long pumpId,
             @Param("operatorId") Long operatorId,
@@ -273,6 +277,37 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             WHERE s.shiftDefinitionId IN :definitionIds
             """)
     boolean existsByShiftDefinitionIdIn(@Param("definitionIds") List<Long> definitionIds);
+
+    /**
+     * All shifts for a user on a pump that still have an unresolved discrepancy.
+     * Used by the payroll generation flow to present the owner with pending discrepancies
+     * and offer to resolve them as SALARY_DEDUCTION in the current payroll run.
+     */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.operatorId = :operatorId
+              AND s.status IN ('CLOSED_DISCREPANCY_PENDING', 'CLOSED_DISCREPANCY_PENDING_APPROVAL')
+            ORDER BY s.shiftDate DESC
+            """)
+    List<Shift> findPendingDiscrepanciesByPumpAndOperator(
+            @Param("pumpId") Long pumpId, @Param("operatorId") Long operatorId);
+
+    /**
+     * Total cash recoveries for SHORT discrepancies resolved via CASH_RECOVERY on a given IST calendar date.
+     * Used by DAY balance sheets to show inbound cash from operator repayments on the resolution day.
+     * Native query required to avoid Hibernate's NAMED_ENUM type-cast issue (see findSalaryDeductionShifts).
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(cash_recovery_amount), 0)
+            FROM shifts
+            WHERE pump_id = :pumpId
+              AND discrepancy_resolution = 'CASH_RECOVERY'::discrepancy_resolution
+              AND cash_recovery_amount IS NOT NULL
+              AND cash_recovery_amount > 0
+              AND DATE(discrepancy_resolved_at AT TIME ZONE 'Asia/Kolkata') = :date
+            """, nativeQuery = true)
+    BigDecimal sumCashRecoveriesOnDate(@Param("pumpId") Long pumpId, @Param("date") LocalDate date);
 
     /**
      * Counts shifts for the given nozzle, business date, and shift definition.
