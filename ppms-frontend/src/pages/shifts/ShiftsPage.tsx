@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ChevronDown, Plus, History, Printer } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
 import type { ResolveDiscrepancyRequest } from '../../api/shiftApi'
@@ -1206,6 +1206,7 @@ const FUEL_LABELS_MAP: Record<string, string> = {
 
 function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { data: creditClients = [] } = useQuery({
     queryKey: ['creditClients', shift.pumpId],
     queryFn: () => pumpApi.getCreditClients(shift.pumpId),
@@ -1383,7 +1384,16 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
             {showDropdown && rootClients.length > 0 && (
               <div className="ui-card absolute top-full left-0 right-0 z-50 mt-0.5 max-h-36 overflow-y-auto p-1">
                 {filtered.length === 0 ? (
-                  <p className="ui-empty px-3 py-2">No match — add client in Setup.</p>
+                  <button
+                    type="button"
+                    onMouseDown={() => navigate('/dashboard/credit?tab=clients')}
+                    className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-blue-50 flex items-center justify-between gap-2"
+                  >
+                    <span className="text-slate-400 text-xs truncate">
+                      No match{clientSearch.trim() ? ` for "${clientSearch.trim()}"` : ''}
+                    </span>
+                    <span className="text-xs text-blue-600 font-medium shrink-0">+ Add client →</span>
+                  </button>
                 ) : (
                   filtered.map((c) => (
                     <button key={c.id} type="button"

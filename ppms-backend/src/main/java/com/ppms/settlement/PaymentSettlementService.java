@@ -29,6 +29,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaymentSettlementService {
 
+    private static final SettlementPaymentType[] SETTLEMENT_TYPES = {
+        SettlementPaymentType.UPI, SettlementPaymentType.CARD, SettlementPaymentType.FLEET_CARD
+    };
+
     private final PaymentSettlementRepository    settlementRepository;
     private final PaymentSettlementConfigRepository configRepository;
     private final ShiftRepository                shiftRepository;
@@ -91,9 +95,9 @@ public class PaymentSettlementService {
         private BigDecimal upiCollected;       // from closed shifts
         private BigDecimal cardCollected;
         private BigDecimal fleetCardCollected;
-        private BigDecimal upiSettled;         // from recorded settlements
-        private BigDecimal cardSettled;
-        private BigDecimal fleetCardSettled;
+        private BigDecimal upiSettled;         // FIFO-allocated from recorded settlements
+        private BigDecimal cardSettled;        // FIFO-allocated from recorded settlements
+        private BigDecimal fleetCardSettled;   // FIFO-allocated from recorded settlements
         private List<SettlementResponse> settlements; // individual records for this date
     }
 
@@ -273,10 +277,15 @@ public class PaymentSettlementService {
      *  - Shift collections (UPI/Card/Fleet grouped by shiftDate)
      *  - Recorded settlement entries (grouped by settlementDate)
      * Dates with no activity on either side are omitted.
+     *
+     * Settled amounts are computed using FIFO allocation: when a settlement is
+     * received on date D it first clears the oldest outstanding pending amounts
+     * before being credited to D's own collections. This means a ₹79K settlement
+     * received on May 4 will show May 3's pending as cleared, not just May 4's.
      */
     @Transactional(readOnly = true)
     public PagedResponse<DailySummaryEntry> getDailySummary(Long pumpId, LocalDate from, LocalDate to, Pageable pageable) {
-        // Per-date shift collections
+        // Per-date shift collections within the requested window
         List<Object[]> rows = shiftRepository.collectionsGroupedByDate(pumpId, from, to);
         Map<LocalDate, BigDecimal[]> collections = new java.util.LinkedHashMap<>();
         for (Object[] row : rows) {
@@ -288,7 +297,7 @@ public class PaymentSettlementService {
             });
         }
 
-        // All settlement records in range
+        // All settlement records in the window
         List<PaymentSettlement> allSettlements =
                 settlementRepository.findByPumpIdAndSettlementDateBetweenOrderBySettlementDateAscCreatedAtAsc(pumpId, from, to);
 
@@ -300,31 +309,102 @@ public class PaymentSettlementService {
         Map<LocalDate, List<PaymentSettlement>> settlementsByDate = allSettlements.stream()
                 .collect(Collectors.groupingBy(PaymentSettlement::getSettlementDate));
 
-        // Union of dates from both sides, sorted ascending
+        // Union of dates from both sides — TreeSet iterates ascending by default
         java.util.TreeSet<LocalDate> allDates = new java.util.TreeSet<>();
         allDates.addAll(collections.keySet());
         allDates.addAll(settlementsByDate.keySet());
 
+        // ── FIFO baseline: cumulative state just before the window starts ─────────
+        // pool[i]         = surplus settlement money carried in from before this window
+        //                   (happens when prior settlements exceeded prior collections)
+        // pendingCarry[i] = collections from before this window not yet covered by any settlement
+        //                   (oldest debt — must be consumed before current dates are credited)
+        // Indices: 0=UPI, 1=CARD, 2=FLEET_CARD
+        LocalDate dayBefore = from.isAfter(LocalDate.MIN) ? from.minusDays(1) : LocalDate.MIN;
+        BigDecimal prevCollectedUpi   = orZero(shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, dayBefore));
+        BigDecimal prevCollectedCard  = orZero(shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, dayBefore));
+        BigDecimal prevCollectedFleet = orZero(shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, dayBefore));
+        BigDecimal prevSettledUpi     = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.UPI,        dayBefore));
+        BigDecimal prevSettledCard    = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.CARD,       dayBefore));
+        BigDecimal prevSettledFleet   = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.FLEET_CARD, dayBefore));
+
+        BigDecimal[] pool         = {
+            prevSettledUpi  .subtract(prevCollectedUpi  ).max(BigDecimal.ZERO),
+            prevSettledCard .subtract(prevCollectedCard ).max(BigDecimal.ZERO),
+            prevSettledFleet.subtract(prevCollectedFleet).max(BigDecimal.ZERO)
+        };
+        BigDecimal[] pendingCarry = {
+            prevCollectedUpi  .subtract(prevSettledUpi  ).max(BigDecimal.ZERO),
+            prevCollectedCard .subtract(prevSettledCard ).max(BigDecimal.ZERO),
+            prevCollectedFleet.subtract(prevSettledFleet).max(BigDecimal.ZERO)
+        };
+
+        // ── FIFO allocation: process each settlement record chronologically ─────────
+        // For each settlement, first clear pre-window pending debt, then apply to the
+        // oldest outstanding window collections. This means a settlement recorded on
+        // May 4 will correctly show April 29's pending as cleared in April 29's row.
+        Map<LocalDate, BigDecimal[]> fifoSettled = new java.util.LinkedHashMap<>();
+        Map<LocalDate, BigDecimal[]> outstanding = new java.util.LinkedHashMap<>();
+        for (LocalDate date : allDates) {
+            BigDecimal[] col = collections.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+            outstanding.put(date, new BigDecimal[]{col[0], col[1], col[2]});
+            fifoSettled.put(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        }
+
+        // Pre-window surplus (settled > collected before window) clears oldest dates first
+        for (int i = 0; i < 3; i++) {
+            BigDecimal surplus = pool[i];
+            for (LocalDate date : allDates) {
+                if (surplus.compareTo(BigDecimal.ZERO) <= 0) break;
+                BigDecimal[] out = outstanding.get(date);
+                BigDecimal applyAmt = out[i].min(surplus);
+                if (applyAmt.compareTo(BigDecimal.ZERO) > 0) {
+                    out[i] = out[i].subtract(applyAmt);
+                    fifoSettled.get(date)[i] = fifoSettled.get(date)[i].add(applyAmt);
+                    surplus = surplus.subtract(applyAmt);
+                }
+            }
+        }
+
+        // allSettlements is ordered settlementDate asc, createdAt asc — correct FIFO order
+        for (PaymentSettlement s : allSettlements) {
+            int typeIdx = typeIndex(s.getPaymentType());
+            BigDecimal remaining = s.getAmountReceived();
+
+            // Clear pre-window pending carry (oldest debt) before touching window dates
+            BigDecimal drain = pendingCarry[typeIdx].min(remaining);
+            remaining = remaining.subtract(drain);
+            pendingCarry[typeIdx] = pendingCarry[typeIdx].subtract(drain);
+
+            // Apply to oldest outstanding window collections
+            for (LocalDate date : allDates) {
+                if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+                BigDecimal[] out = outstanding.get(date);
+                BigDecimal applyAmt = out[typeIdx].min(remaining);
+                if (applyAmt.compareTo(BigDecimal.ZERO) > 0) {
+                    out[typeIdx] = out[typeIdx].subtract(applyAmt);
+                    fifoSettled.get(date)[typeIdx] = fifoSettled.get(date)[typeIdx].add(applyAmt);
+                    remaining = remaining.subtract(applyAmt);
+                }
+            }
+            // remaining > 0: over-settlement; wallet balance reflects this, no date allocated
+        }
+
+        // ── Build response (newest first for display) ─────────────────────────────
         List<DailySummaryEntry> result = new java.util.ArrayList<>();
         for (LocalDate date : allDates.descendingSet()) {
             BigDecimal[] col = collections.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+            BigDecimal[] fs  = fifoSettled.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
             List<PaymentSettlement> daySettlements = settlementsByDate.getOrDefault(date, List.of());
-
-            BigDecimal upiSettled   = daySettlements.stream().filter(s -> s.getPaymentType() == SettlementPaymentType.UPI)
-                    .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal cardSettled  = daySettlements.stream().filter(s -> s.getPaymentType() == SettlementPaymentType.CARD)
-                    .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fleetSettled = daySettlements.stream().filter(s -> s.getPaymentType() == SettlementPaymentType.FLEET_CARD)
-                    .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
 
             result.add(DailySummaryEntry.builder()
                     .date(date.toString())
                     .upiCollected(col[0].setScale(2, RoundingMode.HALF_UP))
                     .cardCollected(col[1].setScale(2, RoundingMode.HALF_UP))
                     .fleetCardCollected(col[2].setScale(2, RoundingMode.HALF_UP))
-                    .upiSettled(upiSettled.setScale(2, RoundingMode.HALF_UP))
-                    .cardSettled(cardSettled.setScale(2, RoundingMode.HALF_UP))
-                    .fleetCardSettled(fleetSettled.setScale(2, RoundingMode.HALF_UP))
+                    .upiSettled(fs[0].setScale(2, RoundingMode.HALF_UP))
+                    .cardSettled(fs[1].setScale(2, RoundingMode.HALF_UP))
+                    .fleetCardSettled(fs[2].setScale(2, RoundingMode.HALF_UP))
                     .settlements(daySettlements.stream().map(s -> toResponse(s, names)).toList())
                     .build());
         }
@@ -369,6 +449,13 @@ public class PaymentSettlementService {
                 .alertTime(String.format("%02d:%02d", cfg.getAlertTime().getHour(), cfg.getAlertTime().getMinute()))
                 .enabled(cfg.isEnabled())
                 .build();
+    }
+
+    private static int typeIndex(SettlementPaymentType type) {
+        for (int i = 0; i < SETTLEMENT_TYPES.length; i++) {
+            if (SETTLEMENT_TYPES[i] == type) return i;
+        }
+        throw new IllegalStateException("Unknown settlement type: " + type);
     }
 
     private BigDecimal orZero(BigDecimal v) {

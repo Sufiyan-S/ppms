@@ -1,4 +1,5 @@
 import { useState, useDeferredValue } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -1770,7 +1771,12 @@ export default function CreditPage() {
   const toggleParent = (id: number) =>
     setExpandedParentId(prev => prev === id ? null : id)
 
-  const [activeTab, setActiveTab] = useState<'ledger' | 'clients'>(() => canSeeLedger ? 'ledger' : 'clients')
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState<'ledger' | 'clients'>(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'clients') return 'clients'
+    return canSeeLedger ? 'ledger' : 'clients'
+  })
 
   const pumpId = selectedPumpId
 

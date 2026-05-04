@@ -8,6 +8,7 @@ import { SearchableSelect } from '../../components/SearchableSelect'
 import { ModalPortal } from '../../components/ModalPortal'
 import { maskPhone } from '../../utils/maskPhone'
 import { parseApiError } from '../../utils/apiError'
+import { useNavigate } from 'react-router-dom'
 
 interface Props {
   shift: Shift
@@ -43,7 +44,9 @@ let nextRowId = 1
 
 export default function CloseShiftModal({ shift, onClose }: Props) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [noChangeNozzles, setNoChangeNozzles] = useState<Set<number>>(new Set())
 
   /** Per-nozzle end readings: nozzleId → raw string input */
   const [endReadings, setEndReadings] = useState<Record<number, string>>(() =>
@@ -112,6 +115,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
 
   const readingsComplete = shift.fuelReadings.every((r) => (endReadings[r.nozzleId] ?? '') !== '')
   const readingsBelowStart = shift.fuelReadings.some((r) => {
+    if (noChangeNozzles.has(r.nozzleId)) return false
     const v = endReadings[r.nozzleId] ?? ''
     return v !== '' && Number(v) < r.startReading
   })
@@ -145,6 +149,17 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
 
   const priceForFuelType = (ft: string): number | null =>
     shift.fuelReadings.find((r) => r.fuelType === ft)?.priceSnapshot ?? null
+
+  const toggleNoChange = (nozzleId: number, startReading: number) => {
+    const wasNoChange = noChangeNozzles.has(nozzleId)
+    setNoChangeNozzles(prev => {
+      const next = new Set(prev)
+      if (wasNoChange) next.delete(nozzleId)
+      else next.add(nozzleId)
+      return next
+    })
+    setEndReadings(prev => ({ ...prev, [nozzleId]: wasNoChange ? '' : String(startReading) }))
+  }
 
   const selectClient = (rowId: number, clientId: number, clientName: string) =>
     setCreditRows((rows) => rows.map((r) =>
@@ -290,6 +305,17 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
     closeMutation.mutate(req)
   }
 
+  const handleRoundOff = () => {
+    const roundedDue = Math.round(totalDue)
+    const delta = roundedDue - totalCollected
+    const newCash = emptyNum(cash) + delta
+    if (newCash < 0) {
+      setServerError('Round off not possible: cash amount would become negative.')
+      return
+    }
+    setCash(newCash === 0 ? '' : Number.isInteger(newCash) ? String(newCash) : newCash.toFixed(2))
+  }
+
   const fmt = (n: number) =>
     n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -351,8 +377,9 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
             <Section label="1" title="End Meter Readings">
               <div className={`grid gap-3 ${shift.fuelReadings.length > 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 {perFuelSales.map(({ reading, sold }) => {
+                  const isNoChange = noChangeNozzles.has(reading.nozzleId)
                   const endVal = endReadings[reading.nozzleId] ?? ''
-                  const isInvalid = endVal !== '' && Number(endVal) < reading.startReading
+                  const isInvalid = !isNoChange && endVal !== '' && Number(endVal) < reading.startReading
                   return (
                     <ReadingField
                       key={reading.nozzleId}
@@ -364,6 +391,8 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                       onChange={(v) => setEndReadings((prev) => ({ ...prev, [reading.nozzleId]: v }))}
                       unitLabel={FUEL_UNIT[reading.fuelType] ?? 'L'}
                       isInvalid={isInvalid}
+                      noChange={isNoChange}
+                      onNoChangeToggle={() => toggleNoChange(reading.nozzleId, reading.startReading)}
                     />
                   )
                 })}
@@ -379,24 +408,8 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
               <p className="text-2xl font-bold text-blue-700">₹{fmt(totalDue)}</p>
             </div>
 
-            {/* ── Step 2: Payment Collected ─────────────────────────────── */}
-            <Section label="2" title="Payment Collected">
-              <div className="grid grid-cols-2 gap-3">
-                <PaymentField label="Cash (₹)"        value={cash}      onChange={setCash} />
-                <PaymentField label="UPI (₹)"         value={upi}       onChange={setUpi} />
-                <PaymentField label="Card (₹)"        value={card}      onChange={setCard} />
-                <PaymentField label="Fleet Card (₹)"  value={fleetCard} onChange={setFleetCard} />
-              </div>
-              {creditTotal > 0 && (
-                <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mt-2">
-                  <span className="text-xs font-medium text-orange-700">Credit Sales Total</span>
-                  <span className="text-sm font-bold text-orange-800">₹{fmt(creditTotal)}</span>
-                </div>
-              )}
-            </Section>
-
-            {/* ── Step 3: Credit Sales ──────────────────────────────────── */}
-            <Section label="3" title="Credit Sales" optional>
+            {/* ── Step 2: Credit Sales ─────────────────────────────────── */}
+            <Section label="2" title="Credit Sales" optional>
               <div className="border border-orange-200 rounded-xl overflow-visible">
 
                 {/* Pre-recorded entries (saved mid-shift) — with edit / delete */}
@@ -613,9 +626,16 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                                 {row.showDropdown && rootClients.length > 0 && (
                                   <div className="ui-card absolute top-full left-0 right-0 z-50 mt-0.5 max-h-36 overflow-y-auto p-1">
                                     {filtered.length === 0 ? (
-                                      <p className="ui-empty px-3 py-2">
-                                        No match — ask Owner to add this client in Setup.
-                                      </p>
+                                      <button
+                                        type="button"
+                                        onMouseDown={() => navigate('/dashboard/credit?tab=clients')}
+                                        className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-blue-50 flex items-center justify-between gap-2"
+                                      >
+                                        <span className="text-slate-400 text-xs truncate">
+                                          No match{row.clientSearch.trim() ? ` for "${row.clientSearch.trim()}"` : ''}
+                                        </span>
+                                        <span className="text-xs text-blue-600 font-medium shrink-0">+ Add client →</span>
+                                      </button>
                                     ) : (
                                       filtered.map((c) => (
                                         <button key={c.id} type="button"
@@ -847,6 +867,22 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
               </div>
             </Section>
 
+            {/* ── Step 3: Payment Collected ────────────────────────────── */}
+            <Section label="3" title="Payment Collected">
+              <div className="grid grid-cols-2 gap-3">
+                <PaymentField label="UPI (₹)"         value={upi}       onChange={setUpi} />
+                <PaymentField label="Card (₹)"        value={card}      onChange={setCard} />
+                <PaymentField label="Fleet Card (₹)"  value={fleetCard} onChange={setFleetCard} />
+                <PaymentField label="Cash (₹)"        value={cash}      onChange={setCash} />
+              </div>
+              {creditTotal > 0 && (
+                <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mt-2">
+                  <span className="text-xs font-medium text-orange-700">Credit Sales Total</span>
+                  <span className="text-sm font-bold text-orange-800">₹{fmt(creditTotal)}</span>
+                </div>
+              )}
+            </Section>
+
             {/* ── Balance status card ───────────────────────────────────── */}
             {paymentTouched && readingsComplete && (
               <BalanceCard totalDue={totalDue} totalCollected={totalCollected} diff={diff} fmt={fmt} />
@@ -855,19 +891,29 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
             {/* ── Discrepancy reason ────────────────────────────────────── */}
             {hasDiscrepancy && (
               <div className={`border-2 rounded-xl overflow-hidden ${diff < 0 ? 'border-red-300' : 'border-amber-300'}`}>
-                <div className={`px-4 py-3 flex items-start gap-3 ${diff < 0 ? 'bg-red-50' : 'bg-amber-50'}`}>
-                  <div className={`shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${diff < 0 ? 'bg-red-500' : 'bg-amber-500'}`}>
-                    !
+                <div className={`px-4 py-3 flex items-start justify-between gap-3 ${diff < 0 ? 'bg-red-50' : 'bg-amber-50'}`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${diff < 0 ? 'bg-red-500' : 'bg-amber-500'}`}>
+                      !
+                    </div>
+                    <div>
+                      <p className={`text-sm font-semibold ${diff < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                        {diff < 0 ? `Shift is SHORT by ₹${fmt(Math.abs(diff))}` : `Shift has EXCESS of ₹${fmt(diff)}`}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {diff < 0 ? 'The operator collected less than the amount due.' : 'The operator collected more than the amount due.'}
+                        {' '}Add a reason below to close this shift.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${diff < 0 ? 'text-red-700' : 'text-amber-700'}`}>
-                      {diff < 0 ? `Shift is SHORT by ₹${fmt(Math.abs(diff))}` : `Shift has EXCESS of ₹${fmt(diff)}`}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {diff < 0 ? 'The operator collected less than the amount due.' : 'The operator collected more than the amount due.'}
-                      {' '}Add a reason below to close this shift.
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRoundOff}
+                    className="shrink-0 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 transition-colors"
+                    title={`Adjust cash to ₹${Math.round(totalDue).toLocaleString('en-IN')}`}
+                  >
+                    Round Off → ₹{Math.round(totalDue).toLocaleString('en-IN')}
+                  </button>
                 </div>
                 <div className="px-4 py-3 bg-white">
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">
@@ -951,43 +997,64 @@ function Section({ label, title, optional = false, children }: {
   )
 }
 
-function ReadingField({ label, startValue, soldUnits, pricePerUnit, value, onChange, unitLabel, isInvalid }: {
+function ReadingField({ label, startValue, soldUnits, pricePerUnit, value, onChange, unitLabel, isInvalid, noChange, onNoChangeToggle }: {
   label: string; startValue: number; soldUnits: number; pricePerUnit: number;
   value: string; onChange: (v: string) => void; unitLabel: string; isInvalid?: boolean
+  noChange?: boolean; onNoChangeToggle?: () => void
 }) {
   const saleValue = soldUnits > 0 ? soldUnits * pricePerUnit : null
 
   return (
     <div>
-      <label className="ui-label">{label}</label>
+      <div className="flex items-center justify-between mb-0.5">
+        <label className="ui-label mb-0">{label}</label>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={noChange ?? false}
+            onChange={onNoChangeToggle}
+            className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          />
+          <span className="text-xs text-slate-500">No change</span>
+        </label>
+      </div>
       <div className="flex flex-col gap-0.5 text-xs text-slate-400 mb-1">
         <span>Start: <span className="font-medium text-slate-500">{startValue}</span></span>
-        {value !== '' && !isInvalid && soldUnits > 0 && (
-          <span className="text-slate-500">
-            <span className="font-medium">{value}</span>
-            {' − '}
-            <span className="font-medium">{startValue}</span>
-            {' = '}
-            <span className="font-semibold text-emerald-600">{soldUnits.toFixed(2)} {unitLabel}</span>
-          </span>
-        )}
-        {soldUnits > 0 && (
-          <span className="text-blue-500 font-medium">
-            {soldUnits.toFixed(2)} {unitLabel} × ₹{pricePerUnit}
-            {saleValue != null && (
-              <span className="text-emerald-600"> = ₹{saleValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+        {noChange ? (
+          <span className="text-slate-400 italic">Reading unchanged — 0 {unitLabel} sold this shift</span>
+        ) : (
+          <>
+            {value !== '' && !isInvalid && soldUnits > 0 && (
+              <span className="text-slate-500">
+                <span className="font-medium">{value}</span>
+                {' − '}
+                <span className="font-medium">{startValue}</span>
+                {' = '}
+                <span className="font-semibold text-emerald-600">{soldUnits.toFixed(2)} {unitLabel}</span>
+              </span>
             )}
-          </span>
+            {soldUnits > 0 && (
+              <span className="text-blue-500 font-medium">
+                {soldUnits.toFixed(2)} {unitLabel} × ₹{pricePerUnit}
+                {saleValue != null && (
+                  <span className="text-emerald-600"> = ₹{saleValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                )}
+              </span>
+            )}
+          </>
         )}
       </div>
       <input type="number" step="0.01" min="0" required value={value}
+        disabled={noChange}
         onChange={(e) => onChange(e.target.value)}
         className={`text-sm ${
-          isInvalid
+          noChange
+            ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+            : isInvalid
             ? 'border-red-400 bg-red-50 focus:ring-red-400'
             : 'border-slate-300 focus:ring-blue-500'
         }`}
-        placeholder="Enter end reading"
+        placeholder={noChange ? 'Same as opening' : 'Enter end reading'}
       />
       {isInvalid && (
         <p className="ui-error-text mt-1">
