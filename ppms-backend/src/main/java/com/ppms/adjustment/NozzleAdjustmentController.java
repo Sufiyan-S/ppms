@@ -36,7 +36,7 @@ public class NozzleAdjustmentController {
             @PathVariable Long nozzleId,
             @AuthenticationPrincipal User currentUser) {
         requireOwnerOrAdmin(currentUser);
-        return adjustmentService.getAdjustments(nozzleId);
+        return adjustmentService.getAdjustments(pumpId, nozzleId);
     }
 
     // ── Fuel dip entries ──────────────────────────────────────────────────────

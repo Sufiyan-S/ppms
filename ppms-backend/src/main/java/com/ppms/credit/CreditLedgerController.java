@@ -43,6 +43,7 @@ public class CreditLedgerController {
      * Returns all credit clients for the pump with their current outstanding balance.
      */
     @GetMapping
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<CreditClientResponse>> getLedgerSummary(@PathVariable Long pumpId) {
         return ResponseEntity.ok(queryService.getLedgerSummary(pumpId));
     }

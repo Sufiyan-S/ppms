@@ -77,7 +77,7 @@ public class PaymentSettlementController {
      * Records a new settlement entry (amount received in bank for a given date).
      */
     @PostMapping("/{pumpId}/settlements")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentSettlementService.SettlementResponse record(
             @PathVariable Long pumpId,

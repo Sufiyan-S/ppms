@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { balanceSheetApi } from '../../api/balanceSheetApi'
 import { pumpApi } from '../../api/pumpApi'
+import { parseApiError } from '../../utils/apiError'
 import type {
   BalanceSheetSummary,
   BsFuelLine,
@@ -115,7 +116,7 @@ function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
       onClose()
     },
     onError: (err: any) => {
-      const msg: string = err?.response?.data?.message ?? 'Failed to generate balance sheet'
+      const msg: string = parseApiError(err, 'Failed to generate balance sheet')
       // Backend returns "already exists" — offer the user a re-generate option
       if (msg.includes('already exists')) {
         setConfirmRegenerate(true)
@@ -313,7 +314,7 @@ function DeleteConfirmModal({ report, pumpId, onClose }: DeleteConfirmProps) {
       addToast('Balance sheet deleted', 'success')
       onClose()
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete balance sheet', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to delete balance sheet'), 'error'),
   })
 
   return (

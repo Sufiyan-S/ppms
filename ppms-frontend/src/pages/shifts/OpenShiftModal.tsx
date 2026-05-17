@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
@@ -6,6 +6,7 @@ import { userApi } from '../../api/userApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { DUOption, NozzleDetail, OpenShiftRequest, Shift } from '../../types/shift'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 /** Returns true if the given "HH:MM:SS" time window (possibly crossing midnight) contains `nowHHMM`. */
 function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boolean, nowHHMM: string): boolean {
@@ -30,9 +31,11 @@ interface Props {
   pumpId: number
   activeShifts: Shift[]
   onClose: () => void
+  prefilledDuId?: number
+  prefilledNozzleIds?: number[]
 }
 
-export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props) {
+export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefilledDuId, prefilledNozzleIds }: Props) {
   const queryClient = useQueryClient()
 
   const [selectedDU, setSelectedDU]                 = useState<DUOption | null>(null)
@@ -57,6 +60,19 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
     queryFn:  () => userApi.getOperators(pumpId),
   })
 
+  // Auto-select DU and nozzles when opened from a just-closed shift
+  useEffect(() => {
+    if (!prefilledDuId || !dus.length || selectedDU) return
+    const du = dus.find(d => d.id === prefilledDuId && d.status === 'ACTIVE')
+    if (!du) return
+    setSelectedDU(du)
+    const ids = new Set(
+      (prefilledNozzleIds ?? []).filter(id => du.nozzles.some(n => n.id === id) && !busyNozzleIds.has(id))
+    )
+    setSelectedNozzleIds(ids)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dus])
+
   const { data: activeDefinitions = [] } = useQuery({
     queryKey: ['shift-definitions-active', pumpId],
     queryFn:  () => shiftDefinitionApi.getActive(pumpId),
@@ -75,7 +91,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose }: Props)
       onClose()
     },
     onError: (err: any) =>
-      setServerError(err?.response?.data?.message ?? 'Failed to open shift. Please try again.'),
+      setServerError(parseApiError(err, 'Failed to open shift. Please try again.')),
   })
 
   // Only ACTIVE DUs are available for shift open

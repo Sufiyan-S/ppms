@@ -4,6 +4,7 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.fuel.FuelType;
 import com.ppms.fuel.GlobalFuelPriceRepository;
+import com.ppms.pump.DispensaryUnitRepository;
 import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleRepository;
 import com.ppms.shift.ShiftRepository;
@@ -18,15 +19,33 @@ import java.math.RoundingMode;
 public class NozzleAdjustmentSupportService {
 
     private final NozzleRepository nozzleRepository;
+    private final DispensaryUnitRepository dispensaryUnitRepository;
     private final ShiftRepository shiftRepository;
     private final GlobalFuelPriceRepository fuelPriceRepository;
 
-    public Nozzle requireAdjustableNozzle(Long nozzleId) {
+    public Nozzle requireAdjustableNozzle(Long pumpId, Long nozzleId) {
         Nozzle nozzle = nozzleRepository.findById(nozzleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+        dispensaryUnitRepository.findById(nozzle.getDuId()).ifPresent(du -> {
+            if (!du.getPumpId().equals(pumpId)) {
+                throw new BusinessException("Nozzle does not belong to pump " + pumpId);
+            }
+        });
         shiftRepository.findOpenShiftByNozzle(nozzleId).ifPresent(shift -> {
             throw new BusinessException(
                     "Cannot adjust the meter reading — an active shift is running on this nozzle. Close the shift first.");
+        });
+        return nozzle;
+    }
+
+    /** Validates that a nozzle belongs to the given pump — used for read paths. */
+    public Nozzle requireNozzleForPump(Long pumpId, Long nozzleId) {
+        Nozzle nozzle = nozzleRepository.findById(nozzleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+        dispensaryUnitRepository.findById(nozzle.getDuId()).ifPresent(du -> {
+            if (!du.getPumpId().equals(pumpId)) {
+                throw new BusinessException("Nozzle does not belong to pump " + pumpId);
+            }
         });
         return nozzle;
     }

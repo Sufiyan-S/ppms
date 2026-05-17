@@ -57,8 +57,7 @@ public class SuperAdminSeeder implements ApplicationRunner {
         }
 
         // In production (non-dev profiles) the password MUST be supplied explicitly.
-        boolean isDevProfile = activeProfile.contains("dev") || activeProfile.contains("local")
-                || activeProfile.equals("default");
+        boolean isDevProfile = activeProfile.contains("dev") || activeProfile.contains("local");
 
         if (adminPassword == null) {
             if (isDevProfile) {

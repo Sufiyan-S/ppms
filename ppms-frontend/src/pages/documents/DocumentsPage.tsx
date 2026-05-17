@@ -8,6 +8,7 @@ import type { PumpDocument, UpsertDocumentRequest, DocumentStatus } from '../../
 import { SkeletonRows } from '../../components/Skeleton'
 import { Reveal } from '../../components/Reveal'
 import { formatIstDate } from '../../utils/date'
+import { parseApiError } from '../../utils/apiError'
 
 const STATUS_STYLES: Record<DocumentStatus, string> = {
   VALID:          'bg-emerald-100 text-emerald-700',
@@ -51,7 +52,7 @@ export default function DocumentsPage() {
       setShowForm(false)
       setFormError(null)
     },
-    onError: (err: any) => setFormError(err?.response?.data?.message ?? 'Failed to save document'),
+    onError: (err: any) => setFormError(parseApiError(err, 'Failed to save document')),
   })
 
   const deleteMutation = useMutation({

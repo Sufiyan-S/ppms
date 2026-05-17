@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { authApi } from '../../api/authApi'
+import { parseApiError } from '../../utils/apiError'
 
 export default function ForgotPasswordPage() {
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -17,7 +18,7 @@ export default function ForgotPasswordPage() {
       await authApi.forgotPassword(phoneNumber.trim())
       setSent(true)
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Something went wrong. Please try again.')
+      setError(parseApiError(err, 'Something went wrong. Please try again.'))
     } finally {
       setLoading(false)
     }

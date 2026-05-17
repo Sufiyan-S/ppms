@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -142,16 +143,17 @@ public class ShiftLifecycleSupportService {
      * Creates one ShiftFuelReading per nozzle using each nozzle's stored lastReading as the start reading.
      */
     public void createOpeningReadings(Long shiftId, Long pumpId, List<Nozzle> nozzles) {
-        for (Nozzle nozzle : nozzles) {
-            fuelReadingRepository.save(ShiftFuelReading.builder()
-                    .shiftId(shiftId)
-                    .nozzleId(nozzle.getId())
-                    .fuelType(nozzle.getFuelType())
-                    .tankId(nozzle.getTankId())
-                    .startReading(nozzle.getLastReading())
-                    .priceSnapshot(getLatestPrice(pumpId, nozzle.getFuelType()))
-                    .build());
-        }
+        List<ShiftFuelReading> readings = nozzles.stream()
+                .map(nozzle -> ShiftFuelReading.builder()
+                        .shiftId(shiftId)
+                        .nozzleId(nozzle.getId())
+                        .fuelType(nozzle.getFuelType())
+                        .tankId(nozzle.getTankId())
+                        .startReading(nozzle.getLastReading())
+                        .priceSnapshot(getLatestPrice(pumpId, nozzle.getFuelType()))
+                        .build())
+                .toList();
+        fuelReadingRepository.saveAll(readings);
     }
 
     /**
@@ -189,9 +191,9 @@ public class ShiftLifecycleSupportService {
             BigDecimal unitsSold = calcUnits(reading.getStartReading(), endReading, maxMeter);
             reading.setEndReading(endReading);
             reading.setUnitsSold(unitsSold);
-            fuelReadingRepository.save(reading);
             totalDue = totalDue.add(unitsSold.multiply(reading.getPriceSnapshot()));
         }
+        fuelReadingRepository.saveAll(readings);
 
         BigDecimal roundedTotalDue = totalDue.setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalCollected = request.getCashCollected()
@@ -253,12 +255,13 @@ public class ShiftLifecycleSupportService {
     }
 
     public void persistCloseCreditEntries(Long shiftId, Long pumpId, List<CloseShiftRequest.CreditEntryRequest> creditEntries) {
+        List<ShiftCreditEntry> toSave = new ArrayList<>();
         for (CloseShiftRequest.CreditEntryRequest entry : creditEntries) {
             CreditClient matchedClient = creditAccountPolicyService.resolveClientForPump(
                     pumpId, entry.clientId(), entry.clientName());
             creditAccountPolicyService.validateCreditLimit(pumpId, matchedClient, entry.amount());
 
-            creditEntryRepository.save(ShiftCreditEntry.builder()
+            toSave.add(ShiftCreditEntry.builder()
                     .shiftId(shiftId)
                     .clientId(matchedClient != null ? matchedClient.getId() : null)
                     .clientName(entry.clientName())
@@ -270,6 +273,7 @@ public class ShiftLifecycleSupportService {
                     .driverName(entry.driverName())
                     .build());
         }
+        creditEntryRepository.saveAll(toSave);
     }
 
     public void createCashCollectionEvent(Shift shift, User currentUser, List<Nozzle> nozzles) {

@@ -74,8 +74,9 @@ export default function ShiftsPage() {
   const [shiftForCredit,    setShiftForCredit]    = useState<Shift | null>(null)
   const [historyOpen,    setHistoryOpen]    = useState(true)
   const [historyTab,     setHistoryTab]     = useState<'day' | 'all' | 'discrepancies'>('day')
+  const [closedShiftPrefill, setClosedShiftPrefill] = useState<{ duId: number; nozzleIds: number[] } | null>(null)
 
-  const { data: rawPumps = [] } = useQuery({
+  const { data: rawPumps = [], isLoading: pumpsLoading } = useQuery({
     queryKey: ['myPumps'],
     queryFn:  pumpApi.getMyPumps,
     enabled:  isOwnerOrAdmin,
@@ -101,7 +102,7 @@ export default function ShiftsPage() {
 
   // ── Early exits ──────────────────────────────────────────────────────────
 
-  if (isOwnerOrAdmin && sortedPumps.length === 0 && rawPumps.length === 0) {
+  if (isOwnerOrAdmin && !pumpsLoading && sortedPumps.length === 0 && rawPumps.length === 0) {
     return (
       <div className="ui-page ui-page--narrow">
         <div className="ui-alert ui-alert-warning p-6 text-center">
@@ -271,7 +272,9 @@ export default function ShiftsPage() {
         <OpenShiftModal
           pumpId={pumpId}
           activeShifts={activeShifts}
-          onClose={() => setShowOpenModal(false)}
+          onClose={() => { setShowOpenModal(false); setClosedShiftPrefill(null) }}
+          prefilledDuId={closedShiftPrefill?.duId}
+          prefilledNozzleIds={closedShiftPrefill?.nozzleIds}
         />
       )}
       {showBackfillModal && pumpId && (
@@ -281,7 +284,17 @@ export default function ShiftsPage() {
         />
       )}
       {shiftToClose && (
-        <CloseShiftModal shift={shiftToClose} onClose={() => setShiftToClose(null)} />
+        <CloseShiftModal
+          shift={shiftToClose}
+          onClose={() => setShiftToClose(null)}
+          onShiftClosed={(duId, nozzleIds) => setClosedShiftPrefill({ duId, nozzleIds })}
+        />
+      )}
+      {closedShiftPrefill && !showOpenModal && (
+        <OpenNewShiftPrompt
+          onConfirm={() => setShowOpenModal(true)}
+          onDismiss={() => setClosedShiftPrefill(null)}
+        />
       )}
       {shiftForCredit && (
         <AddCreditEntryModal
@@ -747,6 +760,30 @@ function DiscrepanciesHistory({ shifts }: { shifts: Shift[] }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Post-close "Open new shift?" prompt ──────────────────────────────────────
+
+function OpenNewShiftPrompt({ onConfirm, onDismiss }: { onConfirm: () => void; onDismiss: () => void }) {
+  return (
+    <div className="ui-modal-backdrop">
+      <div className="ui-modal-panel w-full max-w-sm p-6 space-y-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
+          <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-slate-800">Shift closed successfully</h2>
+          <p className="text-sm text-slate-500 mt-1">Do you want to open a new shift now?</p>
+        </div>
+        <div className="flex gap-3 pt-1">
+          <button type="button" onClick={onDismiss} className="ui-btn ui-btn-secondary flex-1">Not now</button>
+          <button type="button" onClick={onConfirm} className="ui-btn ui-btn-primary flex-1">Open new shift</button>
+        </div>
+      </div>
     </div>
   )
 }

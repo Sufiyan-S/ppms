@@ -26,6 +26,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ function ProductsTab({
       qc.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })
       addToast(status === 'ACTIVE' ? 'Product enabled' : 'Product disabled', 'success')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update product status', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to update product status'), 'error'),
   })
 
   const stockBadge = (p: AncillaryProduct) => {
@@ -424,7 +425,7 @@ function AddProductDialog({
       onSuccess()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to create product'
+      const msg = parseApiError(err, 'Failed to create product')
       setError(msg)
       addToast(msg, 'error')
     },
@@ -669,7 +670,7 @@ function SellDialog({
       onSuccess()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record sale'
+      const msg = parseApiError(err, 'Failed to record sale')
       setError(msg)
       addToast(msg, 'error')
     },
@@ -951,7 +952,7 @@ function StockLotsDialog({
       onUpdated()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to update lot'
+      const msg = parseApiError(err, 'Failed to update lot')
       setEditError(msg)
       addToast(msg, 'error')
     },
@@ -1262,7 +1263,7 @@ function StockInDialog({
       onSuccess()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record delivery'
+      const msg = parseApiError(err, 'Failed to record delivery')
       setError(msg)
       addToast(msg, 'error')
     },
@@ -1609,7 +1610,7 @@ function BackfillSaleModal({
       onSuccess()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to backfill sale'
+      const msg = parseApiError(err, 'Failed to backfill sale')
       setError(msg)
       addToast(msg, 'error')
     },

@@ -17,6 +17,7 @@ import { Reveal } from '../../components/Reveal'
 import client from '../../api/client'
 import { formatIstDate } from '../../utils/date'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 // ── Validation schemas ────────────────────────────────────────────────────────
 
@@ -39,7 +40,11 @@ const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).
 const onboardSchema = z.object({
   fullName: z.string().min(1, 'Full name is required'),
   phoneNumber: z.string().length(10, 'Phone number must be exactly 10 digits').regex(/^\d+$/, 'Must be digits only'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
+    .regex(/\d/, 'Must contain at least one digit'),
   pumpName: z.string().min(1, 'Pump name is required'),
   pumpAddress: z.string().min(1, 'Pump address is required'),
   maxDuCount: z.coerce.number().int().min(1, 'Must be at least 1 DU').max(20, 'Cannot exceed 20 DUs'),
@@ -120,7 +125,7 @@ export default function SuperAdminPage() {
       queryClient.invalidateQueries({ queryKey: ['superadmin-owners'] })
     },
     onError: (err: any) => {
-      setServerError(err?.response?.data?.message ?? 'Failed to create owner. Please try again.')
+      setServerError(parseApiError(err, 'Failed to create owner. Please try again.'))
     },
   })
 
@@ -151,7 +156,7 @@ export default function SuperAdminPage() {
       queryClient.invalidateQueries({ queryKey: ['superadmin-analytics'] })
     },
     onError: (err: any) =>
-      setAddPumpError(err?.response?.data?.message ?? 'Failed to add pump. Please try again.'),
+      setAddPumpError(parseApiError(err, 'Failed to add pump. Please try again.')),
   })
 
   const {
@@ -174,7 +179,7 @@ export default function SuperAdminPage() {
       queryClient.invalidateQueries({ queryKey: ['superadmin-owners'] })
     },
     onError: (err: any) =>
-      setEditPumpError(err?.response?.data?.message ?? 'Failed to update pump. Please try again.'),
+      setEditPumpError(parseApiError(err, 'Failed to update pump. Please try again.')),
   })
 
   const logoutMutation = useMutation({
@@ -196,7 +201,7 @@ export default function SuperAdminPage() {
       navigate('/login', { state: { message: 'Password updated successfully. Please log in with your new password.' } })
     },
     onError: (err: any) => {
-      setPasswordError(err?.response?.data?.message ?? 'Failed to update password.')
+      setPasswordError(parseApiError(err, 'Failed to update password.'))
     },
   })
 

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { expenseApi } from '../../api/expenseApi'
@@ -14,6 +13,9 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
+import { formatCurrency } from '../../utils/format'
+import { ConfirmButton } from '../../components/ConfirmButton'
 
 const CATEGORIES: ExpenseCategory[] = ['FUEL', 'MAINTENANCE', 'SALARY', 'UTILITIES', 'EQUIPMENT', 'OTHER']
 
@@ -24,10 +26,6 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   UTILITIES:   'bg-purple-100 text-purple-700',
   EQUIPMENT:   'bg-slate-100 text-slate-700',
   OTHER:       'bg-gray-100 text-gray-600',
-}
-
-function fmtAmt(n: number) {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function fmtDate(d: string) {
@@ -59,8 +57,6 @@ export default function ExpensesPage() {
 
   const expenses = expensesPage?.content ?? []
 
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
-
   const [form, setForm] = useState<CreateExpenseRequest>({
     category: 'MAINTENANCE',
     amount: 0,
@@ -82,7 +78,7 @@ export default function ExpensesPage() {
       addToast('Expense recorded successfully', 'success')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record expense'
+      const msg = parseApiError(err, 'Failed to record expense')
       setFormError(msg)
       addToast(msg, 'error')
     },
@@ -94,7 +90,7 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
       addToast('Expense submitted for approval', 'success')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to submit expense', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to submit expense'), 'error'),
   })
 
   const deleteMutation = useMutation({
@@ -103,7 +99,7 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
       addToast('Expense deleted', 'success')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete expense', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to delete expense'), 'error'),
   })
 
   const validateForm = () => {
@@ -132,7 +128,7 @@ export default function ExpensesPage() {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
       addToast(`Expense ${data.action === 'APPROVED' ? 'approved' : 'rejected'}`, data.action === 'APPROVED' ? 'success' : 'warning')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update expense', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to update expense'), 'error'),
   })
 
   // Note: totalExpenses and pendingCount reflect the current page only.
@@ -176,7 +172,7 @@ export default function ExpensesPage() {
         <div className="ui-summary-strip">
           <div className="ui-summary-strip__item">
             <span className="ui-summary-strip__label">Approved Total</span>
-            <span className="ui-summary-strip__value">{fmtAmt(totalExpenses)}</span>
+            <span className="ui-summary-strip__value">{formatCurrency(totalExpenses)}</span>
           </div>
           <div className="ui-summary-strip__item">
             <span className="ui-summary-strip__label">Total Records</span>
@@ -299,7 +295,7 @@ export default function ExpensesPage() {
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-slate-500 text-xs">Amount</span>
-                  <span className="font-medium text-sm text-slate-800">{fmtAmt(form.amount)}</span>
+                  <span className="font-medium text-sm text-slate-800">{formatCurrency(form.amount)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <span className="text-slate-500 text-xs">Description</span>
@@ -428,7 +424,7 @@ export default function ExpensesPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`text-sm font-semibold ${e.approvalStatus === 'REJECTED' ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                    {fmtAmt(e.amount)}
+                    {formatCurrency(e.amount)}
                   </span>
                   {/* Submit — shown on DRAFT expenses to the creator or OWNER/ADMIN */}
                   {e.approvalStatus === 'DRAFT' && (isOwnerOrAdmin || e.recordedByUserId === user?.userId) && (
@@ -461,32 +457,11 @@ export default function ExpensesPage() {
                   )}
                   {/* Delete — DRAFT only, backend enforces this; OWNER only */}
                   {isOwner && e.approvalStatus === 'DRAFT' && (
-                    deleteConfirmId === e.id ? (
-                      <span className="flex items-center gap-1">
-                        <span className="text-xs text-red-600 font-medium">Delete?</span>
-                        <button
-                          onClick={() => { deleteMutation.mutate(e.id); setDeleteConfirmId(null) }}
-                          disabled={deleteMutation.isPending}
-                          className="ui-btn ui-btn-danger min-h-0 px-2 py-0.5 text-xs"
-                        >
-                          Yes
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="ui-btn ui-btn-ghost min-h-0 px-2 py-0.5 text-xs"
-                        >
-                          No
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteConfirmId(e.id)}
-                        className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600"
-                        aria-label="Delete expense"
-                      >
-                        <X size={14} strokeWidth={2} />
-                      </button>
-                    )
+                    <ConfirmButton
+                      onConfirm={() => deleteMutation.mutate(e.id)}
+                      disabled={deleteMutation.isPending}
+                      triggerAriaLabel="Delete expense"
+                    />
                   )}
                 </div>
               </div>

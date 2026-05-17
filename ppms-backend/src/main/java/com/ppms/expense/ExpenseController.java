@@ -39,7 +39,7 @@ public class ExpenseController {
      * so filter dispatch is done in Java rather than a single nullable-param query.
      */
     @GetMapping("/{pumpId}/expenses")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
     public PagedResponse<PumpExpense> getExpenses(
             @PathVariable Long pumpId,
             @RequestParam(defaultValue = "0") int page,
@@ -232,18 +232,15 @@ public class ExpenseController {
         }
 
         // MANAGER/OPERATOR — check threshold
-        return pumpLocationRepository.findById(pumpId)
-                .map(pump -> {
-                    BigDecimal threshold = pump.getExpenseApprovalThreshold();
-                    if (threshold == null || threshold.compareTo(BigDecimal.ZERO) <= 0) {
-                        // No threshold configured — require approval for all manager/operator expenses
-                        return ExpenseApprovalStatus.PENDING_APPROVAL;
-                    }
-                    return amount.compareTo(threshold) <= 0
-                            ? ExpenseApprovalStatus.APPROVED
-                            : ExpenseApprovalStatus.PENDING_APPROVAL;
-                })
-                .orElse(ExpenseApprovalStatus.APPROVED);
+        var pump = pumpLocationRepository.findById(pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+        BigDecimal threshold = pump.getExpenseApprovalThreshold();
+        if (threshold == null || threshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return ExpenseApprovalStatus.PENDING_APPROVAL;
+        }
+        return amount.compareTo(threshold) <= 0
+                ? ExpenseApprovalStatus.APPROVED
+                : ExpenseApprovalStatus.PENDING_APPROVAL;
     }
 
 }

@@ -2,6 +2,7 @@ package com.ppms.notification;
 
 import com.ppms.user.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +26,7 @@ public class NotificationController {
      * on every API poll and makes the response fast and predictable.
      */
     @GetMapping("/{pumpId}/notifications")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
     public List<Notification> getNotifications(
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {
@@ -36,6 +38,7 @@ public class NotificationController {
      * Marks all unread notifications as read (clears the bell badge).
      */
     @PostMapping("/{pumpId}/notifications/mark-all-read")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
     public Map<String, Object> markAllRead(
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {

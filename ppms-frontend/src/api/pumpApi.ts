@@ -176,11 +176,11 @@ export const pumpApi = {
   createTank: (pumpId: number, req: CreateTankRequest) =>
     client.post<TankInfo>(`/pumps/${pumpId}/tanks`, req).then((r) => r.data),
 
-  updateTank: (tankId: number, req: UpdateTankRequest) =>
-    client.patch<TankInfo>(`/pumps/tanks/${tankId}`, req).then((r) => r.data),
+  updateTank: (pumpId: number, tankId: number, req: UpdateTankRequest) =>
+    client.patch<TankInfo>(`/pumps/${pumpId}/tanks/${tankId}`, req).then((r) => r.data),
 
-  updateTankStatus: (tankId: number, status: 'ACTIVE' | 'INACTIVE') =>
-    client.patch<TankInfo>(`/pumps/tanks/${tankId}/status`, { status }).then((r) => r.data),
+  updateTankStatus: (pumpId: number, tankId: number, status: 'ACTIVE' | 'INACTIVE') =>
+    client.patch<TankInfo>(`/pumps/${pumpId}/tanks/${tankId}/status`, { status }).then((r) => r.data),
 
   // ── Fuel prices ────────────────────────────────────────────────────────────
 

@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Plus, AlertTriangle, AlertCircle, Check, X, Pencil } from 'lucide-react'
+import { ChevronDown, Plus, AlertTriangle, AlertCircle, Check, X, Pencil, Trash2, Truck } from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { usePumpStore } from '../../store/usePumpStore'
 import { inventoryApi } from '../../api/inventoryApi'
 import { userApi } from '../../api/userApi'
+import { tankerApi } from '../../api/tankerApi'
+import type { Tanker } from '../../api/tankerApi'
 import type { TankStock, TankerDelivery, DipCheck, RecordBatchDeliveryRequest, InventoryLotDetail, UpdateDeliveryRequest } from '../../api/inventoryApi'
 import { useAuthStore } from '../../store/authStore'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -18,6 +21,12 @@ const FUEL_COLORS: Record<string, { bar: string; text: string; badge: string }> 
   PETROL: { bar: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700' },
   DIESEL: { bar: 'bg-blue-500',    text: 'text-blue-700',    badge: 'bg-blue-100 text-blue-700'    },
   CNG:    { bar: 'bg-amber-500',   text: 'text-amber-700',   badge: 'bg-amber-100 text-amber-700'  },
+}
+
+function limitDecimals(value: string, places: number): string {
+  const dot = value.indexOf('.')
+  if (dot === -1) return value
+  return value.slice(0, dot + 1 + places)
 }
 
 function fmtQty(n: number | null | undefined) {
@@ -34,6 +43,7 @@ function fmtDate(s: string) {
 export default function InventoryPage() {
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
+  const canDeleteInvoice = isOwnerOrAdmin || user?.role === 'MANAGER'
 
   const { selectedPumpId } = usePumpStore()
   const [showDeliveryModal, setShowDeliveryModal] = useState(false)
@@ -52,6 +62,18 @@ export default function InventoryPage() {
   const [dipFuelFilter,          setDipFuelFilter]          = useState('')
   const [collapsedDeliveries,    setCollapsedDeliveries]    = useState<Set<string>>(new Set())
   const [collapsedDipGroups,     setCollapsedDipGroups]     = useState<Set<string>>(new Set())
+  const [deleteInvoice,          setDeleteInvoice]          = useState<{ invoice: string; rows: TankerDelivery[] } | null>(null)
+
+  const queryClient = useQueryClient()
+
+  const deleteLatestMutation = useMutation({
+    mutationFn: () => inventoryApi.deleteLatestDelivery(pumpId!),
+    onSuccess: () => {
+      setDeleteInvoice(null)
+      queryClient.invalidateQueries({ queryKey: ['deliveries', pumpId] })
+      queryClient.invalidateQueries({ queryKey: ['tankStocks', pumpId] })
+    },
+  })
 
   const { data: pumps = [] } = useQuery({
     queryKey: ['myPumps'],
@@ -218,15 +240,13 @@ export default function InventoryPage() {
                 )}
                 <span className={`ui-accordion-arrow ml-1 ${stockOpen ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
               </button>
-              {isOwnerOrAdmin && (
-                <button
-                  onClick={() => setShowDeliveryModal(true)}
-                  className="ui-btn ui-btn-primary shrink-0 ml-auto inline-flex items-center gap-1.5"
-                >
-                  <Plus size={14} strokeWidth={2.5} />
-                  Record Delivery
-                </button>
-              )}
+              <button
+                onClick={() => setShowDeliveryModal(true)}
+                className="ui-btn ui-btn-primary shrink-0 ml-auto inline-flex items-center gap-1.5"
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                Record Delivery
+              </button>
             </div>
 
             {stockOpen && (
@@ -337,10 +357,11 @@ export default function InventoryPage() {
                   return (
                     <>
                       <div className="divide-y divide-slate-100">
-                        {groups.map(([invoice, rows]) => {
+                        {groups.map(([invoice, rows], idx) => {
                           const totalQty = rows.reduce((s, r) => s + r.quantityDelivered, 0)
                           const totalCost = rows.reduce((s, r) => s + r.totalCost, 0)
                           const isCollapsed = collapsedDeliveries.has(invoice)
+                          const isFirstGlobalGroup = deliveryPage === 0 && idx === 0 && !deliveryTankFilter && !deliveryFuelFilter
                           const toggleDelivery = () => setCollapsedDeliveries(prev => {
                             const next = new Set(prev)
                             next.has(invoice) ? next.delete(invoice) : next.add(invoice)
@@ -348,42 +369,80 @@ export default function InventoryPage() {
                           })
                           return (
                             <div key={invoice} className="px-5 py-4 space-y-2">
-                              <button
-                                type="button"
-                                onClick={toggleDelivery}
-                                className="w-full flex items-center gap-2 text-left hover:opacity-70 transition-opacity"
-                              >
-                                <span className="text-xs text-slate-500">Bill No.</span>
-                                <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">
-                                  {invoice}
-                                </span>
-                                <span className="text-xs text-slate-400">{fmtDate(rows[0].deliveryDate)}</span>
-                                <span className="text-xs text-slate-400">·</span>
-                                <span className="text-xs text-slate-500">{rows.length} tank{rows.length !== 1 ? 's' : ''}</span>
-                                <div className="ml-auto flex items-center gap-3">
-                                  <span className="text-xs text-slate-500">
-                                    {totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={toggleDelivery}
+                                  className="flex-1 flex items-center gap-2 text-left hover:opacity-70 transition-opacity min-w-0"
+                                >
+                                  <span className="text-xs text-slate-500">Bill No.</span>
+                                  <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">
+                                    {invoice}
                                   </span>
-                                  <span className="text-sm font-bold text-slate-800">
-                                    ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                  </span>
-                                  <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
-                                </div>
-                              </button>
+                                  <span className="text-xs text-slate-400">{fmtDate(rows[0].deliveryDate)}</span>
+                                  <span className="text-xs text-slate-400">·</span>
+                                  <span className="text-xs text-slate-500">{rows.length} tank{rows.length !== 1 ? 's' : ''}</span>
+                                  {rows[0].tankerName && (
+                                    <>
+                                      <span className="text-xs text-slate-400">·</span>
+                                      <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                                        <Truck size={10} strokeWidth={2} />
+                                        {rows[0].tankerName}
+                                      </span>
+                                    </>
+                                  )}
+                                  <div className="ml-auto flex items-center gap-3">
+                                    <span className="text-xs text-slate-500">
+                                      {totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                                    </span>
+                                    {rows[0].billTotal != null ? (
+                                      <div className="flex flex-col items-end leading-tight">
+                                        <span className="text-sm font-bold text-slate-800">
+                                          ₹{Number(rows[0].billTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                        {Math.abs(Number(rows[0].billTotal) - totalCost) > 0.005 && (
+                                          <span className="text-[10px] text-slate-400">
+                                            calc. ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-sm font-bold text-slate-800">
+                                        ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </span>
+                                    )}
+                                    <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
+                                  </div>
+                                </button>
+                                {isFirstGlobalGroup && canDeleteInvoice && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteInvoice({ invoice, rows })}
+                                    className="shrink-0 ml-2 text-slate-300 hover:text-red-500 transition-colors p-1 rounded"
+                                    title="Delete this invoice"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
 
                               {!isCollapsed && (
                                 <div className="ui-accordion-content ui-card p-0 overflow-hidden">
                                   <div className="px-4 py-3">
-                                    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    <div className={`grid gap-3 border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 ${
+                                      isOwnerOrAdmin
+                                        ? 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+                                        : 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+                                    }`}>
                                       <span>Tank</span>
                                       <span>Fuel</span>
                                       <span className="text-right">Quantity</span>
-                                      <span className="text-right">Rate</span>
-                                      <span className="text-right">Amount</span>
+                                      {isOwnerOrAdmin && <span className="text-right">Rate</span>}
+                                      {isOwnerOrAdmin && <span className="text-right">Amount</span>}
                                       <span />
                                     </div>
                                     <div className="space-y-2 pt-2">
-                                      {rows.map(d => <DeliveryItem key={d.id} delivery={d} pumpId={pumpId!} canEdit={isOwnerOrAdmin} />)}
+                                      {rows.map(d => <DeliveryItem key={d.id} delivery={d} pumpId={pumpId!} isOwnerOrAdmin={isOwnerOrAdmin} />)}
                                     </div>
                                   </div>
                                 </div>
@@ -560,6 +619,7 @@ export default function InventoryPage() {
         <RecordDeliveryModal
           pumpId={pumpId}
           tanks={tanks}
+          isOwnerOrAdmin={isOwnerOrAdmin}
           onClose={() => setShowDeliveryModal(false)}
         />
       )}
@@ -577,7 +637,91 @@ export default function InventoryPage() {
           onClose={() => setLotsForTank(null)}
         />
       )}
+      {deleteInvoice && (
+        <DeleteInvoiceModal
+          invoice={deleteInvoice.invoice}
+          rows={deleteInvoice.rows}
+          isPending={deleteLatestMutation.isPending}
+          error={deleteLatestMutation.error ? parseApiError(deleteLatestMutation.error, 'Failed to delete invoice') : null}
+          onConfirm={() => deleteLatestMutation.mutate()}
+          onClose={() => { setDeleteInvoice(null); deleteLatestMutation.reset() }}
+        />
+      )}
     </div>
+  )
+}
+
+// ── Delete invoice confirmation modal ─────────────────────────────────────────
+
+function DeleteInvoiceModal({ invoice, rows, isPending, error, onConfirm, onClose }: {
+  invoice: string
+  rows: TankerDelivery[]
+  isPending: boolean
+  error: string | null
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const totalQty = rows.reduce((s, r) => s + r.quantityDelivered, 0)
+  return (
+    <ModalPortal>
+      <div className="ui-modal-backdrop">
+        <div className="ui-modal w-full max-w-md">
+          <div className="ui-modal-header">
+            <h2 className="ui-modal-title">Delete Invoice?</h2>
+            <button onClick={onClose} className="ui-modal-close"><X size={16} /></button>
+          </div>
+
+          <div className="ui-modal-body space-y-4">
+            <p className="text-sm text-slate-600">
+              This will permanently remove the invoice and reverse the fuel added to the tank(s).
+              This action cannot be undone.
+            </p>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Bill No.</span>
+                <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                  {invoice}
+                </span>
+                <span className="text-xs text-slate-400 ml-auto">{fmtDate(rows[0].deliveryDate)}</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {rows.map(r => (
+                  <div key={r.id} className="flex items-center justify-between py-1.5 text-xs">
+                    <span className="font-medium text-slate-700">{r.tankIdentifier}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${(FUEL_COLORS[r.fuelType] ?? FUEL_COLORS.PETROL).badge}`}>
+                      {r.fuelType}
+                    </span>
+                    <span className="text-slate-600 tabular-nums">
+                      -{r.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 text-xs font-semibold text-slate-700">
+                <span>Total removed</span>
+                <span>{totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L</span>
+              </div>
+            </div>
+
+            {error && <p className="ui-error-text">{error}</p>}
+          </div>
+
+          <div className="ui-modal-footer justify-end gap-2">
+            <button onClick={onClose} disabled={isPending} className="ui-btn ui-btn-secondary">
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isPending}
+              className="ui-btn bg-red-600 hover:bg-red-700 text-white border-red-600"
+            >
+              {isPending ? 'Deleting…' : 'Delete Invoice'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
   )
 }
 
@@ -781,9 +925,10 @@ function FuelLotsDialog({
 
 // ── Edit Delivery Modal ────────────────────────────────────────────────────────
 
-function EditDeliveryModal({ delivery, pumpId, onClose }: {
+function EditDeliveryModal({ delivery, pumpId, isOwnerOrAdmin, onClose }: {
   delivery: TankerDelivery
   pumpId: number
+  isOwnerOrAdmin: boolean
   onClose: () => void
 }) {
   const qc = useQueryClient()
@@ -808,13 +953,20 @@ function EditDeliveryModal({ delivery, pumpId, onClose }: {
 
   function handleSave() {
     const q = parseFloat(qty)
-    const c = parseFloat(cost)
     if (!invoiceReference.trim()) { setError('Invoice reference is required.'); return }
     if (isNaN(q) || q <= 0) { setError('Quantity must be greater than 0.'); return }
-    if (isNaN(c) || c <= 0) { setError('Cost price must be greater than 0.'); return }
+    if (isOwnerOrAdmin) {
+      const c = parseFloat(cost)
+      if (isNaN(c) || c <= 0) { setError('Cost price must be greater than 0.'); return }
+    }
     if (!date) { setError('Delivery date is required.'); return }
     setError(null)
-    mutation.mutate({ invoiceReference: invoiceReference.trim(), quantityDelivered: q, costPricePerUnit: c, deliveryDate: date })
+    mutation.mutate({
+      invoiceReference: invoiceReference.trim(),
+      quantityDelivered: q,
+      costPricePerUnit: isOwnerOrAdmin ? parseFloat(cost) : null,
+      deliveryDate: date,
+    })
   }
 
   return (
@@ -843,30 +995,37 @@ function EditDeliveryModal({ delivery, pumpId, onClose }: {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid gap-3 ${isOwnerOrAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <div className="space-y-1">
                 <label className="ui-label">Quantity (L)</label>
                 <input
                   className="ui-input"
                   type="number"
-                  min="0.001"
-                  step="0.001"
+                  min="0.01"
+                  step="0.01"
                   value={qty}
-                  onChange={e => setQty(e.target.value)}
+                  onChange={e => setQty(limitDecimals(e.target.value, 2))}
                 />
               </div>
-              <div className="space-y-1">
-                <label className="ui-label">Cost (₹/L)</label>
-                <input
-                  className="ui-input"
-                  type="number"
-                  min="0.0001"
-                  step="0.0001"
-                  value={cost}
-                  onChange={e => setCost(e.target.value)}
-                />
-              </div>
+              {isOwnerOrAdmin && (
+                <div className="space-y-1">
+                  <label className="ui-label">Cost (₹/L)</label>
+                  <input
+                    className="ui-input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={cost}
+                    onChange={e => setCost(limitDecimals(e.target.value, 2))}
+                  />
+                </div>
+              )}
             </div>
+            {!isOwnerOrAdmin && (
+              <p className="text-xs text-slate-400">
+                Cost price is managed by Owner / Admin and will not be changed.
+              </p>
+            )}
 
             <div className="space-y-1">
               <label className="ui-label">Delivery Date</label>
@@ -899,16 +1058,20 @@ function EditDeliveryModal({ delivery, pumpId, onClose }: {
 
 // ── Delivery item (compact card inside invoice group) ─────────────────────────
 
-function DeliveryItem({ delivery, pumpId, canEdit }: {
+function DeliveryItem({ delivery, pumpId, isOwnerOrAdmin }: {
   delivery: TankerDelivery
   pumpId: number
-  canEdit: boolean
+  isOwnerOrAdmin: boolean
 }) {
   const cols = FUEL_COLORS[delivery.fuelType] ?? FUEL_COLORS.PETROL
   const [editing, setEditing] = useState(false)
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs items-center">
+      <div className={`grid gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs items-center ${
+        isOwnerOrAdmin
+          ? 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+          : 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+      }`}>
         <span className="font-semibold text-slate-700">{delivery.tankIdentifier}</span>
         <span className={`font-medium px-2 py-0.5 rounded-full justify-self-start ${cols.badge}`}>
           {delivery.fuelType}
@@ -916,26 +1079,27 @@ function DeliveryItem({ delivery, pumpId, canEdit }: {
         <span className="text-right text-slate-600">
           {delivery.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
         </span>
-        <span className="text-right text-slate-400">₹{delivery.costPricePerUnit.toFixed(4)}/L</span>
-        <span className="text-right font-semibold text-slate-800">
-          ₹{delivery.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-        </span>
-        {canEdit ? (
-          <button
-            onClick={() => setEditing(true)}
-            className="text-slate-400 hover:text-blue-600 transition-colors p-0.5"
-            title="Edit delivery"
-          >
-            <Pencil size={13} />
-          </button>
-        ) : (
-          <span />
+        {isOwnerOrAdmin && (
+          <span className="text-right text-slate-400">₹{delivery.costPricePerUnit.toFixed(4)}/L</span>
         )}
+        {isOwnerOrAdmin && (
+          <span className="text-right font-semibold text-slate-800">
+            ₹{delivery.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>
+        )}
+        <button
+          onClick={() => setEditing(true)}
+          className="text-slate-400 hover:text-blue-600 transition-colors p-0.5"
+          title="Edit delivery"
+        >
+          <Pencil size={13} />
+        </button>
       </div>
       {editing && (
         <EditDeliveryModal
           delivery={delivery}
           pumpId={pumpId}
+          isOwnerOrAdmin={isOwnerOrAdmin}
           onClose={() => setEditing(false)}
         />
       )}
@@ -1042,21 +1206,33 @@ function newRow(defaultTankId = ''): DeliveryRow {
 function RecordDeliveryModal({
   pumpId,
   tanks,
+  isOwnerOrAdmin,
   onClose,
 }: {
   pumpId: number
   tanks: TankStock[]
+  isOwnerOrAdmin: boolean
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
   const defaultTankId = tanks[0]?.tankId ? String(tanks[0].tankId) : ''
 
-  const [date,          setDate]          = useState(localDateInputValue())
-  const [invoice,       setInvoice]       = useState('')
-  const [rows,          setRows]          = useState<DeliveryRow[]>([newRow(defaultTankId)])
-  const [expandedRowId, setExpandedRowId] = useState<number | null>(() => _rowSeq)
-  const [error,         setError]         = useState<string | null>(null)
-  const [reviewOpen,    setReviewOpen]    = useState(false)
+  const { data: tankers = [] } = useQuery<Tanker[]>({
+    queryKey: ['tankers', pumpId],
+    queryFn: () => tankerApi.getTankers(pumpId),
+  })
+
+  const [date,              setDate]              = useState(localDateInputValue())
+  const [invoice,           setInvoice]           = useState('')
+  const [rows,              setRows]              = useState<DeliveryRow[]>([newRow(defaultTankId)])
+  const [expandedRowId,     setExpandedRowId]     = useState<number | null>(() => _rowSeq)
+  const [error,             setError]             = useState<string | null>(null)
+  const [reviewOpen,        setReviewOpen]        = useState(false)
+  const [billTotalStr,      setBillTotalStr]      = useState('')
+  const [billTotalManual,   setBillTotalManual]   = useState(false)
+  const [selectedTankerId,  setSelectedTankerId]  = useState<number | null>(
+    () => tankers.find(t => t.defaultTanker)?.id ?? null
+  )
 
   const mutation = useMutation({
     mutationFn: (req: RecordBatchDeliveryRequest) =>
@@ -1067,7 +1243,7 @@ function RecordDeliveryModal({
       onClose()
     },
     onError: (err: any) =>
-      setError(err?.response?.data?.message ?? 'Failed to record delivery'),
+      setError(parseApiError(err, 'Failed to record delivery')),
   })
 
   const updateRow = (id: number, field: keyof Omit<DeliveryRow, 'id'>, value: string) =>
@@ -1084,11 +1260,35 @@ function RecordDeliveryModal({
     if (expandedRowId === id) setExpandedRowId(null)
   }
 
-  const grandTotal = rows.reduce((sum, r) => {
-    const q = parseFloat(r.qty) || 0
-    const c = parseFloat(r.costPrice) || 0
-    return sum + q * c
-  }, 0)
+  const grandTotal = isOwnerOrAdmin
+    ? rows.reduce((sum, r) => {
+        const q = parseFloat(r.qty) || 0
+        const c = parseFloat(r.costPrice) || 0
+        return sum + q * c
+      }, 0)
+    : 0
+
+  // Pre-select default tanker once the list loads
+  useEffect(() => {
+    if (tankers.length > 0 && selectedTankerId === null) {
+      const def = tankers.find(t => t.defaultTanker)
+      if (def) setSelectedTankerId(def.id)
+    }
+  }, [tankers])
+
+  useEffect(() => {
+    if (!billTotalManual) {
+      setBillTotalStr(grandTotal > 0 ? grandTotal.toFixed(2) : '')
+    }
+  }, [grandTotal, billTotalManual])
+
+  const billTotalNum = parseFloat(billTotalStr) || 0
+  const otherCharges = billTotalNum - grandTotal
+
+  const selectedTanker = tankers.find(t => t.id === selectedTankerId) ?? null
+  const totalEnteredQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0)
+  const tankerRemaining = selectedTanker ? selectedTanker.capacityLitres - totalEnteredQty : null
+  const tankerMismatch = selectedTanker !== null && Math.abs(totalEnteredQty - selectedTanker.capacityLitres) > 0.01
 
   const buildPreparedItems = (): { items: PreparedDeliveryItem[] | null; error: string | null } => {
     if (!date || !invoice.trim()) {
@@ -1098,9 +1298,11 @@ function RecordDeliveryModal({
     for (const r of rows) {
       if (!r.tankId) return { items: null, error: 'Please select a tank for every row.' }
       const q = parseFloat(r.qty)
-      const c = parseFloat(r.costPrice)
       if (!r.qty || isNaN(q) || q <= 0) return { items: null, error: 'Quantity must be greater than 0 for every row.' }
-      if (!r.costPrice || isNaN(c) || c <= 0) return { items: null, error: 'Cost per litre must be greater than 0 for every row.' }
+      if (isOwnerOrAdmin) {
+        const c = parseFloat(r.costPrice)
+        if (!r.costPrice || isNaN(c) || c <= 0) return { items: null, error: 'Cost per litre must be greater than 0 for every row.' }
+      }
     }
 
     const selectedTankIds = rows.map(r => r.tankId)
@@ -1116,7 +1318,7 @@ function RecordDeliveryModal({
       }
 
       const quantityDelivered = parseFloat(r.qty)
-      const costPricePerUnit = parseFloat(r.costPrice)
+      const costPricePerUnit = isOwnerOrAdmin ? parseFloat(r.costPrice) : 0
 
       return {
         tankId: tank.tankId,
@@ -1124,7 +1326,7 @@ function RecordDeliveryModal({
         fuelType: tank.fuelType,
         quantityDelivered,
         costPricePerUnit,
-        totalCost: quantityDelivered * costPricePerUnit,
+        totalCost: isOwnerOrAdmin ? quantityDelivered * costPricePerUnit : 0,
         stockAfter: tank.currentStock + quantityDelivered,
         capacity: tank.capacity,
       }
@@ -1162,10 +1364,12 @@ function RecordDeliveryModal({
       mutation.mutate({
         deliveryDate:     date,
         invoiceReference: invoice.trim(),
+        billTotal: isOwnerOrAdmin && billTotalNum > 0 ? billTotalNum : null,
+        tankerId: selectedTankerId ?? null,
         items: items.map(item => ({
           tankId: item.tankId,
           quantityDelivered: item.quantityDelivered,
-          costPricePerUnit: item.costPricePerUnit,
+          costPricePerUnit: isOwnerOrAdmin ? item.costPricePerUnit : null,
         })),
       })
     } catch {
@@ -1198,7 +1402,7 @@ function RecordDeliveryModal({
         </div>
 
         <form onSubmit={handleReview} className="flex flex-col flex-1 overflow-hidden">
-          {/* Shared fields — delivery date + invoice */}
+          {/* Shared fields — delivery date + invoice + tanker */}
           <div className="ui-modal-body border-b border-slate-100 flex-shrink-0">
             <div className="ui-inline-form">
             <div className="grid grid-cols-2 gap-3">
@@ -1226,6 +1430,43 @@ function RecordDeliveryModal({
                 />
               </div>
             </div>
+
+            {tankers.length > 0 && (
+              <div className="mt-3">
+                <label className="ui-label">Tanker (Truck)</label>
+                <SearchableSelect
+                  value={selectedTankerId !== null ? String(selectedTankerId) : ''}
+                  onChange={v => setSelectedTankerId(v ? Number(v) : null)}
+                  options={[
+                    { value: '', label: '— No tanker selected —' },
+                    ...tankers.map(t => ({
+                      value: String(t.id),
+                      label: `${t.name} · ${t.capacityLitres.toLocaleString('en-IN')} L${t.defaultTanker ? ' (Default)' : ''}`,
+                    })),
+                  ]}
+                  placeholder="Select tanker…"
+                />
+                {selectedTanker && (
+                  <div className={`mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                    tankerMismatch
+                      ? 'bg-red-50 border border-red-200 text-red-700'
+                      : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                  }`}>
+                    <Truck size={12} strokeWidth={2} className="shrink-0" />
+                    <span>
+                      Capacity: <span className="font-semibold">{selectedTanker.capacityLitres.toLocaleString('en-IN')} L</span>
+                      {' · '}
+                      Entered: <span className="font-semibold">{totalEnteredQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L</span>
+                      {tankerRemaining !== null && tankerRemaining !== 0 && (
+                        <span className="ml-1">
+                          · <span className="font-semibold">{tankerRemaining > 0 ? `${tankerRemaining.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L remaining` : `${Math.abs(tankerRemaining).toLocaleString('en-IN', { minimumFractionDigits: 1 })} L over`}</span>
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             </div>
           </div>
 
@@ -1233,10 +1474,10 @@ function RecordDeliveryModal({
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             {rows.map((row, idx) => {
               const tank       = tanks.find(t => t.tankId === Number(row.tankId))
-              const rowCost    = (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0)
+              const rowCost    = isOwnerOrAdmin ? (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0) : 0
               const afterStock = tank ? tank.currentStock + (parseFloat(row.qty) || 0) : null
               const isExpanded = expandedRowId === row.id
-              const isFilled   = !!row.tankId && parseFloat(row.qty) > 0 && parseFloat(row.costPrice) > 0
+              const isFilled   = !!row.tankId && parseFloat(row.qty) > 0 && (isOwnerOrAdmin ? parseFloat(row.costPrice) > 0 : true)
 
               return (
                 <div key={row.id} className="ui-card ui-card-muted overflow-hidden">
@@ -1251,9 +1492,11 @@ function RecordDeliveryModal({
                               {tank?.tankIdentifier ?? '—'} · {tank?.fuelType ?? '—'}
                             </span>
                             <span className="text-xs text-slate-400 shrink-0">{parseFloat(row.qty).toLocaleString('en-IN')} L</span>
-                            <span className="text-sm font-semibold text-blue-700 shrink-0">
-                              ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
+                            {isOwnerOrAdmin && (
+                              <span className="text-sm font-semibold text-blue-700 shrink-0">
+                                ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-xs text-slate-400 italic">Incomplete — click Edit to fill</span>
@@ -1313,7 +1556,7 @@ function RecordDeliveryModal({
                       </div>
 
                       {/* Qty + Cost */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className={`grid gap-3 ${isOwnerOrAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
                         <div>
                           <label className="ui-label">
                             Quantity (Litres) <span className="text-red-500">*</span>
@@ -1323,31 +1566,38 @@ function RecordDeliveryModal({
                             step="0.01"
                             min="0.01"
                             value={row.qty}
-                            onChange={e => updateRow(row.id, 'qty', e.target.value)}
+                            onChange={e => updateRow(row.id, 'qty', limitDecimals(e.target.value, 2))}
                             placeholder="e.g. 5000"
                             className="shadow-sm"
                           />
                         </div>
-                        <div>
-                          <label className="ui-label">
-                            Cost per Litre (₹) <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            value={row.costPrice}
-                            onChange={e => updateRow(row.id, 'costPrice', e.target.value)}
-                            placeholder="e.g. 88.50"
-                            className="shadow-sm"
-                          />
-                        </div>
+                        {isOwnerOrAdmin && (
+                          <div>
+                            <label className="ui-label">
+                              Cost per Litre (₹) <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={row.costPrice}
+                              onChange={e => updateRow(row.id, 'costPrice', limitDecimals(e.target.value, 2))}
+                              placeholder="e.g. 88.50"
+                              className="shadow-sm"
+                            />
+                          </div>
+                        )}
                       </div>
+                      {!isOwnerOrAdmin && (
+                        <p className="text-xs text-slate-400">
+                          Cost price is managed by Owner / Admin. The last recorded price for this tank will be used.
+                        </p>
+                      )}
 
                       {/* Per-row live previews */}
-                      {(rowCost > 0 || afterStock !== null) && (
+                      {(afterStock !== null || (isOwnerOrAdmin && rowCost > 0)) && (
                         <div className="flex items-center gap-3 text-xs">
-                          {rowCost > 0 && (
+                          {isOwnerOrAdmin && rowCost > 0 && (
                             <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium">
                               ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} delivery cost
                             </span>
@@ -1395,21 +1645,45 @@ function RecordDeliveryModal({
           </div>
 
           {/* Footer — grand total + actions */}
-          <div className="ui-modal-footer flex-shrink-0 space-y-0 block">
-            {/* Grand total */}
-            {grandTotal > 0 && (
-              <div className="mb-3 flex items-center justify-between rounded-xl bg-blue-50 px-4 py-3">
-                <div>
-                  <p className="text-xs text-blue-600 font-medium">Grand Total ({rows.length} tank{rows.length > 1 ? 's' : ''})</p>
+          <div className="border-t border-slate-100 flex-shrink-0 px-6 py-4 space-y-3">
+            {/* Bill total — editable, auto-filled from calculated total */}
+            {isOwnerOrAdmin && grandTotal > 0 && (
+              <div className="space-y-2 rounded-xl bg-blue-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-blue-600 font-medium">
+                    Calculated Total ({rows.length} tank{rows.length > 1 ? 's' : ''})
+                  </p>
+                  <p className="text-sm font-semibold text-blue-700">
+                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
                 </div>
-                <p className="text-base font-bold text-blue-800">
-                  ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </p>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-blue-600 font-medium shrink-0">Bill Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={billTotalStr}
+                    onChange={e => { setBillTotalStr(limitDecimals(e.target.value, 2)); setBillTotalManual(true) }}
+                    onBlur={() => { if (!billTotalStr.trim()) setBillTotalManual(false) }}
+                    className="ui-input text-sm font-semibold text-blue-900 bg-white border-blue-200 focus:border-blue-400 flex-1 min-w-0"
+                    placeholder="Enter actual bill amount"
+                  />
+                </div>
+                {billTotalManual && otherCharges !== 0 && (
+                  <p className="text-xs text-blue-500">
+                    Other charges:{' '}
+                    <span className={`font-medium ${otherCharges > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                      {otherCharges > 0 ? '+' : ''}₹{Math.abs(otherCharges).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-slate-400"> (freight / taxes / other)</span>
+                  </p>
+                )}
               </div>
             )}
 
             {error && (
-              <div className="ui-alert ui-alert-danger mb-3 text-xs">
+              <div className="ui-alert ui-alert-danger text-xs">
                 {error}
               </div>
             )}
@@ -1424,12 +1698,11 @@ function RecordDeliveryModal({
               </button>
               <button
                 type="submit"
-                disabled={mutation.isPending}
-                className="ui-btn ui-btn-primary flex-1"
+                disabled={mutation.isPending || tankerMismatch}
+                title={tankerMismatch ? `Total must equal tanker capacity (${selectedTanker?.capacityLitres.toLocaleString('en-IN')} L)` : undefined}
+                className="ui-btn ui-btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {mutation.isPending
-                  ? 'Recording…'
-                  : 'Review Delivery'}
+                {mutation.isPending ? 'Recording…' : 'Review Delivery'}
               </button>
             </div>
           </div>
@@ -1462,7 +1735,7 @@ function RecordDeliveryModal({
                   {error} Go back to modify the data and try again.
                 </div>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className={`grid gap-3 ${isOwnerOrAdmin ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-xs font-medium text-slate-500">Delivery Date</p>
                   <p className="mt-1 text-sm font-semibold text-slate-800">{fmtDate(date)}</p>
@@ -1471,26 +1744,49 @@ function RecordDeliveryModal({
                   <p className="text-xs font-medium text-slate-500">Invoice / Bill No.</p>
                   <p className="mt-1 text-sm font-semibold text-slate-800">{invoice.trim()}</p>
                 </div>
-                <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-[0_10px_20px_rgba(37,99,235,0.08)]">
-                  <p className="text-xs font-medium text-blue-600">Grand Total</p>
-                  <p className="mt-1 text-base font-bold text-blue-800">
-                    ₹{items.reduce((sum, item) => sum + item.totalCost, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
+                {isOwnerOrAdmin && (() => {
+                  const calcTotal = items.reduce((sum, item) => sum + item.totalCost, 0)
+                  const displayTotal = billTotalNum > 0 ? billTotalNum : calcTotal
+                  return (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-[0_10px_20px_rgba(37,99,235,0.08)]">
+                      <p className="text-xs font-medium text-blue-600">Bill Amount</p>
+                      <p className="mt-1 text-base font-bold text-blue-800">
+                        ₹{displayTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </p>
+                      {billTotalManual && otherCharges !== 0 && (
+                        <p className="text-xs mt-1 text-blue-500">
+                          Calc. ₹{calcTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {' · '}
+                          <span className={otherCharges > 0 ? 'text-amber-600' : 'text-emerald-600'}>
+                            {otherCharges > 0 ? '+' : ''}₹{Math.abs(otherCharges).toLocaleString('en-IN', { minimumFractionDigits: 2 })} other charges
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
               <div className="ui-card p-0 overflow-hidden">
-                <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)] gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <div className={`grid gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
+                  isOwnerOrAdmin
+                    ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+                    : 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+                }`}>
                   <span>Tank</span>
                   <span>Fuel</span>
                   <span className="text-right">Quantity</span>
-                  <span className="text-right">Rate</span>
-                  <span className="text-right">Amount</span>
+                  {isOwnerOrAdmin && <span className="text-right">Rate</span>}
+                  {isOwnerOrAdmin && <span className="text-right">Amount</span>}
                 </div>
                 <div className="divide-y divide-slate-100">
                   {items.map((item) => (
                     <div key={item.tankId} className="px-4 py-3">
-                      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)] gap-3 items-center text-sm">
+                      <div className={`grid gap-3 items-center text-sm ${
+                        isOwnerOrAdmin
+                          ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+                          : 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+                      }`}>
                         <span className="font-semibold text-slate-800">{item.tankIdentifier}</span>
                         <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-medium ${FUEL_COLORS[item.fuelType]?.badge ?? FUEL_COLORS.PETROL.badge}`}>
                           {item.fuelType}
@@ -1498,12 +1794,16 @@ function RecordDeliveryModal({
                         <span className="text-right text-slate-600">
                           {item.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
                         </span>
-                        <span className="text-right text-slate-500">
-                          ₹{item.costPricePerUnit.toFixed(4)}/L
-                        </span>
-                        <span className="text-right font-semibold text-slate-800">
-                          ₹{item.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
+                        {isOwnerOrAdmin && (
+                          <span className="text-right text-slate-500">
+                            ₹{item.costPricePerUnit.toFixed(4)}/L
+                          </span>
+                        )}
+                        {isOwnerOrAdmin && (
+                          <span className="text-right font-semibold text-slate-800">
+                            ₹{item.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        )}
                       </div>
                       {item.stockAfter !== null && (
                         <p className="mt-2 text-xs text-slate-500">
@@ -1590,7 +1890,7 @@ function DipCheckModal({
       onClose()
     },
     onError: (err: any) =>
-      setError(err?.response?.data?.message ?? 'Failed to record DIP check'),
+      setError(parseApiError(err, 'Failed to record DIP check')),
   })
 
   const variance = measured !== '' ? Number(measured) - tank.currentStock : null

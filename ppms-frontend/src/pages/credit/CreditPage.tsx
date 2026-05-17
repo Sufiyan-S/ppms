@@ -17,6 +17,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 const today     = localDateInputValue()
 const yesterday = localDateInputValue(-1)
@@ -62,7 +63,7 @@ function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, subCli
       onClose()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record payment'
+      const msg = parseApiError(err, 'Failed to record payment')
       setError(msg)
       addToast(msg, 'error')
     },
@@ -245,7 +246,7 @@ function SetCreditLimitModal({ client, pumpId, onClose }: SetCreditLimitModalPro
       onClose()
     },
     onError: (err: any) => {
-      setError(err?.response?.data?.message ?? 'Failed to update credit limit')
+      setError(parseApiError(err, 'Failed to update credit limit'))
     },
   })
 
@@ -337,7 +338,7 @@ function SetInterestSettingsModal({ client, pumpId, onClose }: SetInterestSettin
       qc.invalidateQueries({ queryKey: ['credit-ledger', pumpId] })
       onClose()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to update interest settings'),
+    onError: (err: any) => setError(parseApiError(err, 'Failed to update interest settings')),
   })
 
   const handleSubmit = () => {
@@ -470,7 +471,7 @@ function GrantExtensionModal({ client, pumpId, onClose }: GrantExtensionModalPro
       qc.invalidateQueries({ queryKey: ['extensions', pumpId, client.id] })
       onClose()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to create extension'),
+    onError: (err: any) => setError(parseApiError(err, 'Failed to create extension')),
   })
 
   const handleSubmit = () => {
@@ -631,7 +632,7 @@ function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, transactio
       qc.invalidateQueries({ queryKey: ['credit-transactions', pumpId] })
       onClose()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? `Failed to move ${transactionType === 'PAYMENT' ? 'payment' : 'entry'}`),
+    onError: (err: any) => setError(parseApiError(err, `Failed to move ${transactionType === 'PAYMENT' ? 'payment' : 'entry'}`)),
   })
 
   const handleSubmit = () => {
@@ -816,7 +817,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
         setApplyInterestFeedback(result.reason ?? 'No interest applicable')
       }
     },
-    onError: (err: any) => setApplyInterestFeedback(err?.response?.data?.message ?? 'Failed to apply interest'),
+    onError: (err: any) => setApplyInterestFeedback(parseApiError(err, 'Failed to apply interest')),
   })
 
   const deleteInterestMutation = useMutation({
@@ -1428,6 +1429,9 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
   const [editNotes, setEditNotes]     = useState('')
   const [editError, setEditError]     = useState<string | null>(null)
 
+  const [clientSearch,     setClientSearch]     = useState('')
+  const deferredSearch = useDeferredValue(clientSearch)
+
   const [expandedParentId, setExpandedParentId] = useState<number | null>(null)
   const toggleCollapse = (id: number) =>
     setExpandedParentId(prev => prev === id ? null : id)
@@ -1452,7 +1456,7 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
       qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
     },
     onError: (err: any, variables) => {
-      const msg = err?.response?.data?.message ?? 'Failed to add client'
+      const msg = parseApiError(err, 'Failed to add client')
       variables.parentClientId != null ? setAddSubError(msg) : setAddError(msg)
     },
   })
@@ -1464,14 +1468,14 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
       setEditingId(null); setEditError(null)
       qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
     },
-    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to update client'),
+    onError: (err: any) => setEditError(parseApiError(err, 'Failed to update client')),
   })
 
   const toggleStatusMutation = useMutation({
     mutationFn: ({ clientId, isActive }: { clientId: number; isActive: boolean }) =>
       pumpApi.toggleCreditClientStatus(pumpId, clientId, isActive),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['creditClients', pumpId] }),
-    onError: (err: any) => setAddError(err?.response?.data?.message ?? 'Failed to update client status'),
+    onError: (err: any) => setAddError(parseApiError(err, 'Failed to update client status')),
   })
 
   const startEdit = (c: PumpCreditClient) => {
@@ -1519,6 +1523,18 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
     return acc
   }, {})
 
+  const q = deferredSearch.toLowerCase().trim()
+  const matchesQuery = (c: PumpCreditClient) =>
+    c.name.toLowerCase().includes(q) ||
+    (c.phone ?? '').includes(q) ||
+    (c.notes ?? '').toLowerCase().includes(q)
+
+  const filteredRootClients = q
+    ? rootClients.filter(parent =>
+        matchesQuery(parent) || (childrenByParent[parent.id] ?? []).some(matchesQuery)
+      )
+    : rootClients
+
   const editForm = (clientId: number, indent = false) => (
     <form onSubmit={e => submitEdit(e, clientId)}
       className={`${indent ? 'pl-7 pr-3' : 'px-3'} py-3 border-t border-slate-100 bg-white space-y-2`}>
@@ -1557,11 +1573,37 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
       </p>
 
       {rootClients.length > 0 && (
+        <div className="ui-search-shell">
+          <svg className="ui-search-shell__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            className="ui-search-shell__input"
+            placeholder="Search client or sub-account…"
+            value={clientSearch}
+            onChange={e => setClientSearch(e.target.value)}
+          />
+          {clientSearch && (
+            <button
+              type="button"
+              onClick={() => setClientSearch('')}
+              className="ui-search-shell__clear"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {filteredRootClients.length > 0 ? (
         <div className="space-y-3">
-          {rootClients.map(parent => {
+          {filteredRootClients.map(parent => {
             const children    = childrenByParent[parent.id] ?? []
             const hasChildren = children.length > 0
-            const isExpanded  = expandedParentId === parent.id
+            const childHasMatch = q ? children.some(matchesQuery) : false
+            const isExpanded  = q ? childHasMatch : expandedParentId === parent.id
             return (
               <div key={parent.id} className="ui-card p-0 overflow-hidden">
                 <div
@@ -1711,7 +1753,9 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
             )
           })}
         </div>
-      )}
+      ) : q ? (
+        <p className="text-sm text-slate-400 py-2">No clients match "{deferredSearch}".</p>
+      ) : null}
 
       {isOwnerOrAdmin && (
         <div className={clients.length > 0 ? 'border-t border-slate-200 pt-4' : ''}>

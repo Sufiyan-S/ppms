@@ -89,7 +89,7 @@ export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
   'balanceSheet:delete':           ['OWNER', 'ADMIN'],
 
   // Payment Settlements
-  'settlement:write':              ['OWNER', 'ADMIN'],
+  'settlement:write':              ['OWNER', 'ADMIN', 'MANAGER'],
   'settlement:configure':          ['OWNER', 'ADMIN'],
 }
 

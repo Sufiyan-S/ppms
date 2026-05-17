@@ -6,9 +6,12 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.shift.ShiftRepository;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -336,12 +339,12 @@ public class UserController {
         }
         if (currentUser.getRole() == UserRole.OWNER) {
             if (!pumpLocationRepository.existsByIdAndOwnerId(pumpId, currentUser.getId())) {
-                throw new BusinessException("You do not have access to pump " + pumpId);
+                throw new AccessDeniedException("You do not have access to pump " + pumpId);
             }
             return;
         }
         if (!pumpId.equals(currentUser.getAssignedPumpId())) {
-            throw new BusinessException("You are not assigned to pump " + pumpId);
+            throw new AccessDeniedException("You are not assigned to pump " + pumpId);
         }
     }
 
@@ -392,7 +395,9 @@ public class UserController {
 
     @lombok.Data
     public static class UpdateStaffDetailsRequest {
+        @Size(max = 100, message = "Full name must not exceed 100 characters")
         private String fullName;
+        @Pattern(regexp = "\\d{10}", message = "Phone number must be exactly 10 digits")
         private String phoneNumber;
         private UserRole role;
         private UserGender gender;

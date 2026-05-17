@@ -421,8 +421,9 @@ public class BalanceSheetService {
                     .dipLossAmount(dipLossAmount)
                     .build();
 
-            fuelLines.add(bsFuelLineRepository.save(line));
+            fuelLines.add(line);
         }
+        bsFuelLineRepository.saveAll(fuelLines);
 
         // ── 13. Persist shift lines ───────────────────────────────────────────
         List<BsShiftLine> shiftLines = new ArrayList<>();
@@ -486,8 +487,9 @@ public class BalanceSheetService {
                     .discrepancy(shiftDiscrepancy)
                     .build();
 
-            shiftLines.add(bsShiftLineRepository.save(line));
+            shiftLines.add(line);
         }
+        bsShiftLineRepository.saveAll(shiftLines);
 
         // ── 14. Build meter amendment lines ───────────────────────────────────
         // Pre-load user names for amendments in one batch to avoid N+1
@@ -551,8 +553,17 @@ public class BalanceSheetService {
         Map<Long, String> userNameMap = userRepository.findAllById(generatorIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
 
+        // Batch-load shift counts — single query instead of one COUNT per balance sheet row
+        Set<Long> bsIds = sheetsPage.getContent().stream()
+                .map(BalanceSheet::getId)
+                .collect(Collectors.toSet());
+        Map<Long, Integer> shiftCountMap = bsIds.isEmpty()
+                ? Collections.emptyMap()
+                : bsShiftLineRepository.countGroupedByBalanceSheetIdIn(bsIds).stream()
+                        .collect(Collectors.toMap(row -> (Long) row[0], row -> ((Long) row[1]).intValue()));
+
         Page<BalanceSheetSummaryResponse> mapped = sheetsPage.map(bs -> {
-            int shiftCount = bsShiftLineRepository.countByBalanceSheetId(bs.getId());
+            int shiftCount = shiftCountMap.getOrDefault(bs.getId(), 0);
             String userName = bs.getGeneratedByUserId() != null
                     ? userNameMap.getOrDefault(bs.getGeneratedByUserId(), "Unknown")
                     : "System";

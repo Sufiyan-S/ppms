@@ -46,7 +46,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String traceId = request.getHeader(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isBlank()) {
+        if (traceId == null || traceId.isBlank() || !traceId.matches("[a-zA-Z0-9\\-]{8,64}")) {
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
 

@@ -17,6 +17,9 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Automatically transitions open shifts when their configured window has ended.
@@ -57,6 +60,14 @@ public class OverdueShiftJob {
 
         List<Shift> openShifts = shiftRepository.findAllOpenShifts();
 
+        // Pre-fetch all required shift definitions in one query instead of one per shift
+        Set<Long> defIds = openShifts.stream()
+                .filter(s -> s.getShiftDefinitionId() != null)
+                .map(Shift::getShiftDefinitionId)
+                .collect(Collectors.toSet());
+        Map<Long, PumpShiftDefinition> defById = shiftDefinitionRepository.findAllById(defIds).stream()
+                .collect(Collectors.toMap(PumpShiftDefinition::getId, d -> d));
+
         int markedOverdue = 0;
         int autoClosed    = 0;
 
@@ -77,13 +88,12 @@ public class OverdueShiftJob {
                 continue;
             }
 
-            shiftDefinitionRepository.findById(shift.getShiftDefinitionId()).ifPresent(def -> {
-                if (isPastEndTime(def, now, shift.getShiftDate(), today)) {
-                    shift.setStatus(ShiftStatus.OPEN_OVERDUE);
-                    shift.setIsOverdueFlag(true);
-                    shiftRepository.save(shift);
-                }
-            });
+            PumpShiftDefinition def = defById.get(shift.getShiftDefinitionId());
+            if (def != null && isPastEndTime(def, now, shift.getShiftDate(), today)) {
+                shift.setStatus(ShiftStatus.OPEN_OVERDUE);
+                shift.setIsOverdueFlag(true);
+                shiftRepository.save(shift);
+            }
 
             if (shift.getStatus() == ShiftStatus.OPEN_OVERDUE) markedOverdue++;
         }

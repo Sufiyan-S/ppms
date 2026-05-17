@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -143,7 +143,7 @@ public class CreditAccountPolicyService {
         }
 
         return creditEntryRepository.findOldestEntryDateByClientId(client.getId())
-                .map(dateTime -> dateTime.atZoneSameInstant(ZoneOffset.UTC).toLocalDate().isBefore(overdueThreshold))
+                .map(dateTime -> dateTime.atZoneSameInstant(ZoneId.of("Asia/Kolkata")).toLocalDate().isBefore(overdueThreshold))
                 .orElse(false);
     }
 }

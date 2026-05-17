@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 function fmtDate(d: string) {
   return formatIstDate(d)
@@ -80,7 +81,7 @@ export default function CalibrationPage() {
       addToast('Calibration recorded successfully', 'success')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record calibration'
+      const msg = parseApiError(err, 'Failed to record calibration')
       setFormError(msg)
       addToast(msg, 'error')
     },

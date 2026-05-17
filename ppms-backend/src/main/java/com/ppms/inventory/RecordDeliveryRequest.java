@@ -27,4 +27,8 @@ public class RecordDeliveryRequest {
 
     @NotBlank(message = "Invoice reference is required")
     private String invoiceReference;
+
+    /** Actual bill total (optional — may include freight, taxes, other charges). */
+    @DecimalMin(value = "0.01", message = "Bill total must be greater than 0")
+    private BigDecimal billTotal;
 }

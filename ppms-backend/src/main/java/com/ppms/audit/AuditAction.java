@@ -37,6 +37,7 @@ public enum AuditAction {
 
     // ── Inventory ─────────────────────────────────────────────────────────────
     DELIVERY_RECORDED,
+    DELIVERY_DELETED,
     DIP_CHECK_RECORDED,
 
     // ── Documents ─────────────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ public class NozzleAdjustmentService {
     public NozzleReadingAdjustment recordReadingAdjustment(
             Long pumpId, Long nozzleId, RecordAdjustmentRequest req, User currentUser) {
 
-        Nozzle nozzle = supportService.requireAdjustableNozzle(nozzleId);
+        Nozzle nozzle = supportService.requireAdjustableNozzle(pumpId, nozzleId);
         String type = supportService.validateAdjustmentType(req.getAdjustmentType());
 
         BigDecimal previousReading = nozzle.getLastReading();
@@ -69,7 +69,8 @@ public class NozzleAdjustmentService {
         return saved;
     }
 
-    public List<NozzleReadingAdjustment> getAdjustments(Long nozzleId) {
+    public List<NozzleReadingAdjustment> getAdjustments(Long pumpId, Long nozzleId) {
+        supportService.requireNozzleForPump(pumpId, nozzleId);
         return adjustmentRepository.findByNozzleIdOrderByCreatedAtDesc(nozzleId);
     }
 

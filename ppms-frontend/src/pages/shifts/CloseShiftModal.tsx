@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Check, AlertTriangle, ArrowUp } from 'lucide-react'
 import { shiftApi } from '../../api/shiftApi'
@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 interface Props {
   shift: Shift
   onClose: () => void
+  onShiftClosed?: (duId: number, nozzleIds: number[]) => void
 }
 
 interface CreditRow {
@@ -40,9 +41,9 @@ const FUEL_UNIT: Record<string, string> = {
 }
 
 const emptyNum = (v: string) => (v === '' ? 0 : Number(v))
-let nextRowId = 1
 
-export default function CloseShiftModal({ shift, onClose }: Props) {
+export default function CloseShiftModal({ shift, onClose, onShiftClosed }: Props) {
+  const nextRowId = useRef(1)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
@@ -122,14 +123,16 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   // Consider "touched" if any payment field has a value, OR if pre-recorded credit exists
   const paymentTouched   = cash !== '' || upi !== '' || card !== '' || fleetCard !== '' || creditTotal > 0
   const isBalanced       = readingsComplete && !readingsBelowStart && paymentTouched && Math.abs(diff) < 0.01
-  const hasDiscrepancy   = readingsComplete && !readingsBelowStart && paymentTouched && Math.abs(diff) >= 0.01
+  // Sub-rupee discrepancy: auto-absorbed via standard rounding, no reason required
+  const isAutoRounded    = readingsComplete && !readingsBelowStart && paymentTouched && Math.abs(diff) >= 0.01 && Math.abs(diff) < 1.0
+  const hasDiscrepancy   = readingsComplete && !readingsBelowStart && paymentTouched && Math.abs(diff) >= 1.0
   const reasonFilled     = discrepancyReason.trim().length > 0
-  const canClose         = isBalanced || (hasDiscrepancy && reasonFilled)
+  const canClose         = isBalanced || isAutoRounded || (hasDiscrepancy && reasonFilled)
 
   // ── Credit row helpers ──────────────────────────────────────────────────────
 
   const addCreditRow = () => {
-    const newId = nextRowId++
+    const newId = nextRowId.current++
     setCreditRows((rows) => [...rows, {
       id: newId,
       clientId: null, clientName: '', clientSearch: '',
@@ -200,7 +203,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
       { entryId: e.id, reason: 'Edited — replaced by corrected entry' },
       {
         onSuccess: () => {
-          const newId = nextRowId++
+          const newId = nextRowId.current++
           setCreditRows(rows => [...rows, {
             id: newId,
             clientId: null, clientName: e.clientName, clientSearch: e.clientName,
@@ -230,6 +233,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activeShifts', shift.pumpId] })
       queryClient.invalidateQueries({ queryKey: ['shiftHistory', shift.pumpId] })
+      onShiftClosed?.(shift.duId, shift.nozzles.map(n => n.id))
       onClose()
     },
     onError: (err: unknown) =>
@@ -255,6 +259,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
 
     for (const row of creditRows) {
       if (!row.clientName.trim()) { setServerError('Each credit entry must have a client.'); return }
+      if (!row.clientId)          { setServerError('Please select a client from the dropdown for each credit entry.'); return }
       if (!row.fuelType)          { setServerError('Each credit entry must have a fuel type.'); return }
       if (emptyNum(row.amount) <= 0) { setServerError('Each credit entry amount must be > 0.'); return }
     }
@@ -319,7 +324,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
   const fmt = (n: number) =>
     n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const headerToneClass = isBalanced
+  const headerToneClass = (isBalanced || isAutoRounded)
     ? 'ui-modal-header--success'
     : hasDiscrepancy
     ? diff < 0 ? 'ui-modal-header--danger' : 'ui-modal-header--warning'
@@ -885,7 +890,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
 
             {/* ── Balance status card ───────────────────────────────────── */}
             {paymentTouched && readingsComplete && (
-              <BalanceCard totalDue={totalDue} totalCollected={totalCollected} diff={diff} fmt={fmt} />
+              <BalanceCard totalDue={totalDue} totalCollected={totalCollected} diff={diff} isAutoRounded={isAutoRounded} fmt={fmt} />
             )}
 
             {/* ── Discrepancy reason ────────────────────────────────────── */}
@@ -953,7 +958,7 @@ export default function CloseShiftModal({ shift, onClose }: Props) {
                   className="ui-btn w-full bg-slate-200 text-slate-400 cursor-not-allowed">
                   Fill in readings &amp; payment to continue
                 </button>
-              ) : isBalanced ? (
+              ) : (isBalanced || isAutoRounded) ? (
                 <button type="submit" disabled={closeMutation.isPending}
                   className="ui-btn w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white">
                   {closeMutation.isPending ? 'Closing...' : <span className="inline-flex items-center gap-1.5"><Check size={14} strokeWidth={2.5} />Close Shift — Balanced</span>}
@@ -1078,30 +1083,34 @@ function PaymentField({ label, value, onChange }: { label: string; value: string
   )
 }
 
-function BalanceCard({ totalDue, totalCollected, diff, fmt }: {
-  totalDue: number; totalCollected: number; diff: number; fmt: (n: number) => string
+function BalanceCard({ totalDue, totalCollected, diff, isAutoRounded = false, fmt }: {
+  totalDue: number; totalCollected: number; diff: number; isAutoRounded?: boolean; fmt: (n: number) => string
 }) {
   const isBalanced = Math.abs(diff) < 0.01
+  const showAsOk   = isBalanced || isAutoRounded
   return (
     <div className={`rounded-xl border-2 overflow-hidden ${
-      isBalanced ? 'border-emerald-300' : diff < 0 ? 'border-red-300' : 'border-amber-300'
+      showAsOk ? 'border-emerald-300' : diff < 0 ? 'border-red-300' : 'border-amber-300'
     }`}>
       <div className={`px-4 py-3 flex items-center justify-between ${
-        isBalanced ? 'bg-emerald-50' : diff < 0 ? 'bg-red-50' : 'bg-amber-50'
+        showAsOk ? 'bg-emerald-50' : diff < 0 ? 'bg-red-50' : 'bg-amber-50'
       }`}>
         <div className="text-xs text-slate-500 flex gap-6">
           <span>Due: <span className="font-semibold text-slate-700">₹{fmt(totalDue)}</span></span>
           <span>Collected: <span className="font-semibold text-slate-700">₹{fmt(totalCollected)}</span></span>
         </div>
         <div className={`flex items-center gap-1.5 text-sm font-bold ${
-          isBalanced ? 'text-emerald-700' : diff < 0 ? 'text-red-700' : 'text-amber-700'
+          showAsOk ? 'text-emerald-700' : diff < 0 ? 'text-red-700' : 'text-amber-700'
         }`}>
-          {isBalanced
-            ? <span className="inline-flex items-center gap-1"><Check size={14} strokeWidth={2.5} />Balanced</span>
-            : diff < 0
-              ? <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} style={{ transform: 'rotate(180deg)' }} />SHORT ₹{fmt(Math.abs(diff))}</span>
-              : <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} />OVER ₹{fmt(diff)}</span>
-          }
+          {isBalanced ? (
+            <span className="inline-flex items-center gap-1"><Check size={14} strokeWidth={2.5} />Balanced</span>
+          ) : isAutoRounded ? (
+            <span className="inline-flex items-center gap-1"><Check size={14} strokeWidth={2.5} />Rounded</span>
+          ) : diff < 0 ? (
+            <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} style={{ transform: 'rotate(180deg)' }} />SHORT ₹{fmt(Math.abs(diff))}</span>
+          ) : (
+            <span className="inline-flex items-center gap-1"><ArrowUp size={13} strokeWidth={2} />OVER ₹{fmt(diff)}</span>
+          )}
         </div>
       </div>
     </div>

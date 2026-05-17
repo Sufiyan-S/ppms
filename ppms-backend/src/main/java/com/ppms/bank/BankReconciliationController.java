@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -65,6 +66,7 @@ public class BankReconciliationController {
      * Returns all statement imports for a pump, newest first.
      */
     @GetMapping("/imports")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<List<ImportSummaryResponse>> getImports(@PathVariable Long pumpId) {
         List<ImportSummaryResponse> response = importRepository
                 .findByPumpIdOrderByImportedAtDesc(pumpId)
@@ -79,6 +81,7 @@ public class BankReconciliationController {
      * Returns all statement lines for a specific import, ordered by transaction date.
      */
     @GetMapping("/imports/{importId}/lines")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<List<StatementLineResponse>> getLines(
             @PathVariable Long pumpId,
             @PathVariable Long importId) {
@@ -127,6 +130,11 @@ public class BankReconciliationController {
 
         if (file.isEmpty()) {
             throw new BusinessException("Uploaded file is empty");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".csv")) {
+            throw new BusinessException("Only CSV files are accepted");
         }
 
         List<BankStatementLine> parsedLines = new ArrayList<>();
@@ -181,7 +189,8 @@ public class BankReconciliationController {
             }
 
         } catch (Exception ex) {
-            throw new BusinessException("Failed to parse CSV: " + ex.getMessage());
+            log.warn("CSV parse error for pump={}: {}", pumpId, ex.getMessage());
+            throw new BusinessException("Failed to parse the uploaded file. Ensure it is a valid CSV with the required columns.");
         }
 
         if (parsedLines.isEmpty()) {

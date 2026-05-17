@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown, ChevronRight, Plus, AlertTriangle, Check, X,
   Gauge, Database, IndianRupee, Users, Clock,
-  Wrench, Ruler, CircleOff, Settings, CalendarDays, RotateCcw, Pencil,
+  Wrench, Ruler, CircleOff, Settings, CalendarDays, RotateCcw, Pencil, Truck,
 } from 'lucide-react'
+import { parseApiError } from '../../utils/apiError'
 import { pumpApi } from '../../api/pumpApi'
 import { userApi } from '../../api/userApi'
 import { shiftPlanApi } from '../../api/shiftPlanApi'
@@ -18,6 +19,8 @@ import type { FuelType, DUOption, NozzleDetail } from '../../types/shift'
 import { dipApi } from '../../api/dipApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { CreateShiftDefinitionRequest } from '../../api/shiftDefinitionApi'
+import { tankerApi } from '../../api/tankerApi'
+import type { Tanker, CreateTankerRequest } from '../../api/tankerApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { PasswordInput } from '../../components/PasswordInput'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
@@ -109,7 +112,7 @@ export default function SetupPage() {
 
 // ── Pump management accordion panel ──────────────────────────────────────────
 
-type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'shifts' | 'settings'
+type SectionKey = 'nozzles' | 'tanks' | 'prices' | 'staff' | 'shifts' | 'tankers' | 'settings'
 
 function PumpManagementPanel({
   pump,
@@ -230,6 +233,19 @@ function PumpManagementPanel({
           <ShiftDefinitionsContent pumpId={pump.id} />
         </AccordionSection>
 
+        {/* ── Tankers ── */}
+        <AccordionSection
+          sectionKey="tankers"
+          open={openSection === 'tankers'}
+          onToggle={() => toggle('tankers')}
+          icon={<div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0"><Truck size={14} strokeWidth={2} className="text-orange-600" /></div>}
+          title="Tankers (Trucks)"
+          summary="Configure tanker sizes and set the default"
+          badgeColor="bg-orange-50 text-orange-700"
+        >
+          <TankersContent pumpId={pump.id} />
+        </AccordionSection>
+
         {/* ── Pump Settings ── */}
         <AccordionSection
           sectionKey="settings"
@@ -314,7 +330,7 @@ function CreatePumpForm({ onCreated }: { onCreated: (p: PumpSummary) => void }) 
       onCreated(pump)
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to create pump'
+      const msg = parseApiError(err, 'Failed to create pump')
       setError(msg)
       addToast(msg, 'error')
     },
@@ -470,7 +486,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
       invalidate(); onAdded()
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to create DU'
+      const msg = parseApiError(err, 'Failed to create DU')
       setAddError(msg)
       addToast(msg, 'error')
     },
@@ -480,28 +496,28 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
     mutationFn: ({ nozzleId, adjustmentType, reason, newReading }: { nozzleId: number; adjustmentType: 'RESET' | 'CUSTOM_READING'; reason: string; newReading?: number }) =>
       dipApi.recordAdjustment(pump.id, nozzleId, adjustmentType, reason, newReading),
     onSuccess: () => { setOpenPanel(null); setAdjustError(null); setAdjustReason(''); setAdjustReading(''); addToast('Reading adjusted', 'success'); invalidate() },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to record adjustment'; setAdjustError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to record adjustment'); setAdjustError(msg); addToast(msg, 'error') },
   })
 
   const recordDipMutation = useMutation({
     mutationFn: ({ fuelType, litresRemoved, reason, date }: { fuelType: string; litresRemoved: number; reason: string; date?: string }) =>
       dipApi.recordDip(pump.id, fuelType, litresRemoved, reason, date),
     onSuccess: () => { setOpenPanel(null); setDipError(null); setDipLitres(''); setDipReason(''); setDipDate(''); addToast('Dip recorded', 'success'); invalidate() },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to record dip'; setDipError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to record dip'); setDipError(msg); addToast(msg, 'error') },
   })
 
   const mapTankMutation = useMutation({
     mutationFn: ({ pumpId, duId, nozzleId, tankId }: { pumpId: number; duId: number; nozzleId: number; tankId: number | null }) =>
       pumpApi.mapNozzleToTank(pumpId, duId, nozzleId, tankId),
     onSuccess: () => { setOpenPanel(null); addToast('Tank mapped successfully', 'success'); invalidate() },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to save tank mapping'; setMapError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to save tank mapping'); setMapError(msg); addToast(msg, 'error') },
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ pumpId, duId, nozzleId, status }: { pumpId: number; duId: number; nozzleId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
       pumpApi.updateNozzleStatus(pumpId, duId, nozzleId, status),
     onSuccess: (_, { status }) => { setOpenPanel(null); setStatusError(null); addToast(status === 'ACTIVE' ? 'Nozzle enabled' : 'Nozzle disabled', 'success'); invalidate() },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to update nozzle status'; setStatusError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to update nozzle status'); setStatusError(msg); addToast(msg, 'error') },
   })
 
   const increaseMaxMutation = useMutation({
@@ -511,7 +527,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
       addToast('DU limit updated', 'success')
       invalidate(); onAdded()
     },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to update DU limit'; setIncreaseError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to update DU limit'); setIncreaseError(msg); addToast(msg, 'error') },
   })
 
   // Per-DU collapse state — all collapsed by default
@@ -538,7 +554,7 @@ function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => vo
       addToast('Nozzle added', 'success')
       invalidate()
     },
-    onError: (err: any) => { const msg = err?.response?.data?.message ?? 'Failed to add nozzle'; setInlineError(msg); addToast(msg, 'error') },
+    onError: (err: any) => { const msg = parseApiError(err, 'Failed to add nozzle'); setInlineError(msg); addToast(msg, 'error') },
   })
 
   const submitInlineNozzle = (e: React.FormEvent, du: DUOption) => {
@@ -1269,7 +1285,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
         setDeviationWarning({ ...warning, fuelType: ft })
       } else {
         // 409 from a DB constraint violation, or any other error — show the message directly
-        setError(err?.response?.data?.message ?? 'Failed to set price')
+        setError(parseApiError(err, 'Failed to set price'))
       }
     },
   })
@@ -1332,7 +1348,7 @@ function FuelPricesContent({ pump, currentPrices }: { pump: PumpSummary; current
       setSuccess(true); setTimeout(() => setSuccess(false), 3000)
       if (result.openShiftsWarning) setOpenShiftsWarning(result.openShiftsWarning)
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Failed to set price')
+      setError(parseApiError(err, 'Failed to set price'))
     }
   }
 
@@ -1561,7 +1577,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['operators', pump.id] })
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to create user'),
+    onError: (err: any) => setError(parseApiError(err, 'Failed to create user')),
   })
 
   const statusMutation = useMutation({
@@ -1572,7 +1588,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['operators', pump.id] })
     },
-    onError: (err: any) => setStatusError(err?.response?.data?.message ?? 'Failed to update status'),
+    onError: (err: any) => setStatusError(parseApiError(err, 'Failed to update status')),
   })
 
   const { data: activeShiftDefs = [] } = useQuery({
@@ -1601,7 +1617,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       setPrefError(null)
       queryClient.invalidateQueries({ queryKey: ['staffPref', pump.id, openStaffPanel?.userId] })
     },
-    onError: (err: any) => setPrefError(err?.response?.data?.message ?? 'Failed to save preferences'),
+    onError: (err: any) => setPrefError(parseApiError(err, 'Failed to save preferences')),
   })
 
   const addLeaveMutation = useMutation({
@@ -1611,7 +1627,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       setNewLeaveDate(''); setNewLeaveReason(''); setLeaveError(null)
       queryClient.invalidateQueries({ queryKey: ['staffLeaves', pump.id, openStaffPanel?.userId] })
     },
-    onError: (err: any) => setLeaveError(err?.response?.data?.message ?? 'Failed to add leave'),
+    onError: (err: any) => setLeaveError(parseApiError(err, 'Failed to add leave')),
   })
 
   const removeLeaveMutation = useMutation({
@@ -1629,7 +1645,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       setOpenStaffPanel(null)
       queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
     },
-    onError: (err: any) => setRateError(err?.response?.data?.message ?? 'Failed to save rates'),
+    onError: (err: any) => setRateError(parseApiError(err, 'Failed to save rates')),
   })
 
   const detailsMutation = useMutation({
@@ -1641,7 +1657,7 @@ function StaffContent({ pump }: { pump: PumpSummary }) {
       queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['operators', pump.id] })
     },
-    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to save details'),
+    onError: (err: any) => setEditError(parseApiError(err, 'Failed to save details')),
   })
 
   const openPanel = (userId: number, panel: StaffPanel, pref?: typeof openPref, member?: StaffMember) => {
@@ -2352,28 +2368,28 @@ function TanksContent({ pump }: { pump: PumpSummary }) {
       queryClient.invalidateQueries({ queryKey: ['tanks', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['tankStocks', pump.id] })
     },
-    onError: (err: any) => setCreateError(err?.response?.data?.message ?? 'Failed to create tank'),
+    onError: (err: any) => setCreateError(parseApiError(err, 'Failed to create tank')),
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ tankId, req }: { tankId: number; req: any }) => pumpApi.updateTank(tankId, req),
+    mutationFn: ({ tankId, req }: { tankId: number; req: any }) => pumpApi.updateTank(pump.id, tankId, req),
     onSuccess: () => {
       setEditingId(null); setEditError(null)
       queryClient.invalidateQueries({ queryKey: ['tanks', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['tankStocks', pump.id] })
     },
-    onError: (err: any) => setEditError(err?.response?.data?.message ?? 'Failed to update tank'),
+    onError: (err: any) => setEditError(parseApiError(err, 'Failed to update tank')),
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ tankId, status }: { tankId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
-      pumpApi.updateTankStatus(tankId, status),
+      pumpApi.updateTankStatus(pump.id, tankId, status),
     onSuccess: () => {
       setConfirmDisableId(null); setStatusError(null)
       queryClient.invalidateQueries({ queryKey: ['tanks', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['tankStocks', pump.id] })
     },
-    onError: (err: any) => setStatusError(err?.response?.data?.message ?? 'Failed to update tank status'),
+    onError: (err: any) => setStatusError(parseApiError(err, 'Failed to update tank status')),
   })
 
   /** Returns true when currentStock > 5% of capacity (significant frozen stock warning). */
@@ -2717,7 +2733,7 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
       resetForm()
     },
     onError: (err: any) => {
-      setFormError(err?.response?.data?.message ?? 'Failed to save shift definitions')
+      setFormError(parseApiError(err, 'Failed to save shift definitions'))
     },
   })
 
@@ -2762,7 +2778,7 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
     },
     onError: (err: any) => {
       setConfirmDeleteKey(null)
-      setActionError(err?.response?.data?.message ?? 'Failed to delete shift schedule')
+      setActionError(parseApiError(err, 'Failed to delete shift schedule'))
     },
   })
 
@@ -2785,7 +2801,7 @@ function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
     },
     onError: (err: any) => {
       setDisablingDate(null)
-      setActionError(err?.response?.data?.message ?? 'Failed to disable shift schedule')
+      setActionError(parseApiError(err, 'Failed to disable shift schedule'))
     },
   })
 
@@ -3159,7 +3175,7 @@ function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; onUpdated
       setError(null)
       onUpdated()
     },
-    onError: (err: any) => setError(err?.response?.data?.message ?? 'Failed to save settings'),
+    onError: (err: any) => setError(parseApiError(err, 'Failed to save settings')),
   })
 
   const handleSave = () => {
@@ -3204,6 +3220,267 @@ function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; onUpdated
       >
         {mutation.isPending ? 'Saving…' : 'Save Settings'}
       </button>
+    </div>
+  )
+}
+
+// ── Tankers content ───────────────────────────────────────────────────────────
+
+function TankersContent({ pumpId }: { pumpId: number }) {
+  const qc = useQueryClient()
+  const { addToast } = useToastStore()
+
+  const { data: tankers = [], isLoading } = useQuery<Tanker[]>({
+    queryKey: ['tankers', pumpId],
+    queryFn: () => tankerApi.getTankers(pumpId),
+  })
+
+  const [showAdd,    setShowAdd]    = useState(false)
+  const [editId,     setEditId]     = useState<number | null>(null)
+  const [name,       setName]       = useState('')
+  const [capacity,   setCapacity]   = useState('')
+  const [tankerType, setTankerType] = useState<'OWN' | 'COMPANY'>('COMPANY')
+  const [makeDefault, setMakeDefault] = useState(false)
+  const [formError,  setFormError]  = useState<string | null>(null)
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['tankers', pumpId] })
+
+  const resetForm = () => {
+    setName(''); setCapacity(''); setTankerType('COMPANY'); setMakeDefault(false)
+    setFormError(null); setShowAdd(false); setEditId(null)
+  }
+
+  const startEdit = (t: Tanker) => {
+    setEditId(t.id); setName(t.name)
+    setCapacity(String(t.capacityLitres)); setTankerType(t.tankerType)
+    setMakeDefault(t.defaultTanker); setFormError(null); setShowAdd(false)
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (req: CreateTankerRequest) => tankerApi.createTanker(pumpId, req),
+    onSuccess: () => { invalidate(); resetForm(); addToast('Tanker added', 'success') },
+    onError: (err: unknown) => setFormError(parseApiError(err, 'Failed to add tanker')),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, req }: { id: number; req: CreateTankerRequest }) =>
+      tankerApi.updateTanker(pumpId, id, req),
+    onSuccess: () => { invalidate(); resetForm(); addToast('Tanker updated', 'success') },
+    onError: (err: unknown) => setFormError(parseApiError(err, 'Failed to update tanker')),
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: number) => tankerApi.deactivateTanker(pumpId, id),
+    onSuccess: () => { invalidate(); addToast('Tanker removed', 'success') },
+  })
+
+  const setDefaultMutation = useMutation({
+    mutationFn: (id: number) => tankerApi.setDefault(pumpId, id),
+    onSuccess: () => { invalidate(); addToast('Default tanker updated', 'success') },
+  })
+
+  function handleSubmit() {
+    const cap = parseFloat(capacity)
+    if (!name.trim()) { setFormError('Name is required.'); return }
+    if (!capacity || isNaN(cap) || cap < 100) { setFormError('Capacity must be at least 100 L.'); return }
+    setFormError(null)
+    const req: CreateTankerRequest = {
+      name: name.trim(), capacityLitres: cap, tankerType, defaultTanker: makeDefault,
+    }
+    if (editId !== null) {
+      updateMutation.mutate({ id: editId, req })
+    } else {
+      createMutation.mutate(req)
+    }
+  }
+
+  const isPending = createMutation.isPending || updateMutation.isPending
+
+  return (
+    <div className="space-y-4 pt-2">
+      <p className="text-xs text-slate-500">
+        Configure the tanker trucks used to deliver fuel. When recording a delivery, the total
+        quantity across all tanks must exactly match the selected tanker's capacity.
+      </p>
+
+      {isLoading ? (
+        <p className="text-xs text-slate-400">Loading…</p>
+      ) : tankers.length === 0 && !showAdd ? (
+        <p className="text-xs text-slate-400">No tankers configured yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {tankers.map(t => (
+            <div
+              key={t.id}
+              className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
+                editId === t.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'
+              }`}
+            >
+              {editId === t.id ? (
+                /* Inline edit form */
+                <div className="flex-1 space-y-3">
+                  <TankerForm
+                    name={name} setName={setName}
+                    capacity={capacity} setCapacity={setCapacity}
+                    tankerType={tankerType} setTankerType={setTankerType}
+                    makeDefault={makeDefault} setMakeDefault={setMakeDefault}
+                    error={formError}
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={handleSubmit} disabled={isPending} className="ui-btn ui-btn-primary text-xs py-1.5 px-3 min-h-0">
+                      {isPending ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={resetForm} className="ui-btn ui-btn-secondary text-xs py-1.5 px-3 min-h-0">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                    <Truck size={14} strokeWidth={2} className="text-orange-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-800">{t.name}</span>
+                      <span className="text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
+                        {(t.capacityLitres / 1000).toFixed(0)}K L
+                      </span>
+                      <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {t.tankerType === 'OWN' ? 'Own' : 'Company'}
+                      </span>
+                      {t.defaultTanker && (
+                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {t.capacityLitres.toLocaleString('en-IN')} L capacity
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {!t.defaultTanker && (
+                      <button
+                        onClick={() => setDefaultMutation.mutate(t.id)}
+                        disabled={setDefaultMutation.isPending}
+                        className="ui-btn ui-btn-ghost text-xs py-1 px-2 min-h-0 text-slate-500"
+                        title="Set as default"
+                      >
+                        Set Default
+                      </button>
+                    )}
+                    <button
+                      onClick={() => startEdit(t)}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors rounded"
+                      title="Edit tanker"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => deactivateMutation.mutate(t.id)}
+                      disabled={deactivateMutation.isPending}
+                      className="p-1.5 text-slate-300 hover:text-red-500 transition-colors rounded"
+                      title="Remove tanker"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdd ? (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">New Tanker</p>
+          <TankerForm
+            name={name} setName={setName}
+            capacity={capacity} setCapacity={setCapacity}
+            tankerType={tankerType} setTankerType={setTankerType}
+            makeDefault={makeDefault} setMakeDefault={setMakeDefault}
+            error={formError}
+          />
+          <div className="flex gap-2">
+            <button onClick={handleSubmit} disabled={isPending} className="ui-btn ui-btn-primary text-xs py-1.5 px-3 min-h-0">
+              {isPending ? 'Adding…' : 'Add Tanker'}
+            </button>
+            <button onClick={resetForm} className="ui-btn ui-btn-secondary text-xs py-1.5 px-3 min-h-0">Cancel</button>
+          </div>
+        </div>
+      ) : editId === null && (
+        <button
+          onClick={() => { resetForm(); setShowAdd(true) }}
+          className="ui-btn ui-btn-secondary w-full border-dashed border-2 text-sm"
+        >
+          <Plus size={14} strokeWidth={2.5} />
+          Add Tanker
+        </button>
+      )}
+    </div>
+  )
+}
+
+function TankerForm({
+  name, setName, capacity, setCapacity, tankerType, setTankerType, makeDefault, setMakeDefault, error,
+}: {
+  name: string; setName: (v: string) => void
+  capacity: string; setCapacity: (v: string) => void
+  tankerType: 'OWN' | 'COMPANY'; setTankerType: (v: 'OWN' | 'COMPANY') => void
+  makeDefault: boolean; setMakeDefault: (v: boolean) => void
+  error: string | null
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="ui-label">Tanker Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Company Tanker 1"
+            className="text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="ui-label">Capacity (Litres)</label>
+          <input
+            type="number"
+            min="100"
+            step="100"
+            value={capacity}
+            onChange={e => setCapacity(e.target.value)}
+            placeholder="e.g. 12000"
+            className="text-sm"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="ui-label">Type</label>
+          <select
+            value={tankerType}
+            onChange={e => setTankerType(e.target.value as 'OWN' | 'COMPANY')}
+            className="ui-input text-sm"
+          >
+            <option value="COMPANY">Company Tanker</option>
+            <option value="OWN">Own Tanker</option>
+          </select>
+        </div>
+        <div className="flex items-end pb-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={makeDefault}
+              onChange={e => setMakeDefault(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-sm text-slate-700">Set as default</span>
+          </label>
+        </div>
+      </div>
+      {error && <p className="ui-error-text">{error}</p>}
     </div>
   )
 }

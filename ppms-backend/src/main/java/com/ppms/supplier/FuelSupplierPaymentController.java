@@ -54,6 +54,7 @@ public class FuelSupplierPaymentController {
      * Max page size is capped at 200 to prevent runaway queries.
      */
     @GetMapping
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<PagedResponse<SupplierPaymentResponse>> getPayments(
             @PathVariable Long pumpId,
             @RequestParam(required = false) Long supplierId,

@@ -45,6 +45,18 @@ public class TankerDelivery {
     @Column(name = "invoice_reference", nullable = false)
     private String invoiceReference;
 
+    /** Actual total from the physical bill (may include freight, taxes, other charges). Null when not entered. */
+    @Column(name = "bill_total")
+    private BigDecimal billTotal;
+
+    /** FK to the tanker that made this delivery. Nullable — legacy rows and entries that skip tanker selection. */
+    @Column(name = "tanker_id")
+    private Long tankerId;
+
+    /** Denormalised tanker name for history display; preserved even if tanker is deactivated. */
+    @Column(name = "tanker_name", length = 100)
+    private String tankerName;
+
     @Column(name = "logged_by_user_id", nullable = false)
     private Long loggedByUserId;
 

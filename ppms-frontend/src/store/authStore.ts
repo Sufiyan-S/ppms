@@ -34,7 +34,10 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'ppms_user',
-      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      partialize: (state) => ({ user: state.user }),
+      onRehydrateStorage: () => (state) => {
+        if (state) state.isAuthenticated = !!state.user
+      },
     }
   )
 )

@@ -4,6 +4,7 @@ import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
@@ -190,14 +191,19 @@ public class PumpController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toTankResponse(tank));
     }
 
-    @PatchMapping("/tanks/{tankId}")
+    @PatchMapping("/{pumpId}/tanks/{tankId}")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<TankResponse> updateTank(
+            @PathVariable Long pumpId,
             @PathVariable Long tankId,
             @Valid @RequestBody UpdateTankRequest request) {
 
         UndergroundTank tank = tankRepository.findById(tankId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tank not found"));
+
+        if (!tank.getPumpId().equals(pumpId)) {
+            throw new AccessDeniedException("Tank does not belong to pump " + pumpId);
+        }
 
         tank.setCapacity(request.getCapacity());
         if (request.getTankIdentifier() != null && !request.getTankIdentifier().isBlank()) {
@@ -207,15 +213,20 @@ public class PumpController {
         return ResponseEntity.ok(toTankResponse(tank));
     }
 
-    @PatchMapping("/tanks/{tankId}/status")
+    @PatchMapping("/{pumpId}/tanks/{tankId}/status")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<TankResponse> updateTankStatus(
+            @PathVariable Long pumpId,
             @PathVariable Long tankId,
             @Valid @RequestBody UpdateTankStatusRequest request,
             @AuthenticationPrincipal User currentUser) {
 
         UndergroundTank tank = tankRepository.findById(tankId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tank not found"));
+
+        if (!tank.getPumpId().equals(pumpId)) {
+            throw new AccessDeniedException("Tank does not belong to pump " + pumpId);
+        }
 
         if (request.status() == TankStatus.DECOMMISSIONED) {
             throw new BusinessException("Use the decommission endpoint to permanently remove a tank.");

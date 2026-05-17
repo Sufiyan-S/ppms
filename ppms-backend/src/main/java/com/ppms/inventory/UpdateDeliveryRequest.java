@@ -15,7 +15,7 @@ public class UpdateDeliveryRequest {
     @DecimalMin(value = "0.001", message = "Quantity must be greater than 0")
     private BigDecimal quantityDelivered;
 
-    @NotNull(message = "Cost price per unit is required")
+    /** Null is allowed — backend keeps the existing cost price on the delivery. */
     @DecimalMin(value = "0.0001", message = "Cost price must be greater than 0")
     private BigDecimal costPricePerUnit;
 

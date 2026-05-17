@@ -6,7 +6,6 @@ import com.ppms.user.UserRole;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -55,7 +54,9 @@ public class PumpAccessInterceptor implements HandlerInterceptor {
 
         // Guard: only authenticated User instances are expected here
         if (!(principal instanceof User user)) {
-            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized");
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"message\":\"Unauthorized\"}");
             return false;
         }
 
@@ -67,8 +68,9 @@ public class PumpAccessInterceptor implements HandlerInterceptor {
         // OWNER: verify they own the pump
         if (user.getRole() == UserRole.OWNER) {
             if (!pumpLocationRepository.existsByIdAndOwnerId(pumpId, user.getId())) {
-                response.sendError(HttpStatus.FORBIDDEN.value(),
-                        "You do not have access to pump " + pumpId);
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"message\":\"You do not have access to pump " + pumpId + "\"}");
                 return false;
             }
             return true;
@@ -76,8 +78,9 @@ public class PumpAccessInterceptor implements HandlerInterceptor {
 
         // ADMIN / MANAGER / OPERATOR: must be assigned to this exact pump
         if (!Long.valueOf(pumpId).equals(user.getAssignedPumpId())) {
-            response.sendError(HttpStatus.FORBIDDEN.value(),
-                    "You are not assigned to pump " + pumpId);
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"message\":\"You are not assigned to pump " + pumpId + "\"}");
             return false;
         }
 

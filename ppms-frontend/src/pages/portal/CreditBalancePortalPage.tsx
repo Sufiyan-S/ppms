@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import axios from 'axios'
 import { Fuel } from 'lucide-react'
+import { parseApiError } from '../../utils/apiError'
+import { formatCurrency } from '../../utils/format'
 
 // Uses a plain axios instance — no auth header, no JWT
 const publicClient = axios.create({ baseURL: '/api' })
@@ -9,10 +11,6 @@ interface BalanceResult {
   clientName: string
   outstandingAmount: number
   creditLimit: number
-}
-
-function fmtAmt(n: number) {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export default function CreditBalancePortalPage() {
@@ -37,7 +35,7 @@ export default function CreditBalancePortalPage() {
       })
       setResult(res.data)
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Account not found. Please check your pump ID and phone number.')
+      setError(parseApiError(err, 'Account not found. Please check your pump ID and phone number.'))
     } finally {
       setLoading(false)
     }
@@ -107,13 +105,13 @@ export default function CreditBalancePortalPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-500">Outstanding Balance</span>
                   <span className={`text-sm font-bold ${result.outstandingAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {fmtAmt(result.outstandingAmount)}
+                    {formatCurrency(result.outstandingAmount)}
                   </span>
                 </div>
                 {result.creditLimit > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">Credit Limit</span>
-                    <span className="text-sm text-slate-700">{fmtAmt(result.creditLimit)}</span>
+                    <span className="text-sm text-slate-700">{formatCurrency(result.creditLimit)}</span>
                   </div>
                 )}
               </div>

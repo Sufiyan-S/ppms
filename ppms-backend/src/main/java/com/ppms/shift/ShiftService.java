@@ -21,6 +21,7 @@ import com.ppms.pump.NozzleRepository;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionRepository;
+import com.ppms.pump.UndergroundTank;
 import com.ppms.pump.UndergroundTankRepository;
 import com.ppms.settlement.PaymentSettlement;
 import com.ppms.settlement.PaymentSettlementRepository;
@@ -45,9 +46,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -252,13 +256,15 @@ public class ShiftService {
 
         // Update each nozzle's last_reading for pre-fill on next shift open.
         // nozzleById is already populated above — no extra DB round-trip per nozzle.
+        List<Nozzle> updatedNozzles = new ArrayList<>();
         for (ShiftFuelReading reading : readings) {
             Nozzle nozzle = nozzleById.get(reading.getNozzleId());
             if (nozzle != null) {
                 nozzle.setLastReading(reading.getEndReading());
-                nozzleRepository.save(nozzle);
+                updatedNozzles.add(nozzle);
             }
         }
+        nozzleRepository.saveAll(updatedNozzles);
 
         lifecycleSupportService.createCashCollectionEvent(shift, currentUser, nozzles);
         lifecycleSupportService.persistCloseCreditEntries(shift.getId(), shift.getPumpId(), creditEntries);
@@ -462,17 +468,20 @@ public class ShiftService {
         return shiftReadModelService.toResponseWithLookups(shift);
     }
 
+    @Transactional(readOnly = true)
     public List<ShiftResponse> getActiveShifts(Long pumpId) {
         return shiftRepository.findActiveShiftsByPump(pumpId).stream()
                 .map(shiftReadModelService::toResponseWithLookups)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public Page<ShiftResponse> getShiftHistory(Long pumpId, Pageable pageable) {
         return shiftRepository.findByPumpIdOrderByActualStartTimeDesc(pumpId, pageable)
                 .map(shiftReadModelService::toResponseWithLookups);
     }
 
+    @Transactional(readOnly = true)
     public ShiftResponse getShiftById(Long shiftId) {
         Shift shift = shiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
@@ -579,6 +588,7 @@ public class ShiftService {
         // (ist and priceAsOf are already defined above in step 2b)
         List<BackfillShiftRequest.NozzleReadingRequest> nozzleReadings = request.getNozzleReadings();
         List<Nozzle> nozzles = new ArrayList<>();
+        Map<FuelType, BigDecimal> priceCache = new HashMap<>();
 
         for (BackfillShiftRequest.NozzleReadingRequest nr : nozzleReadings) {
             Nozzle nozzle = nozzleRepository.findById(nr.nozzleId())
@@ -603,14 +613,23 @@ public class ShiftService {
                         " on " + shiftDate + " under '" + shiftDef.getName() + "' already exists.");
             }
 
-            // Verify historical price exists for this fuel type on shiftDate
-            fuelPriceRepository.findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(pumpId, nozzle.getFuelType(), priceAsOf)
-                    .orElseThrow(() -> new BusinessException(
-                            "No fuel price found for " + nozzle.getFuelType() + " on or before " + shiftDate +
-                            ". Please set the historical price before backfilling this shift."));
+            // Verify historical price exists; cache it to avoid a second lookup during persist
+            if (!priceCache.containsKey(nozzle.getFuelType())) {
+                BigDecimal price = fuelPriceRepository
+                        .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
+                                pumpId, nozzle.getFuelType(), priceAsOf)
+                        .map(GlobalFuelPrice::getPricePerUnit)
+                        .orElseThrow(() -> new BusinessException(
+                                "No fuel price found for " + nozzle.getFuelType() + " on or before " + shiftDate +
+                                ". Please set the historical price before backfilling this shift."));
+                priceCache.put(nozzle.getFuelType(), price);
+            }
 
             nozzles.add(nozzle);
         }
+
+        // Build a lookup map once so subsequent loops are O(1) instead of O(n) per iteration
+        Map<Long, Nozzle> nozzleById = nozzles.stream().collect(Collectors.toMap(Nozzle::getId, n -> n));
 
         // ── 5c. Pre-validate fuel stock availability (historically accurate) ──
         // Accumulate unitsSold per inventory scope, then check available stock
@@ -624,8 +643,7 @@ public class ShiftService {
                 BigDecimal unitsSold = nr.closingReading().subtract(nr.openingReading());
                 if (unitsSold.compareTo(ZERO) <= 0) continue;
 
-                Nozzle nozzle = nozzles.stream()
-                        .filter(n -> n.getId().equals(nr.nozzleId())).findFirst().orElseThrow();
+                Nozzle nozzle = nozzleById.get(nr.nozzleId());
 
                 String scopeKey;
                 if (nozzle.getTankId() != null) {
@@ -713,22 +731,17 @@ public class ShiftService {
 
         // ── 9. Persist fuel readings + FIFO deduction per nozzle ─────────────
         BigDecimal totalAmountDue = ZERO;
+        List<ShiftFuelReading> backfillReadings = new ArrayList<>();
 
         for (BackfillShiftRequest.NozzleReadingRequest nr : nozzleReadings) {
-            Nozzle nozzle = nozzles.stream()
-                    .filter(n -> n.getId().equals(nr.nozzleId()))
-                    .findFirst()
-                    .orElseThrow();
+            Nozzle nozzle = nozzleById.get(nr.nozzleId());
 
-            BigDecimal historicalPrice = fuelPriceRepository
-                    .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(pumpId, nozzle.getFuelType(), priceAsOf)
-                    .map(p -> p.getPricePerUnit())
-                    .orElseThrow();
+            BigDecimal historicalPrice = priceCache.get(nozzle.getFuelType());
 
             BigDecimal unitsSold = nr.closingReading().subtract(nr.openingReading())
                     .setScale(3, RoundingMode.HALF_UP);
 
-            fuelReadingRepository.save(ShiftFuelReading.builder()
+            backfillReadings.add(ShiftFuelReading.builder()
                     .shiftId(shiftId)
                     .nozzleId(nozzle.getId())
                     .fuelType(nozzle.getFuelType())
@@ -745,6 +758,7 @@ public class ShiftService {
                 totalAmountDue = totalAmountDue.add(unitsSold.multiply(historicalPrice));
             }
         }
+        fuelReadingRepository.saveAll(backfillReadings);
 
         // creditTotal is NOT added to totalAmountDue — credit sales are already captured in
         // totalAmountDue via the meter-reading calculation (unitsSold × historicalPrice) above.
@@ -878,6 +892,17 @@ public class ShiftService {
                     " L is available in inventory. Please verify the meter readings or record a tanker delivery first.");
         }
 
+        // Pre-fetch all tanks referenced by the lots in one query
+        Set<Long> tankIds = lots.stream()
+                .map(InventoryLot::getTankId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, UndergroundTank> tanksById = tankRepository.findAllById(tankIds).stream()
+                .collect(Collectors.toMap(UndergroundTank::getId, t -> t));
+
+        List<InventoryLot> touchedLots = new ArrayList<>();
+        List<LotConsumption> consumptions = new ArrayList<>();
+        Map<Long, UndergroundTank> modifiedTanks = new HashMap<>();
         BigDecimal remaining = unitsToDeduct;
 
         for (InventoryLot lot : lots) {
@@ -889,9 +914,9 @@ public class ShiftService {
             if (lot.getRemainingQuantity().compareTo(ZERO) == 0) {
                 lot.setStatus(LotStatus.EXHAUSTED);
             }
-            inventoryLotRepository.save(lot);
+            touchedLots.add(lot);
 
-            lotConsumptionRepository.save(LotConsumption.builder()
+            consumptions.add(LotConsumption.builder()
                     .lotId(lot.getId())
                     .sourceType(LotConsumptionSource.SHIFT_CLOSE)
                     .shiftId(shiftId)
@@ -899,14 +924,18 @@ public class ShiftService {
                     .costPricePerUnit(lot.getCostPricePerUnit())
                     .build());
 
-            tankRepository.findById(lot.getTankId()).ifPresent(tank -> {
-                BigDecimal newStock = tank.getCurrentStock().subtract(consume).setScale(3, RoundingMode.HALF_UP);
-                tank.setCurrentStock(newStock);
-                tankRepository.save(tank);
-            });
+            UndergroundTank tank = tanksById.get(lot.getTankId());
+            if (tank != null) {
+                tank.setCurrentStock(tank.getCurrentStock().subtract(consume).setScale(3, RoundingMode.HALF_UP));
+                modifiedTanks.put(lot.getTankId(), tank);
+            }
 
             remaining = remaining.subtract(consume);
         }
+
+        inventoryLotRepository.saveAll(touchedLots);
+        lotConsumptionRepository.saveAll(consumptions);
+        tankRepository.saveAll(modifiedTanks.values());
     }
 
     /**
@@ -961,6 +990,16 @@ public class ShiftService {
                 ? inventoryLotRepository.findActiveLotsByTankAvailableAsOf(tankId, asOf)
                 : inventoryLotRepository.findActiveLotsByPumpAndFuelTypeAvailableAsOf(pumpId, fuelType, asOf);
 
+        Set<Long> tankIds = lots.stream()
+                .map(InventoryLot::getTankId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, UndergroundTank> tanksById = tankRepository.findAllById(tankIds).stream()
+                .collect(Collectors.toMap(UndergroundTank::getId, t -> t));
+
+        List<InventoryLot> touchedLots = new ArrayList<>();
+        List<LotConsumption> consumptions = new ArrayList<>();
+        Map<Long, UndergroundTank> modifiedTanks = new HashMap<>();
         BigDecimal remaining = unitsToDeduct;
 
         for (InventoryLot lot : lots) {
@@ -972,9 +1011,9 @@ public class ShiftService {
             if (lot.getRemainingQuantity().compareTo(ZERO) == 0) {
                 lot.setStatus(LotStatus.EXHAUSTED);
             }
-            inventoryLotRepository.save(lot);
+            touchedLots.add(lot);
 
-            lotConsumptionRepository.save(LotConsumption.builder()
+            consumptions.add(LotConsumption.builder()
                     .lotId(lot.getId())
                     .sourceType(LotConsumptionSource.SHIFT_CLOSE)
                     .shiftId(shiftId)
@@ -982,13 +1021,17 @@ public class ShiftService {
                     .costPricePerUnit(lot.getCostPricePerUnit())
                     .build());
 
-            tankRepository.findById(lot.getTankId()).ifPresent(tank -> {
-                BigDecimal newStock = tank.getCurrentStock().subtract(consume).setScale(3, RoundingMode.HALF_UP);
-                tank.setCurrentStock(newStock);
-                tankRepository.save(tank);
-            });
+            UndergroundTank tank = tanksById.get(lot.getTankId());
+            if (tank != null) {
+                tank.setCurrentStock(tank.getCurrentStock().subtract(consume).setScale(3, RoundingMode.HALF_UP));
+                modifiedTanks.put(lot.getTankId(), tank);
+            }
 
             remaining = remaining.subtract(consume);
         }
+
+        inventoryLotRepository.saveAll(touchedLots);
+        lotConsumptionRepository.saveAll(consumptions);
+        tankRepository.saveAll(modifiedTanks.values());
     }
 }

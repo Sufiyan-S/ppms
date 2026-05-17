@@ -17,6 +17,7 @@ import { ModalPortal } from '../../components/ModalPortal'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
 import { canPerformAction } from '../../permissions/permissions'
 import { localDateInputValue } from '../../utils/date'
+import { parseApiError } from '../../utils/apiError'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ export default function PaymentSettlementsPage() {
       addToast('Settlement recorded successfully', 'success')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record settlement'
+      const msg = parseApiError(err, 'Failed to record settlement')
       setFormError(msg)
     },
   })
@@ -164,7 +165,7 @@ export default function PaymentSettlementsPage() {
       setConfigEdits(prev => { const next = { ...prev }; delete next[type]; return next })
       addToast(`${TYPE_LABELS[type]} alert config saved`, 'success')
     } catch (err: any) {
-      addToast(err?.response?.data?.message ?? 'Failed to save config', 'error')
+      addToast(parseApiError(err, 'Failed to save config'), 'error')
     } finally {
       setSavingConfig(null)
     }

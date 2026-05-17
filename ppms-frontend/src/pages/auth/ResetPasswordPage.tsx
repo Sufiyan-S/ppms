@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { authApi } from '../../api/authApi'
 import { PasswordInput } from '../../components/PasswordInput'
+import { parseApiError } from '../../utils/apiError'
 
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
@@ -48,7 +49,7 @@ export default function ResetPasswordPage() {
       await authApi.resetPassword(token, newPassword)
       navigate('/login', { state: { message: 'Password reset successful. Please log in with your new password.' } })
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Failed to reset password. The link may have expired.')
+      setError(parseApiError(err, 'Failed to reset password. The link may have expired.'))
     } finally {
       setLoading(false)
     }

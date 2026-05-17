@@ -12,6 +12,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 const EVENT_TYPES: { value: CashEventType; label: string }[] = [
   { value: 'OPENING_BALANCE', label: 'Opening Balance' },
@@ -71,7 +72,7 @@ export default function CashDrawerPage() {
       addToast('Cash event recorded successfully', 'success')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to record event'
+      const msg = parseApiError(err, 'Failed to record event')
       setFormError(msg)
       addToast(msg, 'error')
     },
@@ -82,8 +83,8 @@ export default function CashDrawerPage() {
       setFormError('Description is required')
       return false
     }
-    if (form.amount < 0) {
-      setFormError('Amount cannot be negative')
+    if (form.amount <= 0) {
+      setFormError('Amount must be greater than zero')
       return false
     }
     if (form.eventType === 'CASH_OUT' && form.amount > balance) {

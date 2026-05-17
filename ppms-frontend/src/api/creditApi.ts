@@ -109,10 +109,6 @@ export const creditApi = {
   recordPayment: (pumpId: number, clientId: number, req: RecordPaymentRequest) =>
     client.post<CreditPayment>(`/pumps/${pumpId}/credit-ledger/${clientId}/payments`, req).then(r => r.data),
 
-  // Returns payment history for a client
-  getPayments: (pumpId: number, clientId: number) =>
-    client.get<CreditPayment[]>(`/pumps/${pumpId}/credit-ledger/${clientId}/payments`).then(r => r.data),
-
   // Updates the credit limit for a client (0 = unlimited)
   updateCreditLimit: (pumpId: number, clientId: number, req: UpdateCreditLimitRequest) =>
     client.patch<CreditClient>(`/pumps/${pumpId}/credit-ledger/clients/${clientId}/credit-limit`, req).then(r => r.data),

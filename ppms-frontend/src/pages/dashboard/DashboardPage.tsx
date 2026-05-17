@@ -19,6 +19,7 @@ import { canAccessPage } from '../../permissions/permissions'
 import { formatIstDateTime } from '../../utils/date'
 import { PasswordInput } from '../../components/PasswordInput'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 const PASSWORD_POLICY_MESSAGE = 'Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.'
 const PASSWORD_POLICY_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
@@ -107,7 +108,7 @@ export default function DashboardPage() {
       setNameError(null)
     },
     onError: (err: any) => {
-      setNameError(err?.response?.data?.message ?? 'Failed to save name')
+      setNameError(parseApiError(err, 'Failed to save name'))
     },
   })
 
@@ -130,7 +131,7 @@ export default function DashboardPage() {
       navigate('/login', { state: { message: data.message } })
     },
     onError: (err: any) => {
-      setPasswordError(err?.response?.data?.message ?? 'Failed to update password.')
+      setPasswordError(parseApiError(err, 'Failed to update password.'))
     },
   })
 

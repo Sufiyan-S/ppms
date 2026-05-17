@@ -14,6 +14,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
+import { parseApiError } from '../../utils/apiError'
 
 const STATUS_STYLES: Record<PayrollStatus, string> = {
   DRAFT:    'bg-amber-100 text-amber-700',
@@ -518,7 +519,7 @@ export default function PayrollPage() {
       addToast('Payroll draft generated', 'success')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? 'Failed to generate payroll'
+      const msg = parseApiError(err, 'Failed to generate payroll')
       setFormError(msg)
       addToast(msg, 'error')
     },
@@ -530,7 +531,7 @@ export default function PayrollPage() {
       qc.invalidateQueries({ queryKey: ['payroll', pumpId] })
       addToast('Payroll record deleted', 'success')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to delete payroll', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to delete payroll'), 'error'),
   })
 
   const statusMutation = useMutation({
@@ -540,7 +541,7 @@ export default function PayrollPage() {
       qc.invalidateQueries({ queryKey: ['payroll', pumpId] })
       addToast(`Status updated to ${status}`, 'success')
     },
-    onError: (err: any) => addToast(err?.response?.data?.message ?? 'Failed to update status', 'error'),
+    onError: (err: any) => addToast(parseApiError(err, 'Failed to update status'), 'error'),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
