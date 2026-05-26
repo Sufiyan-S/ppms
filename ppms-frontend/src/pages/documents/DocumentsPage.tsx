@@ -6,9 +6,11 @@ import { usePumpStore } from '../../store/usePumpStore'
 import { documentApi } from '../../api/documentApi'
 import type { PumpDocument, UpsertDocumentRequest, DocumentStatus } from '../../api/documentApi'
 import { SkeletonRows } from '../../components/Skeleton'
+import { Spinner } from '../../components/Spinner'
 import { Reveal } from '../../components/Reveal'
 import { formatIstDate } from '../../utils/date'
 import { parseApiError } from '../../utils/apiError'
+import { useToastStore } from '../../store/toastStore'
 
 const STATUS_STYLES: Record<DocumentStatus, string> = {
   VALID:          'bg-emerald-100 text-emerald-700',
@@ -28,6 +30,7 @@ export default function DocumentsPage() {
   const qc = useQueryClient()
 
   const { selectedPumpId: pumpId } = usePumpStore()
+  const { addToast } = useToastStore()
 
   const { data: docs = [], isLoading } = useQuery({
     queryKey:  ['documents', pumpId],
@@ -39,6 +42,7 @@ export default function DocumentsPage() {
   const [editId, setEditId] = useState<number | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
   const saveMutation = useMutation({
     mutationFn: (data: UpsertDocumentRequest) =>
@@ -47,6 +51,7 @@ export default function DocumentsPage() {
         : documentApi.createDocument(pumpId!, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['documents', pumpId] })
+      addToast(editId ? 'Document updated.' : 'Document added.', 'success')
       setForm(EMPTY_FORM)
       setEditId(null)
       setShowForm(false)
@@ -57,7 +62,15 @@ export default function DocumentsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => documentApi.deleteDocument(pumpId!, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents', pumpId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['documents', pumpId] })
+      addToast('Document deleted.', 'success')
+      setDeleteConfirmId(null)
+    },
+    onError: (err: any) => {
+      addToast(parseApiError(err, 'Failed to delete document'), 'error')
+      setDeleteConfirmId(null)
+    },
   })
 
   const startEdit = (doc: PumpDocument) => {
@@ -174,7 +187,9 @@ export default function DocumentsPage() {
             disabled={saveMutation.isPending}
             className="ui-btn ui-btn-primary"
           >
-            {saveMutation.isPending ? 'Saving…' : editId ? 'Update' : 'Add Document'}
+            {saveMutation.isPending
+              ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span>
+              : editId ? 'Update' : 'Add Document'}
           </button>
         </form>
       )}
@@ -216,13 +231,32 @@ export default function DocumentsPage() {
                     Edit
                   </button>
                   {isOwner && (
-                    <button
-                      onClick={() => deleteMutation.mutate(doc.id)}
-                      disabled={deleteMutation.isPending}
-                      className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
-                    >
-                      <X size={13} strokeWidth={2} />
-                    </button>
+                    deleteConfirmId === doc.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-red-600 font-medium">Delete?</span>
+                        <button
+                          onClick={() => deleteMutation.mutate(doc.id)}
+                          disabled={deleteMutation.isPending}
+                          className="text-xs font-semibold text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          {deleteMutation.isPending ? <Spinner className="w-3 h-3" /> : 'Yes'}
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          disabled={deleteMutation.isPending}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteConfirmId(doc.id)}
+                        className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600"
+                      >
+                        <X size={13} strokeWidth={2} />
+                      </button>
+                    )
                   )}
                 </div>
               </div>

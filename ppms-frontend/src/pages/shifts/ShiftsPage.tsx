@@ -19,6 +19,7 @@ import { formatIstDate, formatIstDateTime } from '../../utils/date'
 import { maskPhone } from '../../utils/maskPhone'
 import { parseApiError } from '../../utils/apiError'
 import { ModalPortal } from '../../components/ModalPortal'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -770,9 +771,9 @@ function OpenNewShiftPrompt({ onConfirm, onDismiss }: { onConfirm: () => void; o
   return (
     <div className="ui-modal-backdrop">
       <div className="ui-modal-panel w-full max-w-sm p-6 space-y-4 text-center">
-        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
-          <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto">
+          <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
         <div>
@@ -1041,6 +1042,7 @@ function CreditEntriesModal({
   creditTotal: number
   onClose: () => void
 }) {
+  useEscapeKey(onClose)
   return (
     <tr>
       <td colSpan={8} className="p-0">
@@ -1147,6 +1149,7 @@ const RESOLUTION_OPTIONS = [
 ]
 
 function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [action, setAction] = useState<ResolveDiscrepancyRequest['resolutionAction']>('PENDING_INVESTIGATION')
   const [note,   setNote]   = useState('')
@@ -1242,6 +1245,7 @@ const FUEL_LABELS_MAP: Record<string, string> = {
 }
 
 function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { data: creditClients = [] } = useQuery({
@@ -1600,6 +1604,7 @@ function AddCreditEntryModal({ shift, onClose }: { shift: Shift; onClose: () => 
 // ── Handover Report Modal ─────────────────────────────────────────────────────
 
 function HandoverModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  useEscapeKey(onClose)
   const fmtAmt = (v: number | null | undefined) =>
     v != null ? `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
 

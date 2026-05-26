@@ -27,6 +27,7 @@ import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1054,7 +1055,7 @@ function StockLotsDialog({
                                 disabled={updateMutation.isPending}
                               className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs disabled:opacity-50"
                               >
-                                {updateMutation.isPending ? 'Saving…' : 'Save'}
+                                {updateMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Saving…</span> : 'Save'}
                               </button>
                               <button
                                 onClick={() => { setEditingLotId(null); setEditError(null) }}
@@ -1431,7 +1432,7 @@ function StockInDialog({
                 disabled={deliveryMutation.isPending}
                 className="ui-btn ui-btn-primary"
               >
-                {deliveryMutation.isPending ? 'Recording…' : 'Confirm Delivery'}
+                {deliveryMutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Recording…</span> : 'Confirm Delivery'}
               </button>
             </>
           )}
@@ -1587,6 +1588,7 @@ function BackfillSaleModal({
   onClose: () => void
   onSuccess: () => void
 }) {
+  useEscapeKey(onClose)
   const { addToast } = useToastStore()
   const yesterday = (() => {
     const d = new Date()

@@ -107,6 +107,10 @@ export default function OverviewPage() {
   const statsLoading = activeShiftQueries.some(q => q.isLoading)
     || tankStockQueries.some(q => q.isLoading)
 
+  const anyQueryError = activeShiftQueries.some(q => q.isError)
+    || tankStockQueries.some(q => q.isError)
+    || fuelPriceQueries.some(q => q.isError)
+
   const activeShiftsFetching  = activeShiftQueries.some(q => q.isFetching)
   const activeShiftsUpdatedAt = activeShiftQueries.reduce<number>(
     (max, q) => Math.max(max, q.dataUpdatedAt ?? 0), 0
@@ -179,6 +183,16 @@ export default function OverviewPage() {
 
   return (
     <div className="ui-page ui-page--narrow space-y-5">
+
+      {/* ── Live data error banner ── */}
+      {anyQueryError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          Some live data could not be loaded. Figures shown may be incomplete — refresh to try again.
+        </div>
+      )}
 
       {/* ── Welcome header ── */}
       <Reveal delay={60}>

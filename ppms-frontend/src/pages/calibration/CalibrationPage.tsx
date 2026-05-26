@@ -34,7 +34,7 @@ export default function CalibrationPage() {
 
   const { selectedPumpId: pumpId } = usePumpStore()
 
-  const { data: dus = [] } = useQuery({
+  const { data: dus = [], error: dusError } = useQuery({
     queryKey:  ['dus', pumpId],
     queryFn:   () => pumpApi.getDUs(pumpId!),
     enabled:   !!pumpId,
@@ -48,8 +48,10 @@ export default function CalibrationPage() {
   const [historyPage, setHistoryPage] = useState(0)
   const [historyPageSize, setHistoryPageSize] = useState(10)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate,   setToDate]   = useState('')
 
-  const { data: calibrationsPage, isLoading } = useQuery({
+  const { data: calibrationsPage, isLoading, error: calibrationsError } = useQuery({
     queryKey:  ['calibrations', pumpId, historyNozzleId, historyPage, historyPageSize],
     queryFn:   () => historyNozzleId
       ? calibrationApi.getCalibrations(pumpId!, historyNozzleId, historyPage, historyPageSize)
@@ -99,6 +101,13 @@ export default function CalibrationPage() {
   const selectedNozzle = nozzles.find((n) => n.id === selectedNozzleId)
   const historyNozzle  = nozzles.find((n) => n.id === historyNozzleId)
   const calibrations   = calibrationsPage?.content ?? []
+  const filteredCalibrations = useMemo(() => {
+    return calibrations.filter(c => {
+      if (fromDate && c.calibrationDate < fromDate) return false
+      if (toDate   && c.calibrationDate > toDate)   return false
+      return true
+    })
+  }, [calibrations, fromDate, toDate])
   const nozzleMap = useMemo(
     () => new Map(nozzles.map((n) => [n.id, n])),
     [nozzles],
@@ -145,6 +154,12 @@ export default function CalibrationPage() {
       </div>
       </Reveal>
 
+      {(dusError || calibrationsError) && (
+        <div className="ui-alert ui-alert-warning text-sm">
+          Could not load calibration data. Check your connection and refresh.
+        </div>
+      )}
+
       {/* ── Record form ── */}
       <Reveal delay={130}>
       <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
@@ -178,6 +193,7 @@ export default function CalibrationPage() {
               onChange={e => setForm(f => ({ ...f, calibrationDate: e.target.value }))}
               className="text-sm"
               required
+              autoFocus
             />
           </div>
 
@@ -299,6 +315,24 @@ export default function CalibrationPage() {
           </p>
 
           <div className="ui-toolbar-actions">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500 whitespace-nowrap">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => { setFromDate(e.target.value); setHistoryPage(0) }}
+                className="text-xs h-7 px-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500 whitespace-nowrap">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => { setToDate(e.target.value); setHistoryPage(0) }}
+                className="text-xs h-7 px-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
             <div className="w-56">
             <SearchableSelect
               value={historyNozzleId ? historyNozzleId.toString() : ''}
@@ -319,16 +353,22 @@ export default function CalibrationPage() {
 
         {isLoading ? (
           <div className="px-5 py-4"><SkeletonRows count={4} /></div>
-        ) : calibrations.length === 0 ? (
+        ) : filteredCalibrations.length === 0 ? (
           <EmptyState
             icon="generic"
-            title="No calibration records yet"
-            subtitle={historyNozzleId ? 'No calibration records for this nozzle yet.' : 'Use the form above to record your first calibration.'}
+            title="No calibration records"
+            subtitle={
+              fromDate || toDate
+                ? 'No records match the selected date range.'
+                : historyNozzleId
+                  ? 'No calibration records for this nozzle yet.'
+                  : 'Use the form above to record your first calibration.'
+            }
           />
         ) : (
           <>
             <div className="ui-record-list">
-              {calibrations.map((c: NozzleCalibrationLog) => {
+              {filteredCalibrations.map((c: NozzleCalibrationLog) => {
                 const nozzle = nozzleMap.get(c.nozzleId)
                 return (
                 <div key={c.id} className="ui-record-row">

@@ -15,6 +15,7 @@ import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 const STATUS_STYLES: Record<PayrollStatus, string> = {
   DRAFT:    'bg-amber-100 text-amber-700',
@@ -66,6 +67,7 @@ interface ReviewModalProps {
 }
 
 function ReviewModal({ form, selectedStaff, pumpId, formError, isPending, onClose, onGenerate }: ReviewModalProps) {
+  useEscapeKey(onClose)
   const [deductSet, setDeductSet] = useState<Set<number>>(new Set())
 
   const { data: pending = [], isLoading: pendingLoading } = useQuery({
@@ -456,7 +458,7 @@ export default function PayrollPage() {
     enabled:  !!pumpId,
   })
 
-  const { data: records = [], isLoading } = useQuery({
+  const { data: records = [], isLoading, error: recordsError } = useQuery({
     queryKey: ['payroll', pumpId],
     queryFn:  () => payrollApi.getPayroll(pumpId!),
     enabled:  !!pumpId,
@@ -479,6 +481,7 @@ export default function PayrollPage() {
   }, [records])
 
   const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [nameSearch,    setNameSearch]    = useState('')
 
   // ── Per-status pagination (independent, default page size = 10) ──────────
   const [draftPage,        setDraftPage]        = useState(0)
@@ -497,9 +500,17 @@ export default function PayrollPage() {
 
   // ── Filtered + grouped records ─────────────────────────────────────────────
   const filtered = useMemo(() => {
-    if (!selectedMonth) return records
-    return records.filter(r => toMonthKey(r.periodFrom) === selectedMonth)
-  }, [records, selectedMonth])
+    let result = records
+    if (selectedMonth) result = result.filter(r => toMonthKey(r.periodFrom) === selectedMonth)
+    if (nameSearch.trim()) {
+      const q = nameSearch.trim().toLowerCase()
+      result = result.filter(r => {
+        const name = ((staff as any[]).find(s => s.id === r.userId)?.fullName ?? '').toLowerCase()
+        return name.includes(q)
+      })
+    }
+    return result
+  }, [records, selectedMonth, nameSearch, staff])
 
   const grouped = useMemo(() => {
     const map: Record<PayrollStatus, PayrollRecord[]> = { DRAFT: [], APPROVED: [], PAID: [] }
@@ -566,6 +577,12 @@ export default function PayrollPage() {
         </div>
       </div>
       </Reveal>
+
+      {recordsError && (
+        <div className="ui-alert ui-alert-warning text-sm">
+          Could not load payroll records. Check your connection and refresh.
+        </div>
+      )}
 
       {/* ── Generate form ── */}
       <Reveal delay={130}>
@@ -667,24 +684,33 @@ export default function PayrollPage() {
             )}
           </p>
 
-          {monthOptions.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500">Month</label>
-              <select
-                value={selectedMonth}
-                onChange={e => {
-                  setSelectedMonth(e.target.value)
-                  setDraftPage(0); setApprovedPage(0); setPaidPage(0)
-                }}
-                className="text-sm bg-white"
-              >
-                <option value="">All months</option>
-                {monthOptions.map(key => (
-                  <option key={key} value={key}>{fmtMonthKey(key)}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            <input
+              type="search"
+              value={nameSearch}
+              onChange={e => { setNameSearch(e.target.value); setDraftPage(0); setApprovedPage(0); setPaidPage(0) }}
+              placeholder="Search staff…"
+              className="text-sm h-8 px-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300 w-36"
+            />
+            {monthOptions.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-500">Month</label>
+                <select
+                  value={selectedMonth}
+                  onChange={e => {
+                    setSelectedMonth(e.target.value)
+                    setDraftPage(0); setApprovedPage(0); setPaidPage(0)
+                  }}
+                  className="text-sm bg-white"
+                >
+                  <option value="">All months</option>
+                  {monthOptions.map(key => (
+                    <option key={key} value={key}>{fmtMonthKey(key)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
 
         {isLoading ? (

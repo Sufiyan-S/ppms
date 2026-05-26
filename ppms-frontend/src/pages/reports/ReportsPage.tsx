@@ -59,11 +59,14 @@ function pageSlice<T>(all: T[], page: number, pageSize: number): PagedResponse<T
 
 type Tab = 'pl' | 'duty' | 'discrepancy' | 'inventory' | 'dip' | 'shifts' | 'expenses' | 'interest'
 
+const MANAGER_TABS: Tab[] = ['duty', 'discrepancy', 'shifts']
+
 export default function ReportsPage() {
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
+  const isManager = user?.role === 'MANAGER'
 
-  const [tab, setTab] = useState<Tab>('pl')
+  const [tab, setTab] = useState<Tab>(isManager ? 'duty' : 'pl')
   const { selectedPumpId } = usePumpStore()
 
   const pumpId = selectedPumpId
@@ -76,18 +79,25 @@ export default function ReportsPage() {
   const pumpName = pumpId ? (pumps.find(p => p.id === pumpId)?.name ?? '') : ''
   const userName = user?.fullName ?? ''
 
-  const TABS: { id: Tab; label: string }[] = [
+  const ALL_TABS: { id: Tab; label: string }[] = [
     { id: 'pl',          label: 'Profit & Loss' },
     { id: 'duty',        label: 'Operator Duty' },
     { id: 'discrepancy', label: 'Short / Over' },
     { id: 'inventory',   label: 'Inventory Lots' },
-    { id: 'dip',      label: 'Dip P/L' },
-    { id: 'shifts',   label: 'Shifts' },
-    { id: 'expenses', label: 'Expenses' },
-    { id: 'interest', label: 'Interest Accrual' },
+    { id: 'dip',         label: 'Dip P/L' },
+    { id: 'shifts',      label: 'Shifts' },
+    { id: 'expenses',    label: 'Expenses' },
+    { id: 'interest',    label: 'Interest Accrual' },
   ]
 
-  if (!pumpId && !isOwnerOrAdmin) {
+  const TABS = isManager
+    ? ALL_TABS.filter(t => MANAGER_TABS.includes(t.id))
+    : ALL_TABS
+
+  // If the current tab is not visible to this role, reset to the first allowed tab
+  const activeTab = TABS.some(t => t.id === tab) ? tab : TABS[0]?.id ?? 'duty'
+
+  if (!pumpId && !isOwnerOrAdmin && !isManager) {
     return (
       <div className="ui-page ui-page--narrow">
         <div className="ui-alert ui-alert-warning text-sm">
@@ -118,7 +128,7 @@ export default function ReportsPage() {
           </div>
           <div className="ui-section-meta-pill">
             <span className="ui-section-meta-label">Active tab</span>
-            <span className="ui-section-meta-value">{TABS.find((reportTab) => reportTab.id === tab)?.label ?? 'Reports'}</span>
+            <span className="ui-section-meta-value">{TABS.find((reportTab) => reportTab.id === activeTab)?.label ?? 'Reports'}</span>
           </div>
         </div>
       </div>
@@ -131,13 +141,13 @@ export default function ReportsPage() {
       ) : (
         <div className="ui-card p-0 overflow-hidden">
           {/* Tabs — hidden when printing */}
-      <div className="ui-tabbar print:hidden">
+          <div className="ui-tabbar print:hidden">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`ui-tabbar__button ${
-                  tab === t.id
+                  activeTab === t.id
                     ? 'ui-tabbar__button--active'
                     : ''
                 }`}
@@ -148,15 +158,15 @@ export default function ReportsPage() {
           </div>
 
           {/* Tab content */}
-          <div key={tab} className="p-5 ui-tab-content">
-            {tab === 'pl'          && <ProfitLossTab          pumpId={pumpId} />}
-            {tab === 'duty'        && <OperatorDutyTab        pumpId={pumpId} />}
-            {tab === 'discrepancy' && <DiscrepancyTab         pumpId={pumpId} />}
-            {tab === 'inventory'   && <InventoryLotsTab       pumpId={pumpId} />}
-            {tab === 'dip'      && <DipPlTab          pumpId={pumpId} />}
-            {tab === 'shifts'   && <ShiftsTab         pumpId={pumpId} />}
-            {tab === 'expenses' && <ExpensesTab        pumpId={pumpId} />}
-            {tab === 'interest' && <InterestAccrualTab pumpId={pumpId} />}
+          <div key={activeTab} className="p-5 ui-tab-content">
+            {activeTab === 'pl'          && <ProfitLossTab          pumpId={pumpId} />}
+            {activeTab === 'duty'        && <OperatorDutyTab        pumpId={pumpId} />}
+            {activeTab === 'discrepancy' && <DiscrepancyTab         pumpId={pumpId} />}
+            {activeTab === 'inventory'   && <InventoryLotsTab       pumpId={pumpId} />}
+            {activeTab === 'dip'         && <DipPlTab               pumpId={pumpId} />}
+            {activeTab === 'shifts'      && <ShiftsTab              pumpId={pumpId} />}
+            {activeTab === 'expenses'    && <ExpensesTab            pumpId={pumpId} />}
+            {activeTab === 'interest'    && <InterestAccrualTab     pumpId={pumpId} />}
           </div>
         </div>
       )}

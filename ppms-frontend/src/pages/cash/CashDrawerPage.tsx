@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePumpStore } from '../../store/usePumpStore'
 import { cashApi } from '../../api/cashApi'
@@ -44,8 +44,10 @@ export default function CashDrawerPage() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
   const [eventTypeFilter, setEventTypeFilter] = useState<CashEventType | ''>('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate,   setToDate]   = useState('')
 
-  const { data: cashData, isLoading } = useQuery({
+  const { data: cashData, isLoading, error: cashError } = useQuery({
     queryKey:  ['cashEvents', pumpId, page, pageSize, eventTypeFilter],
     queryFn:   () => cashApi.getCashEvents(pumpId!, page, pageSize, eventTypeFilter || undefined),
     enabled:   !!pumpId,
@@ -111,6 +113,15 @@ export default function CashDrawerPage() {
           ? 'ui-modal-header--info'
           : 'ui-modal-header--neutral'
 
+  const allEvents = cashData?.events?.content ?? []
+  const filteredEvents = useMemo(() => {
+    return allEvents.filter(ev => {
+      if (fromDate && ev.eventDate < fromDate) return false
+      if (toDate   && ev.eventDate > toDate)   return false
+      return true
+    })
+  }, [allEvents, fromDate, toDate])
+
   return (
     <div className="ui-page ui-page--narrow space-y-5">
 
@@ -134,6 +145,12 @@ export default function CashDrawerPage() {
         </div>
       </div>
       </Reveal>
+
+      {cashError && (
+        <div className="ui-alert ui-alert-warning text-sm">
+          Could not load cash events. Check your connection and refresh.
+        </div>
+      )}
 
       {/* ── Balance card ── */}
       <Reveal delay={130}>
@@ -176,6 +193,7 @@ export default function CashDrawerPage() {
               className={`text-sm ${form.eventType === 'CASH_OUT' && form.amount > balance ? 'border-red-400 focus:ring-red-300' : ''}`}
               placeholder="0.00"
               required
+              autoFocus
             />
             {form.eventType === 'CASH_OUT' && (
               <p className={`mt-1 text-xs ${form.amount > balance ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
@@ -284,6 +302,24 @@ export default function CashDrawerPage() {
         <div className="ui-toolbar">
           <p className="ui-toolbar-title">Cash Events</p>
           <div className="ui-toolbar-actions">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500 whitespace-nowrap">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => { setFromDate(e.target.value); setPage(0) }}
+                className="text-xs h-7 px-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500 whitespace-nowrap">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => { setToDate(e.target.value); setPage(0) }}
+                className="text-xs h-7 px-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            </div>
             <div className="w-44">
             <SearchableSelect
               value={eventTypeFilter}
@@ -300,16 +336,16 @@ export default function CashDrawerPage() {
 
         {isLoading ? (
           <div className="px-5 py-4"><SkeletonRows count={4} /></div>
-        ) : (cashData?.events?.content ?? []).length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <EmptyState
             icon="transactions"
-            title="No cash events recorded yet"
-            subtitle="Use the form above to record your first cash movement."
+            title={fromDate || toDate ? 'No events in this date range' : 'No cash events recorded yet'}
+            subtitle={fromDate || toDate ? 'Try adjusting the date filters above.' : 'Use the form above to record your first cash movement.'}
           />
         ) : (
           <>
             <div className="ui-record-list">
-              {(cashData?.events?.content ?? []).map(ev => (
+              {filteredEvents.map(ev => (
                 <div key={ev.id} className="ui-record-row">
                   <div className="flex items-center gap-3 min-w-0 ui-record-row__main">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${EVENT_STYLES[ev.eventType]}`}>

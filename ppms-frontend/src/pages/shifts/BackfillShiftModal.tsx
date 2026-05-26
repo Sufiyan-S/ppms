@@ -10,6 +10,7 @@ import type { DUOption, NozzleDetail } from '../../types/shift'
 import { ModalPortal } from '../../components/ModalPortal'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ interface Props {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function BackfillShiftModal({ pumpId, onClose }: Props) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
 
   const [shiftDate,         setShiftDate]         = useState(maxDate())

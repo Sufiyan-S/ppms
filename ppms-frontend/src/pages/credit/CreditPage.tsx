@@ -18,6 +18,7 @@ import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 const today     = localDateInputValue()
 const yesterday = localDateInputValue(-1)
@@ -33,6 +34,7 @@ interface RecordPaymentModalProps {
 }
 
 function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, subClients = [], onClose }: RecordPaymentModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const { addToast } = useToastStore()
   const [amount, setAmount] = useState('')
@@ -234,6 +236,7 @@ interface SetCreditLimitModalProps {
 }
 
 function SetCreditLimitModal({ client, pumpId, onClose }: SetCreditLimitModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [limit, setLimit] = useState(client.creditLimit > 0 ? String(client.creditLimit) : '')
   const [error, setError] = useState<string | null>(null)
@@ -288,6 +291,7 @@ function SetCreditLimitModal({ client, pumpId, onClose }: SetCreditLimitModalPro
                 onChange={e => setLimit(e.target.value)}
                 placeholder="0 = unlimited"
                 className="w-full pl-7 pr-3 text-sm"
+                autoFocus
               />
             </div>
           </div>
@@ -308,7 +312,7 @@ function SetCreditLimitModal({ client, pumpId, onClose }: SetCreditLimitModalPro
             disabled={mutation.isPending}
             className="ui-btn ui-btn-primary"
           >
-            {mutation.isPending ? 'Saving…' : 'Save Limit'}
+            {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span> : 'Save Limit'}
           </button>
         </div>
       </div>
@@ -326,6 +330,7 @@ interface SetInterestSettingsModalProps {
 }
 
 function SetInterestSettingsModal({ client, pumpId, onClose }: SetInterestSettingsModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [rate, setRate] = useState(client.monthlyInterestRate > 0 ? String(client.monthlyInterestRate) : '')
   const [graceDays, setGraceDays] = useState(String(client.interestGraceDays ?? 1))
@@ -377,6 +382,7 @@ function SetInterestSettingsModal({ client, pumpId, onClose }: SetInterestSettin
                 onChange={e => setRate(e.target.value)}
                 placeholder="0 = no interest"
                 className="w-full pr-8 pl-3 text-sm"
+                autoFocus
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
             </div>
@@ -412,7 +418,7 @@ function SetInterestSettingsModal({ client, pumpId, onClose }: SetInterestSettin
             disabled={mutation.isPending}
             className="ui-btn ui-btn-primary"
           >
-            {mutation.isPending ? 'Saving…' : 'Save Settings'}
+            {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span> : 'Save Settings'}
           </button>
         </div>
       </div>
@@ -453,6 +459,7 @@ const EXTENSION_TYPE_OPTIONS = [
 ]
 
 function GrantExtensionModal({ client, pumpId, onClose }: GrantExtensionModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [extensionType, setExtensionType] = useState<CreditExtensionType>('BILLING_CYCLE_EXTENSION')
   const [extensionAmount, setExtensionAmount] = useState('')
@@ -552,6 +559,7 @@ function GrantExtensionModal({ client, pumpId, onClose }: GrantExtensionModalPro
               rows={3}
               placeholder="Why is this extension being granted?"
               className="resize-none text-sm"
+              autoFocus
             />
           </div>
 
@@ -569,7 +577,7 @@ function GrantExtensionModal({ client, pumpId, onClose }: GrantExtensionModalPro
             disabled={mutation.isPending}
             className="ui-btn ui-btn-primary"
           >
-            {mutation.isPending ? 'Granting…' : 'Grant Extension'}
+            {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Granting…</span> : 'Grant Extension'}
           </button>
         </div>
       </div>
@@ -589,6 +597,7 @@ interface ReassignModalProps {
 }
 
 function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, transactionType, onClose }: ReassignModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [toClientId, setToClientId] = useState<string>('')
   const [reason, setReason]         = useState('')
@@ -705,7 +714,7 @@ function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, transactio
           {!noTargetsReason && (
             <button onClick={handleSubmit} disabled={mutation.isPending}
               className="ui-btn ui-btn-primary flex-1">
-              {mutation.isPending ? 'Moving…' : 'Move Entry'}
+              {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Moving…</span> : 'Move Entry'}
             </button>
           )}
         </div>
@@ -1017,7 +1026,7 @@ function ClientDetail({ clientId, pumpId, isOwnerOrAdmin, onBack }: ClientDetail
   })
 
   if (!client) {
-    return <div className="p-6 text-sm text-slate-400">Loading client…</div>
+    return <div className="px-5 py-4"><SkeletonRows count={4} /></div>
   }
 
   return (
@@ -1558,7 +1567,7 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
       {editError && <p className="ui-error-text">{editError}</p>}
       <button type="submit" disabled={updateMutation.isPending}
         className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-        {updateMutation.isPending ? 'Saving...' : 'Save'}
+        {updateMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Saving…</span> : 'Save'}
       </button>
     </form>
   )
@@ -1740,7 +1749,7 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
                     <div className="flex gap-2">
                       <button type="submit" disabled={addMutation.isPending}
                         className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-                        {addMutation.isPending ? 'Adding...' : 'Add Sub-account'}
+                        {addMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Adding…</span> : 'Add Sub-account'}
                       </button>
                       <button type="button" onClick={() => setAddSubParentId(null)}
                         className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs">
@@ -1783,7 +1792,7 @@ function CreditClientsTab({ pumpId, isOwnerOrAdmin }: CreditClientsTabProps) {
             </div>
             {addError && <p className="ui-error-text">{addError}</p>}
             <button type="submit" disabled={addMutation.isPending} className="ui-btn ui-btn-primary">
-              {addMutation.isPending ? 'Adding...' : 'Add Client'}
+              {addMutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Adding…</span> : 'Add Client'}
             </button>
           </form>
         </div>

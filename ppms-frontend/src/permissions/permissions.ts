@@ -28,7 +28,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   auditLog:        ['OWNER', 'ADMIN'],
   balanceSheets:   ['OWNER', 'ADMIN', 'MANAGER'],
   reports:         ['OWNER', 'ADMIN', 'MANAGER'],
-  setup:           ['OWNER', 'ADMIN'],
+  setup:           ['OWNER', 'ADMIN', 'MANAGER'],
   settlements:     ['OWNER', 'ADMIN', 'MANAGER'],
 }
 

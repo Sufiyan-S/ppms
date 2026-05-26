@@ -14,6 +14,7 @@ import { Pagination } from '../../components/Pagination'
 import { formatIstDate, localDateInputValue } from '../../utils/date'
 import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -43,7 +44,8 @@ function fmtDate(s: string) {
 export default function InventoryPage() {
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
-  const canDeleteInvoice = isOwnerOrAdmin || user?.role === 'MANAGER'
+  const canViewFinancials = isOwnerOrAdmin || user?.role === 'MANAGER'
+  const canDeleteInvoice = canViewFinancials
 
   const { selectedPumpId } = usePumpStore()
   const [showDeliveryModal, setShowDeliveryModal] = useState(false)
@@ -395,7 +397,7 @@ export default function InventoryPage() {
                                     <span className="text-xs text-slate-500">
                                       {totalQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
                                     </span>
-                                    {rows[0].billTotal != null ? (
+                                    {isOwnerOrAdmin && (rows[0].billTotal != null ? (
                                       <div className="flex flex-col items-end leading-tight">
                                         <span className="text-sm font-bold text-slate-800">
                                           ₹{Number(rows[0].billTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -410,7 +412,7 @@ export default function InventoryPage() {
                                       <span className="text-sm font-bold text-slate-800">
                                         ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                       </span>
-                                    )}
+                                    ))}
                                     <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
                                   </div>
                                 </button>
@@ -586,7 +588,7 @@ export default function InventoryPage() {
                                     key={d.id}
                                     check={d}
                                     pumpId={selectedPumpId!}
-                                    canReview={isOwnerOrAdmin}
+                                    canReview={canViewFinancials}
                                   />
                                 ))}
                               </div>
@@ -620,6 +622,7 @@ export default function InventoryPage() {
           pumpId={pumpId}
           tanks={tanks}
           isOwnerOrAdmin={isOwnerOrAdmin}
+          canSetBillTotal={canViewFinancials}
           onClose={() => setShowDeliveryModal(false)}
         />
       )}
@@ -661,6 +664,7 @@ function DeleteInvoiceModal({ invoice, rows, isPending, error, onConfirm, onClos
   onConfirm: () => void
   onClose: () => void
 }) {
+  useEscapeKey(onClose)
   const totalQty = rows.reduce((s, r) => s + r.quantityDelivered, 0)
   return (
     <ModalPortal>
@@ -931,6 +935,7 @@ function EditDeliveryModal({ delivery, pumpId, isOwnerOrAdmin, onClose }: {
   isOwnerOrAdmin: boolean
   onClose: () => void
 }) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const [invoiceReference, setInvoiceReference] = useState(delivery.invoiceReference)
   const [qty,   setQty]   = useState(String(delivery.quantityDelivered))
@@ -1207,13 +1212,16 @@ function RecordDeliveryModal({
   pumpId,
   tanks,
   isOwnerOrAdmin,
+  canSetBillTotal,
   onClose,
 }: {
   pumpId: number
   tanks: TankStock[]
   isOwnerOrAdmin: boolean
+  canSetBillTotal: boolean
   onClose: () => void
 }) {
+  useEscapeKey(onClose)
   const queryClient = useQueryClient()
   const defaultTankId = tanks[0]?.tankId ? String(tanks[0].tankId) : ''
 
@@ -1290,6 +1298,12 @@ function RecordDeliveryModal({
   const tankerRemaining = selectedTanker ? selectedTanker.capacityLitres - totalEnteredQty : null
   const tankerMismatch = selectedTanker !== null && Math.abs(totalEnteredQty - selectedTanker.capacityLitres) > 0.01
 
+  const anyTankOverflow = rows.some(r => {
+    const t = tanks.find(tk => tk.tankId === Number(r.tankId))
+    const q = parseFloat(r.qty) || 0
+    return t && t.capacity > 0 && q > 0 && q > (t.capacity - t.currentStock)
+  })
+
   const buildPreparedItems = (): { items: PreparedDeliveryItem[] | null; error: string | null } => {
     if (!date || !invoice.trim()) {
       return { items: null, error: 'Delivery date and invoice number are required.' }
@@ -1299,6 +1313,16 @@ function RecordDeliveryModal({
       if (!r.tankId) return { items: null, error: 'Please select a tank for every row.' }
       const q = parseFloat(r.qty)
       if (!r.qty || isNaN(q) || q <= 0) return { items: null, error: 'Quantity must be greater than 0 for every row.' }
+      const rowTank = tanks.find(t => t.tankId === Number(r.tankId))
+      if (rowTank && rowTank.capacity > 0) {
+        const availableSpace = rowTank.capacity - rowTank.currentStock
+        if (q > availableSpace) {
+          return {
+            items: null,
+            error: `${rowTank.tankIdentifier}: quantity (${q.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L) exceeds available space (${availableSpace.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L).`,
+          }
+        }
+      }
       if (isOwnerOrAdmin) {
         const c = parseFloat(r.costPrice)
         if (!r.costPrice || isNaN(c) || c <= 0) return { items: null, error: 'Cost per litre must be greater than 0 for every row.' }
@@ -1364,7 +1388,7 @@ function RecordDeliveryModal({
       mutation.mutate({
         deliveryDate:     date,
         invoiceReference: invoice.trim(),
-        billTotal: isOwnerOrAdmin && billTotalNum > 0 ? billTotalNum : null,
+        billTotal: canSetBillTotal && billTotalNum > 0 ? billTotalNum : null,
         tankerId: selectedTankerId ?? null,
         items: items.map(item => ({
           tankId: item.tankId,
@@ -1473,14 +1497,17 @@ function RecordDeliveryModal({
           {/* Scrollable tank rows */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
             {rows.map((row, idx) => {
-              const tank       = tanks.find(t => t.tankId === Number(row.tankId))
-              const rowCost    = isOwnerOrAdmin ? (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0) : 0
-              const afterStock = tank ? tank.currentStock + (parseFloat(row.qty) || 0) : null
-              const isExpanded = expandedRowId === row.id
-              const isFilled   = !!row.tankId && parseFloat(row.qty) > 0 && (isOwnerOrAdmin ? parseFloat(row.costPrice) > 0 : true)
+              const tank          = tanks.find(t => t.tankId === Number(row.tankId))
+              const rowCost       = isOwnerOrAdmin ? (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0) : 0
+              const enteredQty    = parseFloat(row.qty) || 0
+              const afterStock    = tank ? tank.currentStock + enteredQty : null
+              const availableSpace = tank && tank.capacity > 0 ? tank.capacity - tank.currentStock : null
+              const rowOverflow   = availableSpace !== null && enteredQty > 0 && enteredQty > availableSpace
+              const isExpanded    = expandedRowId === row.id
+              const isFilled      = !!row.tankId && enteredQty > 0 && (isOwnerOrAdmin ? parseFloat(row.costPrice) > 0 : true)
 
               return (
-                <div key={row.id} className="ui-card ui-card-muted overflow-hidden">
+                <div key={row.id} className={`ui-card overflow-hidden ${rowOverflow ? 'border border-red-200 bg-red-50/40' : 'ui-card-muted'}`}>
                   {/* ── Collapsed summary row ── */}
                   {!isExpanded ? (
                     <div className="flex items-center justify-between px-4 py-3">
@@ -1491,8 +1518,11 @@ function RecordDeliveryModal({
                             <span className="text-sm font-medium text-slate-700 truncate">
                               {tank?.tankIdentifier ?? '—'} · {tank?.fuelType ?? '—'}
                             </span>
-                            <span className="text-xs text-slate-400 shrink-0">{parseFloat(row.qty).toLocaleString('en-IN')} L</span>
-                            {isOwnerOrAdmin && (
+                            <span className="text-xs text-slate-400 shrink-0">{enteredQty.toLocaleString('en-IN')} L</span>
+                            {rowOverflow && (
+                              <span className="text-xs text-red-600 font-semibold shrink-0">Over capacity</span>
+                            )}
+                            {!rowOverflow && isOwnerOrAdmin && rowCost > 0 && (
                               <span className="text-sm font-semibold text-blue-700 shrink-0">
                                 ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </span>
@@ -1596,19 +1626,28 @@ function RecordDeliveryModal({
 
                       {/* Per-row live previews */}
                       {(afterStock !== null || (isOwnerOrAdmin && rowCost > 0)) && (
-                        <div className="flex items-center gap-3 text-xs">
-                          {isOwnerOrAdmin && rowCost > 0 && (
+                        <div className="flex items-center flex-wrap gap-3 text-xs">
+                          {isOwnerOrAdmin && rowCost > 0 && !rowOverflow && (
                             <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium">
                               ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} delivery cost
                             </span>
                           )}
                           {afterStock !== null && row.qty && (
-                            <span className="text-slate-400">
-                              Stock after: <span className="font-semibold text-slate-600">
-                                {afterStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                            rowOverflow ? (
+                              <span className="bg-red-50 text-red-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                                Exceeds capacity — available: {availableSpace!.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
                               </span>
-                              {tank && ` / ${tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L`}
-                            </span>
+                            ) : (
+                              <span className="text-slate-400">
+                                Stock after: <span className="font-semibold text-slate-600">
+                                  {afterStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
+                                </span>
+                                {tank && tank.capacity > 0 && ` / ${tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L`}
+                              </span>
+                            )
                           )}
                         </div>
                       )}
@@ -1646,19 +1685,21 @@ function RecordDeliveryModal({
 
           {/* Footer — grand total + actions */}
           <div className="border-t border-slate-100 flex-shrink-0 px-6 py-4 space-y-3">
-            {/* Bill total — editable, auto-filled from calculated total */}
-            {isOwnerOrAdmin && grandTotal > 0 && (
+            {/* Bill total — visible to OWNER/ADMIN (auto-filled from calc) and MANAGER (manual entry) */}
+            {canSetBillTotal && (
               <div className="space-y-2 rounded-xl bg-blue-50 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-blue-600 font-medium">
-                    Calculated Total ({rows.length} tank{rows.length > 1 ? 's' : ''})
-                  </p>
-                  <p className="text-sm font-semibold text-blue-700">
-                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
+                {isOwnerOrAdmin && grandTotal > 0 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-blue-600 font-medium">
+                      Calculated Total ({rows.length} tank{rows.length > 1 ? 's' : ''})
+                    </p>
+                    <p className="text-sm font-semibold text-blue-700">
+                      ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-blue-600 font-medium shrink-0">Bill Amount</label>
+                  <label className="text-xs text-blue-600 font-medium shrink-0">Bill Amount (₹)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1670,7 +1711,10 @@ function RecordDeliveryModal({
                     placeholder="Enter actual bill amount"
                   />
                 </div>
-                {billTotalManual && otherCharges !== 0 && (
+                {!isOwnerOrAdmin && (
+                  <p className="text-xs text-slate-400">Enter the total amount shown on the supplier's invoice.</p>
+                )}
+                {isOwnerOrAdmin && billTotalManual && otherCharges !== 0 && (
                   <p className="text-xs text-blue-500">
                     Other charges:{' '}
                     <span className={`font-medium ${otherCharges > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -1698,11 +1742,15 @@ function RecordDeliveryModal({
               </button>
               <button
                 type="submit"
-                disabled={mutation.isPending || tankerMismatch}
-                title={tankerMismatch ? `Total must equal tanker capacity (${selectedTanker?.capacityLitres.toLocaleString('en-IN')} L)` : undefined}
+                disabled={mutation.isPending || tankerMismatch || anyTankOverflow}
+                title={
+                  tankerMismatch ? `Total must equal tanker capacity (${selectedTanker?.capacityLitres.toLocaleString('en-IN')} L)`
+                  : anyTankOverflow ? 'One or more tank quantities exceed available capacity'
+                  : undefined
+                }
                 className="ui-btn ui-btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {mutation.isPending ? 'Recording…' : 'Review Delivery'}
+                {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Recording…</span> : 'Review Delivery'}
               </button>
             </div>
           </div>
@@ -1735,7 +1783,7 @@ function RecordDeliveryModal({
                   {error} Go back to modify the data and try again.
                 </div>
               )}
-              <div className={`grid gap-3 ${isOwnerOrAdmin ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+              <div className={`grid gap-3 ${(canSetBillTotal && billTotalNum > 0) || isOwnerOrAdmin ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-xs font-medium text-slate-500">Delivery Date</p>
                   <p className="mt-1 text-sm font-semibold text-slate-800">{fmtDate(date)}</p>
@@ -1744,7 +1792,7 @@ function RecordDeliveryModal({
                   <p className="text-xs font-medium text-slate-500">Invoice / Bill No.</p>
                   <p className="mt-1 text-sm font-semibold text-slate-800">{invoice.trim()}</p>
                 </div>
-                {isOwnerOrAdmin && (() => {
+                {(canSetBillTotal && billTotalNum > 0) && (() => {
                   const calcTotal = items.reduce((sum, item) => sum + item.totalCost, 0)
                   const displayTotal = billTotalNum > 0 ? billTotalNum : calcTotal
                   return (
@@ -1753,7 +1801,7 @@ function RecordDeliveryModal({
                       <p className="mt-1 text-base font-bold text-blue-800">
                         ₹{displayTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </p>
-                      {billTotalManual && otherCharges !== 0 && (
+                      {isOwnerOrAdmin && billTotalManual && otherCharges !== 0 && (
                         <p className="text-xs mt-1 text-blue-500">
                           Calc. ₹{calcTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           {' · '}
@@ -1861,6 +1909,7 @@ function DipCheckModal({
   tank: TankStock
   onClose: () => void
 }) {
+  useEscapeKey(onClose)
   const queryClient = useQueryClient()
   const cols = FUEL_COLORS[tank.fuelType] ?? FUEL_COLORS.PETROL
 

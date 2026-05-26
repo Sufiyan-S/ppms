@@ -85,7 +85,7 @@ public class FuelPriceController {
      * dialog and re-submit with confirmed=true to bypass the guard.
      */
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
     public ResponseEntity<?> setPrice(
             @Valid @RequestBody SetFuelPriceRequest request,
             @AuthenticationPrincipal User currentUser) {

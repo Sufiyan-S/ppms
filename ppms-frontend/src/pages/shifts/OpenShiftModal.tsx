@@ -7,6 +7,7 @@ import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { DUOption, NozzleDetail, OpenShiftRequest, Shift } from '../../types/shift'
 import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 /** Returns true if the given "HH:MM:SS" time window (possibly crossing midnight) contains `nowHHMM`. */
 function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boolean, nowHHMM: string): boolean {
@@ -36,6 +37,7 @@ interface Props {
 }
 
 export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefilledDuId, prefilledNozzleIds }: Props) {
+  useEscapeKey(onClose)
   const queryClient = useQueryClient()
 
   const [selectedDU, setSelectedDU]                 = useState<DUOption | null>(null)

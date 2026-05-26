@@ -29,6 +29,7 @@ import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
 import { ModalPortal } from '../../components/ModalPortal'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 // Use local calendar date (not UTC) so the value matches the user's timezone.
@@ -81,6 +82,7 @@ interface GenerateModalProps {
 }
 
 function GenerateModal({ pumpId, onClose }: GenerateModalProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const { addToast } = useToastStore()
 
@@ -304,6 +306,7 @@ interface DeleteConfirmProps {
 }
 
 function DeleteConfirmModal({ report, pumpId, onClose }: DeleteConfirmProps) {
+  useEscapeKey(onClose)
   const qc = useQueryClient()
   const { addToast } = useToastStore()
 
@@ -371,6 +374,8 @@ interface DetailPanelProps {
 }
 
 function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, pumpName }: DetailPanelProps) {
+  const { user } = useAuthStore()
+  const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const { data: detail, isLoading } = useQuery({
     queryKey: ['balance-sheet-detail', pumpId, reportId],
     queryFn: () => balanceSheetApi.getById(pumpId, reportId),
@@ -477,13 +482,15 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
             {detail.reportType === 'DAY' && (
               <SummaryTile label="Litres Delivered" value={fmtLitres(detail.totalLitresDelivered)} />
             )}
-            <SummaryTile label="Cost of Goods" value={fmtMoney(detail.totalCostOfGoods)} />
-            <SummaryTile
-              label={detail.reportType === 'DAY' ? 'Fuel Gross Profit' : 'Gross Profit'}
-              value={fmtMoney(detail.totalGrossProfit)}
-              accent={detail.totalGrossProfit >= 0 ? 'green' : 'red'}
-            />
-            {detail.reportType === 'DAY' && detail.productSales && (
+            {isOwnerOrAdmin && <SummaryTile label="Cost of Goods" value={fmtMoney(detail.totalCostOfGoods)} />}
+            {isOwnerOrAdmin && (
+              <SummaryTile
+                label={detail.reportType === 'DAY' ? 'Fuel Gross Profit' : 'Gross Profit'}
+                value={fmtMoney(detail.totalGrossProfit)}
+                accent={detail.totalGrossProfit >= 0 ? 'green' : 'red'}
+              />
+            )}
+            {isOwnerOrAdmin && detail.reportType === 'DAY' && detail.productSales && (
               <SummaryTile
                 label="Product Sales Profit"
                 value={fmtMoney(detail.productSales.grossProfit)}
@@ -497,14 +504,14 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
                 accent="red"
               />
             )}
-            {detail.dipPlEntries?.length > 0 && (
+            {isOwnerOrAdmin && detail.dipPlEntries?.length > 0 && (
               <SummaryTile
                 label="Dip P/L"
                 value={(detail.totalDipNetAmount > 0 ? '+' : '') + fmtMoney(detail.totalDipNetAmount)}
                 accent={detail.totalDipNetAmount > 0 ? 'green' : 'red'}
               />
             )}
-            {detail.reportType === 'DAY' ? (
+            {isOwnerOrAdmin && (detail.reportType === 'DAY' ? (
               <SummaryTile
                 label="Net Profit"
                 value={fmtMoney(detail.totalNetProfit)}
@@ -516,7 +523,12 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
                 value={fmtMoney(detail.totalNetProfit)}
                 accent={detail.totalNetProfit >= 0 ? 'green' : 'red'}
               />
-            )}
+            ))}
+          {!isOwnerOrAdmin && (
+            <p className="text-xs text-slate-400 col-span-full mt-1">
+              Financial details (cost, profit, P/L) are visible to Owner and Admin only.
+            </p>
+          )}
           </div>
         </section>
 
@@ -534,10 +546,10 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
                   <Th right>Closing Stock</Th>
                   <Th right>Selling Price</Th>
                   <Th right>Revenue</Th>
-                  <Th right>COGS</Th>
-                  <Th right>Profit</Th>
+                  {isOwnerOrAdmin && <Th right>COGS</Th>}
+                  {isOwnerOrAdmin && <Th right>Profit</Th>}
                   <Th right>Stock Variance</Th>
-                  <Th right>Dip Loss</Th>
+                  {isOwnerOrAdmin && <Th right>Dip Loss</Th>}
                   <Th right>Credit Sold</Th>
                 </tr>
               </thead>
@@ -661,7 +673,7 @@ function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, summary, 
         )}
 
         {/* Dip P/L — shown when any dip activity (maintenance removal or dipstick check) occurred */}
-        {detail.dipPlEntries?.length > 0 && (
+        {isOwnerOrAdmin && detail.dipPlEntries?.length > 0 && (
           <section>
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Dip P/L
@@ -802,6 +814,8 @@ function DiscrepancyTd({ value }: { value: number }) {
 }
 
 function FuelLineRow({ line }: { line: BsFuelLine }) {
+  const { user } = useAuthStore()
+  const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const badge = FUEL_BADGE[line.fuelType] ?? 'bg-slate-100 text-slate-600'
   const profitColor = line.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'
 
@@ -818,8 +832,8 @@ function FuelLineRow({ line }: { line: BsFuelLine }) {
       <Td right>{fmtLitres(line.closingStock)}</Td>
       <Td right>{fmtMoney(line.sellingPrice)}<span className="text-slate-400 text-xs">/L</span></Td>
       <Td right>{fmtMoney(line.expectedRevenue)}</Td>
-      <Td right>{fmtMoney(line.costOfGoods)}</Td>
-      <Td right><span className={`font-medium ${profitColor}`}>{fmtMoney(line.grossProfit)}</span></Td>
+      {isOwnerOrAdmin && <Td right>{fmtMoney(line.costOfGoods)}</Td>}
+      {isOwnerOrAdmin && <Td right><span className={`font-medium ${profitColor}`}>{fmtMoney(line.grossProfit)}</span></Td>}
       <Td right>
         {line.stockVariance === 0 ? (
           <span className="text-slate-300">—</span>
@@ -829,11 +843,11 @@ function FuelLineRow({ line }: { line: BsFuelLine }) {
           </span>
         )}
       </Td>
-      <Td right>
+      {isOwnerOrAdmin && <Td right>
         {line.dipLossAmount > 0
           ? <span className="text-red-600 font-medium">-{fmtMoney(line.dipLossAmount)}</span>
           : <span className="text-slate-300">—</span>}
-      </Td>
+      </Td>}
       <Td right>{line.creditSoldAmount > 0 ? fmtMoney(line.creditSoldAmount) : <span className="text-slate-300">—</span>}</Td>
     </tr>
   )
@@ -915,6 +929,8 @@ function SummaryTile({ label, value, sublabel, accent }: SummaryTileProps) {
 // ── Ancillary product sales section (DAY reports only) ─────────────────────────
 
 function ProductSalesSection({ productSales }: { productSales: ProductSalesSummary }) {
+  const { user } = useAuthStore()
+  const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   return (
     <section>
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
@@ -930,8 +946,8 @@ function ProductSalesSection({ productSales }: { productSales: ProductSalesSumma
               <Th>Product</Th>
               <Th right>Units Sold</Th>
               <Th right>Revenue</Th>
-              <Th right>COGS</Th>
-              <Th right>Gross Profit</Th>
+              {isOwnerOrAdmin && <Th right>COGS</Th>}
+              {isOwnerOrAdmin && <Th right>Gross Profit</Th>}
             </tr>
           </thead>
           <tbody>
@@ -943,10 +959,10 @@ function ProductSalesSection({ productSales }: { productSales: ProductSalesSumma
                   <Td><span className="font-medium text-slate-700">{line.productName}</span></Td>
                   <Td right>{line.unitsSold}</Td>
                   <Td right>{fmtMoney(line.revenue)}</Td>
-                  <Td right>{fmtMoney(line.cogs)}</Td>
-                  <Td right>
+                  {isOwnerOrAdmin && <Td right>{fmtMoney(line.cogs)}</Td>}
+                  {isOwnerOrAdmin && <Td right>
                     <span className={`font-medium ${profitColor}`}>{fmtMoney(lineProfit)}</span>
-                  </Td>
+                  </Td>}
                 </tr>
               )
             })}
@@ -956,12 +972,12 @@ function ProductSalesSection({ productSales }: { productSales: ProductSalesSumma
               <Td>Total</Td>
               <Td right>—</Td>
               <Td right>{fmtMoney(productSales.totalRevenue)}</Td>
-              <Td right>{fmtMoney(productSales.totalCogs)}</Td>
-              <Td right>
+              {isOwnerOrAdmin && <Td right>{fmtMoney(productSales.totalCogs)}</Td>}
+              {isOwnerOrAdmin && <Td right>
                 <span className={productSales.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}>
                   {fmtMoney(productSales.grossProfit)}
                 </span>
-              </Td>
+              </Td>}
             </tr>
           </tfoot>
         </table>
@@ -1293,6 +1309,8 @@ interface ReportListItemProps {
 }
 
 function ReportListItem({ report, isSelected, onClick }: ReportListItemProps) {
+  const { user } = useAuthStore()
+  const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const isDay = report.reportType === 'DAY'
   const discrepancyColor = report.cashDiscrepancy === 0
     ? 'text-emerald-600'
@@ -1329,7 +1347,7 @@ function ReportListItem({ report, isSelected, onClick }: ReportListItemProps) {
               ? 'Balanced'
               : <span className="inline-flex items-center gap-0.5">{report.cashDiscrepancy < 0 ? <TrendingDown size={12} strokeWidth={2} /> : <TrendingUp size={12} strokeWidth={2} />}{fmtMoney(Math.abs(report.cashDiscrepancy))}</span>}
           </p>
-          <p className="text-xs text-emerald-600">{fmtMoney(report.totalGrossProfit)} profit</p>
+          {isOwnerOrAdmin && <p className="text-xs text-emerald-600">{fmtMoney(report.totalGrossProfit)} profit</p>}
         </div>
       </div>
     </button>

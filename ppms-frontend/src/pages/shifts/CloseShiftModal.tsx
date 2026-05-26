@@ -9,6 +9,7 @@ import { ModalPortal } from '../../components/ModalPortal'
 import { maskPhone } from '../../utils/maskPhone'
 import { parseApiError } from '../../utils/apiError'
 import { useNavigate } from 'react-router-dom'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 interface Props {
   shift: Shift
@@ -43,6 +44,7 @@ const FUEL_UNIT: Record<string, string> = {
 const emptyNum = (v: string) => (v === '' ? 0 : Number(v))
 
 export default function CloseShiftModal({ shift, onClose, onShiftClosed }: Props) {
+  useEscapeKey(onClose)
   const nextRowId = useRef(1)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
