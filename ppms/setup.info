@@ -67,6 +67,8 @@ Minimum values:
 POSTGRES_DB=ppms
 POSTGRES_USER=ppms_user
 POSTGRES_PASSWORD=strong-password
+JWT_SECRET=<output of: openssl rand -base64 48>
+SUPER_ADMIN_PASSWORD=strong-password
 DOMAIN_NAME=your-subdomain.duckdns.org
 CERTBOT_EMAIL=you@example.com
 DUCKDNS_DOMAIN=your-subdomain
@@ -101,26 +103,48 @@ sudo docker compose up -d postgres backend
 
 11. Generate SSL certificate
 ----------------------------
+First certificate only: nginx cannot start without one, so certbot uses its own server on port 80 here.
 sudo certbot certonly --standalone -d your-subdomain.duckdns.org --agree-tos -m you@example.com --non-interactive
 
 12. Start nginx
 ---------------
+sudo mkdir -p /var/www/certbot
 cd /home/ubuntu/ppms
 sudo docker compose up -d nginx
 
-13. Verify HTTPS
+13. Switch certificate renewal to webroot (no downtime, nginx keeps running)
+----------------------------------------------------------------------------
+sudo certbot reconfigure --cert-name your-subdomain.duckdns.org --webroot -w /var/www/certbot
+sudo grep authenticator /etc/letsencrypt/renewal/your-subdomain.duckdns.org.conf   # expect: authenticator = webroot
+sudo certbot renew --dry-run                                                     # must succeed with nginx running
+
+14. Verify HTTPS
 ----------------
 sudo docker compose ps
 curl -I https://your-subdomain.duckdns.org
 curl -I http://your-subdomain.duckdns.org
+sudo certbot certificates
+
+Existing server already running (certificate was created with --standalone)
+---------------------------------------------------------------------------
+Copy the updated nginx/nginx.conf and docker-compose.yml to /home/ubuntu/ppms, then:
+sudo mkdir -p /var/www/certbot
+cd /home/ubuntu/ppms
+sudo docker compose up -d nginx                  # recreates nginx with the new /var/www/certbot mount
+curl -I http://your-subdomain.duckdns.org/.well-known/acme-challenge/test   # expect 404 (not 301)
+Then run the three commands in step 13 and replace the cron jobs below.
 
 Cron jobs
 ---------
 ( sudo crontab -l 2>/dev/null; \
   echo "0 2 * * * /home/ubuntu/ppms/scripts/backup.sh >> /home/ubuntu/ppms/logs/backup-cron.log 2>&1"; \
   echo "*/5 * * * * /home/ubuntu/ppms/scripts/duckdns.sh >> /home/ubuntu/ppms/logs/duckdns-cron.log 2>&1"; \
-  echo "15 4 * * * certbot renew --quiet && docker restart ppms-nginx >> /home/ubuntu/ppms/logs/certbot-renew.log 2>&1" \
+  echo "15 4 * * * certbot renew --quiet --deploy-hook 'docker exec ppms-nginx nginx -s reload' >> /home/ubuntu/ppms/logs/certbot-renew.log 2>&1" \
 ) | sudo crontab -
+
+To replace an existing certbot cron line instead of adding a second one:
+sudo crontab -l | grep -v "certbot renew" | sudo crontab -
+then run the block above again without the backup and duckdns lines, or edit with: sudo crontab -e
 
 Troubleshooting
 ---------------

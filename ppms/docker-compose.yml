@@ -38,6 +38,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set in .env}
+      # The backend is only reachable from containers on ppms-net (not published), so the
+      # Docker private ranges cover nginx without pinning its container IP.
+      TRUSTED_PROXY_IPS: 127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_LIVENESSSTATE_ENABLED: "true"
@@ -78,6 +83,8 @@ services:
       - /home/ubuntu/ppms/nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
       - /home/ubuntu/ppms/ppms-frontend/dist:/usr/share/nginx/html:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Certbot webroot for renewals; must match the acme-challenge location in nginx.conf.
+      - /var/www/certbot:/var/www/certbot:ro
       - /home/ubuntu/ppms/logs/nginx:/var/log/nginx
     networks:
       - ppms-net
