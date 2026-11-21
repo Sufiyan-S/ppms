@@ -30,8 +30,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CreditLedgerController {
 
-    // Only the inline styles and the single print button handler of the statement page may run.
-    private static final String STATEMENT_CONTENT_SECURITY_POLICY =
+    // Only the inline styles and the single print button handler of a printable page may run.
+    public static final String STATEMENT_CONTENT_SECURITY_POLICY =
             "default-src 'none'; style-src 'unsafe-inline'; "
             + "script-src 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU='; frame-ancestors 'none'";
 

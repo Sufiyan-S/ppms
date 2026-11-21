@@ -97,6 +97,13 @@ public class CreditClient {
     @Builder.Default
     private boolean isActive = true;
 
+    /** Null for unregistered (B2C) customers. */
+    @Column(name = "gstin", length = 15)
+    private String gstin;
+
+    @Column(name = "billing_address")
+    private String billingAddress;
+
     @JsonIgnore
     @Column(name = "portal_pin_hash")
     private String portalPinHash;

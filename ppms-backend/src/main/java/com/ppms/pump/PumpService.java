@@ -6,6 +6,7 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.credit.CreditClientRepository;
 import com.ppms.inventory.TankerDeliveryRepository;
+import com.ppms.invoice.GstFields;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -42,23 +43,24 @@ public class PumpService {
     /** An owner sees every enabled pump they own; staff see the one pump they are assigned to. */
     @Transactional(readOnly = true)
     public List<PumpResponse> getMyPumps(User currentUser) {
-        List<PumpResponse> pumps;
+        return findMyPumps(currentUser).stream()
+                .map(this::toPumpResponse)
+                .toList();
+    }
 
+    /** The pumps behind {@link #getMyPumps}, without their dispensers and nozzles. */
+    @Transactional(readOnly = true)
+    public List<PumpLocation> findMyPumps(User currentUser) {
         if (currentUser.getRole() == UserRole.OWNER) {
-            pumps = pumpLocationRepository.findByOwnerIdAndEnabledTrue(currentUser.getId())
-                    .stream()
-                    .map(this::toPumpResponse)
-                    .toList();
-        } else if (currentUser.getAssignedPumpId() != null) {
-            pumps = pumpLocationRepository.findById(currentUser.getAssignedPumpId())
-                    .filter(PumpLocation::isEnabled)
-                    .map(p -> List.of(toPumpResponse(p)))
-                    .orElse(List.of());
-        } else {
-            pumps = List.of();
+            return pumpLocationRepository.findByOwnerIdAndEnabledTrue(currentUser.getId());
         }
-
-        return pumps;
+        if (currentUser.getAssignedPumpId() != null) {
+            return pumpLocationRepository.findById(currentUser.getAssignedPumpId())
+                    .filter(PumpLocation::isEnabled)
+                    .map(List::of)
+                    .orElse(List.of());
+        }
+        return List.of();
     }
 
     @Transactional
@@ -109,7 +111,7 @@ public class PumpService {
         return toPumpResponse(pump);
     }
 
-    /** A threshold of zero clears it; a missing threshold is left as it is. */
+    /** A threshold of zero clears it; a missing value is left as it is; an empty GST value clears it. */
     @Transactional
     public PumpResponse updatePumpSettings(Long pumpId, UpdatePumpSettingsRequest request, User currentUser) {
 
@@ -134,6 +136,19 @@ public class PumpService {
                     request.expenseApprovalThreshold().compareTo(BigDecimal.ZERO) == 0
                     ? null
                     : request.expenseApprovalThreshold().setScale(2, RoundingMode.HALF_UP));
+        }
+
+        if (request.gstin() != null) {
+            pump.setGstin(GstFields.normaliseGstin(request.gstin()));
+        }
+        if (request.legalName() != null) {
+            pump.setLegalName(GstFields.trimmedOrNull(request.legalName()));
+        }
+        if (request.stateName() != null) {
+            pump.setStateName(GstFields.trimmedOrNull(request.stateName()));
+        }
+        if (request.invoicePrefix() != null) {
+            pump.setInvoicePrefix(GstFields.normaliseInvoicePrefix(request.invoicePrefix()));
         }
 
         pumpLocationRepository.save(pump);
@@ -188,6 +203,10 @@ public class PumpService {
                 .createdAt(pump.getCreatedAt())
                 .discrepancyEscalationThreshold(pump.getDiscrepancyEscalationThreshold())
                 .expenseApprovalThreshold(pump.getExpenseApprovalThreshold())
+                .gstin(pump.getGstin())
+                .legalName(pump.getLegalName())
+                .stateName(pump.getStateName())
+                .invoicePrefix(pump.getInvoicePrefix())
                 .dus(activeDUs)
                 .build();
     }

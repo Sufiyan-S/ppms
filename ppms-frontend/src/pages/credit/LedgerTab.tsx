@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { IconButton } from '../../components/IconButton'
 import { onActivateKey } from '../../utils/keyboard'
 import { SetCreditLimitModal } from './modals/SetCreditLimitModal'
+import { GenerateAllInvoicesModal } from './modals/GenerateAllInvoicesModal'
 import { formatDecimal } from '../../utils/format'
 
 interface LedgerTabProps {
@@ -16,11 +17,13 @@ interface LedgerTabProps {
   isLoading: boolean
   hasError: boolean
   canAdjustLimit: boolean
+  canIssueInvoices: boolean
   onSelectClient: (client: CreditClient) => void
 }
 
-export function LedgerTab({ pumpId, clients, allCreditClients, isLoading, hasError, canAdjustLimit, onSelectClient }: LedgerTabProps) {
+export function LedgerTab({ pumpId, clients, allCreditClients, isLoading, hasError, canAdjustLimit, canIssueInvoices, onSelectClient }: LedgerTabProps) {
   const [showLimitModal, setShowLimitModal] = useState<CreditClient | null>(null)
+  const [showGenerateAllModal, setShowGenerateAllModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearch = useDeferredValue(searchQuery)
 
@@ -36,6 +39,16 @@ export function LedgerTab({ pumpId, clients, allCreditClients, isLoading, hasErr
           pumpId={pumpId}
           onClose={() => setShowLimitModal(null)}
         />
+      )}
+      {showGenerateAllModal && pumpId && (
+        <GenerateAllInvoicesModal pumpId={pumpId} onClose={() => setShowGenerateAllModal(false)} />
+      )}
+      {canIssueInvoices && pumpId && clients.length > 0 && (
+        <div className="flex justify-end">
+          <button type="button" onClick={() => setShowGenerateAllModal(true)} className="ui-btn ui-btn-secondary">
+            Generate invoices for all clients
+          </button>
+        </div>
       )}
       <Reveal delay={120}>
       <div className="ui-search-shell">

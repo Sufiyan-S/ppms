@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getMonthKey, getWeekKey } from './creditDates'
+import { getMonthKey, getWeekKey, lastCompletedMonth } from './creditDates'
 
 describe('getWeekKey', () => {
   it('labels a mid-week day with its Monday to Sunday range', () => {
@@ -29,5 +29,12 @@ describe('getMonthKey', () => {
   it('names the IST month of an instant', () => {
     expect(getMonthKey('2026-03-31T19:00:00Z')).toBe('April 2026')
     expect(getMonthKey('2026-03-31T10:00:00Z')).toBe('March 2026')
+  })
+})
+
+describe('lastCompletedMonth', () => {
+  it('is the whole previous month, across a year boundary and in a leap year', () => {
+    expect(lastCompletedMonth('2027-01-15')).toEqual({ periodFrom: '2026-12-01', periodTo: '2026-12-31' })
+    expect(lastCompletedMonth('2028-03-01')).toEqual({ periodFrom: '2028-02-01', periodTo: '2028-02-29' })
   })
 })

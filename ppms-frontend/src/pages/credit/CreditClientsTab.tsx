@@ -1,12 +1,13 @@
 import { useState, useDeferredValue } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { pumpApi } from '../../api/pumpApi'
-import type { CreditClient as PumpCreditClient } from '../../api/pumpApi'
+import type { CreateCreditClientRequest, CreditClient as PumpCreditClient } from '../../api/pumpApi'
 import { SkeletonRows } from '../../components/Skeleton'
 import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
 import { parseApiError } from '../../utils/apiError'
 import { onActivateKey } from '../../utils/keyboard'
+import { GSTIN_FORMAT_MESSAGE, isValidGstin, normaliseGstText } from '../../utils/gst'
 import { EditCreditClientForm } from './EditCreditClientForm'
 import { PortalPinControl } from './PortalPinControl'
 
@@ -24,6 +25,8 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
   const [name, setName]               = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [notes, setNotes]             = useState('')
+  const [gstin, setGstin]             = useState('')
+  const [billingAddress, setBillingAddress] = useState('')
   const [addError, setAddError]       = useState<string | null>(null)
 
   const [editingId, setEditingId]     = useState<number | null>(null)
@@ -47,10 +50,10 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
   })
 
   const addMutation = useMutation({
-    mutationFn: (req: { name: string; phone?: string; notes?: string; parentClientId?: number }) =>
+    mutationFn: (req: CreateCreditClientRequest) =>
       pumpApi.createCreditClient(pumpId, req),
     onSuccess: () => {
-      setName(''); setPhoneNumber(''); setNotes(''); setAddError(null)
+      setName(''); setPhoneNumber(''); setNotes(''); setGstin(''); setBillingAddress(''); setAddError(null)
       setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null); setAddSubParentId(null)
       qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
     },
@@ -75,7 +78,11 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
     if (clients.some(c => c.name.toLowerCase() === trimmedName.toLowerCase())) {
       setAddError(`A client named "${trimmedName}" already exists.`); return
     }
-    addMutation.mutate({ name: trimmedName, phone: trimmedPhone, notes: notes.trim() || undefined })
+    if (!isValidGstin(gstin)) { setAddError(GSTIN_FORMAT_MESSAGE); return }
+    addMutation.mutate({
+      name: trimmedName, phone: trimmedPhone, notes: notes.trim() || undefined,
+      gstin: normaliseGstText(gstin) || undefined, billingAddress: billingAddress.trim() || undefined,
+    })
   }
 
   const submitAddSub = (e: React.FormEvent, parentId: number) => {
@@ -354,6 +361,18 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
                 <span className="ui-label">Notes <span className="text-slate-500">(optional)</span></span>
                 <input value={notes} onChange={e => setNotes(e.target.value)}
                   placeholder="e.g. Fleet manager, lorry owner" className="text-sm" />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block">
+                <span className="ui-label">GSTIN <span className="text-slate-500">(blank if unregistered)</span></span>
+                <input value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())}
+                  maxLength={15} autoCapitalize="characters" placeholder="e.g. 27ABCDE1234F1Z5" className="text-sm" />
+              </label>
+              <label className="block">
+                <span className="ui-label">Billing address <span className="text-slate-500">(optional)</span></span>
+                <input value={billingAddress} onChange={e => setBillingAddress(e.target.value)}
+                  maxLength={500} placeholder="Printed on invoices" className="text-sm" />
               </label>
             </div>
             {addError && <p role="alert" className="ui-error-text">{addError}</p>}

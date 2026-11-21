@@ -108,6 +108,51 @@ export interface CreateExtensionRequest {
   reason: string
 }
 
+// ── Credit invoices ──────────────────────────────────────────────────────────
+
+export type CreditInvoiceStatus = 'ISSUED' | 'CANCELLED'
+
+export interface CreditInvoice {
+  id: number
+  pumpId: number
+  clientId: number
+  /** e.g. PMP3/26-27/0001 — consecutive per financial year, never reused. */
+  invoiceNumber: string
+  financialYear: string
+  periodFrom: string  // YYYY-MM-DD
+  periodTo: string    // YYYY-MM-DD
+  issuedOn: string    // YYYY-MM-DD
+  sellerLegalName: string
+  sellerGstin: string
+  buyerName: string
+  /** Null for an unregistered (B2C) client. */
+  buyerGstin: string | null
+  placeOfSupplyStateCode: string
+  /** Fuel is outside GST (VAT included). */
+  fuelTotal: number
+  taxableTotal: number
+  cgstTotal: number
+  sgstTotal: number
+  igstTotal: number
+  grandTotal: number
+  status: CreditInvoiceStatus
+  cancelReason: string | null
+  cancelledAt: string | null
+  createdAt: string
+}
+
+export interface InvoicePeriod {
+  periodFrom: string  // YYYY-MM-DD
+  periodTo: string    // YYYY-MM-DD
+}
+
+export interface GenerateAllInvoicesResult {
+  invoicesIssued: number
+  clientsSkipped: number
+  clientsFailed: number
+  failedClientIds: number[]
+}
+
 export const creditApi = {
   // Returns all clients with outstanding balances
   getLedgerSummary: (pumpId: number) =>
@@ -174,4 +219,26 @@ export const creditApi = {
   // Grants a new credit extension (Admin/Owner only)
   createExtension: (pumpId: number, clientId: number, req: CreateExtensionRequest) =>
     client.post<CreditExtension>(`/pumps/${pumpId}/credit-clients/${clientId}/extensions`, req).then(r => r.data),
+
+  // ── Credit invoices ─────────────────────────────────────────────────────────
+
+  listInvoices: (pumpId: number, clientId: number, page = 0, size = 10) =>
+    client.get<PagedResponse<CreditInvoice>>(`/pumps/${pumpId}/credit-invoices`, { params: { clientId, page, size } }).then(r => r.data),
+
+  // The client's last completed billing cycle, used to prefill the generate form
+  getDefaultInvoicePeriod: (pumpId: number, clientId: number) =>
+    client.get<InvoicePeriod>(`/pumps/${pumpId}/credit-invoices/default-period`, { params: { clientId } }).then(r => r.data),
+
+  generateInvoice: (pumpId: number, clientId: number, period: InvoicePeriod) =>
+    client.post<CreditInvoice>(`/pumps/${pumpId}/credit-invoices`, { clientId, ...period }).then(r => r.data),
+
+  generateInvoicesForAllClients: (pumpId: number, period: InvoicePeriod) =>
+    client.post<GenerateAllInvoicesResult>(`/pumps/${pumpId}/credit-invoices/generate-all`, period).then(r => r.data),
+
+  cancelInvoice: (pumpId: number, invoiceId: number, reason: string) =>
+    client.post<CreditInvoice>(`/pumps/${pumpId}/credit-invoices/${invoiceId}/cancel`, { reason }).then(r => r.data),
+
+  // Same-origin page; the browser sends the session cookie when it is opened in a new tab
+  invoicePrintUrl: (pumpId: number, invoiceId: number) =>
+    `/api/pumps/${pumpId}/credit-invoices/${invoiceId}/print`,
 }

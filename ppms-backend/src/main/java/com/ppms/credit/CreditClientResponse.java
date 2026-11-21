@@ -37,4 +37,6 @@ public class CreditClientResponse {
     /** False when the client has been soft-disabled by an Owner/Admin. */
     private Boolean isActive;
     private Boolean hasPortalPin;
+    private String gstin;
+    private String billingAddress;
 }

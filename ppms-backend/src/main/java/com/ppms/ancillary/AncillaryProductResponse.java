@@ -20,6 +20,7 @@ public class AncillaryProductResponse {
     private String unitOfMeasure;
     private Integer currentStockUnits;
     private Integer lowStockThreshold;
+    private String hsnCode;
     private String status;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;

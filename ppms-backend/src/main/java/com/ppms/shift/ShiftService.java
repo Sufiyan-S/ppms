@@ -6,6 +6,7 @@ import com.ppms.common.time.DateRangeBounds;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.credit.CreditAccountPolicyService;
 import com.ppms.credit.CreditClient;
+import com.ppms.invoice.InvoicedSaleGuard;
 import com.ppms.pump.CurrentShiftWindow;
 import com.ppms.pump.DispensaryUnit;
 import com.ppms.pump.DispensaryUnitRepository;
@@ -62,6 +63,7 @@ public class ShiftService {
     private final ActiveNozzleAssignmentRepository activeNozzleRepository;
     private final ShiftFuelDeductionService fuelDeductionService;
     private final BusinessClock businessClock;
+    private final InvoicedSaleGuard invoicedSaleGuard;
 
     /**
      * Opens a new shift for selected nozzles on a Dispensary Unit.
@@ -392,7 +394,7 @@ public class ShiftService {
             throw new BusinessException("A mandatory void reason is required.");
         }
 
-        ShiftCreditEntry entry = creditEntryRepository.findById(entryId)
+        ShiftCreditEntry entry = creditEntryRepository.findByIdForUpdate(entryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Credit entry not found"));
 
         if (!entry.getShiftId().equals(shiftId)) {
@@ -402,6 +404,7 @@ public class ShiftService {
         if ("VOIDED".equals(entry.getVoidStatus())) {
             throw new BusinessException("Credit entry is already voided.");
         }
+        invoicedSaleGuard.requireFuelEntriesNotInvoiced(List.of(entryId));
 
         if (entry.getClientId() != null) {
             creditAccountPolicyService.lockLimitHolderOfClient(entry.getClientId());

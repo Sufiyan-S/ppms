@@ -9,6 +9,7 @@ import com.ppms.cash.CashEventType;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.credit.CreditClientRepository;
+import com.ppms.invoice.GstFields;
 import com.ppms.transaction.TransactionPaymentMode;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
@@ -58,6 +59,7 @@ public class AncillaryInventoryWorkflowService {
                 .currentStockUnits(0)
                 .lowStockThreshold(request.getLowStockThreshold())
                 .gstRatePercent(gstRate)
+                .hsnCode(GstFields.normaliseHsnCode(request.getHsnCode()))
                 .status(AncillaryProductStatus.ACTIVE)
                 .build();
 
@@ -78,6 +80,9 @@ public class AncillaryInventoryWorkflowService {
         }
         if (request.getGstRatePercent() != null) {
             product.setGstRatePercent(request.getGstRatePercent().setScale(2, RoundingMode.HALF_UP));
+        }
+        if (request.getHsnCode() != null) {
+            product.setHsnCode(GstFields.normaliseHsnCode(request.getHsnCode()));
         }
         return productRepository.save(product);
     }

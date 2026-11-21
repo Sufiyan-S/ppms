@@ -55,6 +55,16 @@ public class JwtService {
                 .compact();
     }
 
+    /** Embeds role and pump so the frontend can read them without an extra API call. */
+    public String generateAccessToken(User user) {
+        return generateToken(user, Map.of(
+                "role", user.getRole().name(),
+                USER_ID_CLAIM, user.getId(),
+                "pumpId", user.getAssignedPumpId() != null ? user.getAssignedPumpId() : "",
+                TOKEN_VERSION_CLAIM, user.getTokenVersion()
+        ));
+    }
+
     public String generateToken(UserDetails userDetails) {
         return generateToken(userDetails, new HashMap<>());
     }

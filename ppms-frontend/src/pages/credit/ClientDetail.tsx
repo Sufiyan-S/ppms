@@ -24,6 +24,7 @@ import { useClientLedger } from './useClientLedger'
 import { useLedgerFilters } from './useLedgerFilters'
 import { LedgerFilterBar } from './LedgerFilterBar'
 import { ClientSummaryCards } from './ClientSummaryCards'
+import { ClientInvoicesTab } from './ClientInvoicesTab'
 import { formatDecimal } from '../../utils/format'
 
 // ─── Client Detail (transaction history) ────────────────────────────────────
@@ -57,6 +58,8 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
   const canMoveEntries     = canPerformAction('credit:reassign', role)
   const canManageInterest  = canPerformAction('credit:manage-interest', role)
   const canGrantExtension  = canPerformAction('credit:grant-extension', role)
+  const canIssueInvoices   = canPerformAction('credit:issue-invoice', role)
+  const [activeTab, setActiveTab] = useState<'ledger' | 'invoices'>('ledger')
   const [txPage, setTxPage] = useState(0)
   const [txPageSize, setTxPageSize] = useState(10)
 
@@ -247,7 +250,31 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
         onOpenInterestSettings={() => setShowInterestSettingsModal(true)}
       />
 
+      <div className="px-6 mb-4">
+        <div className="ui-tabbar w-fit" role="tablist" aria-label="Client records">
+          {(['ledger', 'invoices'] as const).map(tab => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              onClick={() => setActiveTab(tab)}
+              className={`ui-tabbar__button ${activeTab === tab ? 'ui-tabbar__button--active' : ''}`}
+            >
+              {tab === 'ledger' ? 'Ledger' : 'Invoices'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === 'invoices' && (
+        <div className="px-6 pb-6">
+          <ClientInvoicesTab pumpId={pumpId} clientId={clientId} canIssueInvoices={canIssueInvoices} />
+        </div>
+      )}
+
       {/* Transaction ledger */}
+      {activeTab === 'ledger' && (
       <div className="px-6">
         <LedgerFilterBar filters={ledgerFilters} />
 
@@ -368,6 +395,7 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
           </>
         )}
       </div>
+      )}
     </div>
   )
 }

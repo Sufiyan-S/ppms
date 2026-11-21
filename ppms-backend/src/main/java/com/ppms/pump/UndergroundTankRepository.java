@@ -20,6 +20,8 @@ public interface UndergroundTankRepository extends JpaRepository<UndergroundTank
     /** Returns all tanks for a pump regardless of status. Used for deletions and setup listing. */
     List<UndergroundTank> findByPumpId(Long pumpId);
 
+    List<UndergroundTank> findByPumpIdIn(Collection<Long> pumpIds);
+
     Optional<UndergroundTank> findByIdAndPumpId(Long id, Long pumpId);
 
     boolean existsByPumpIdAndTankIdentifier(Long pumpId, String tankIdentifier);

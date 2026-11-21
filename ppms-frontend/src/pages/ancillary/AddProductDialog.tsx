@@ -10,6 +10,7 @@ import { ModalPortal } from '../../components/ModalPortal'
 import { parseApiError } from '../../utils/apiError'
 import { ReviewRow } from './ReviewRow'
 import { UNITS } from './ancillaryFormat'
+import { isValidHsnCode } from '../../utils/gst'
 
 export function AddProductDialog({
   pumpId, onClose, onSuccess,
@@ -21,7 +22,7 @@ export function AddProductDialog({
   const { addToast } = useToastStore()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<CreateProductRequest>({
-    name: '', brand: '', variant: '',
+    name: '', brand: '', variant: '', hsnCode: '',
     packageSize: 1, unitOfMeasure: 'PIECE',
   })
   const [error, setError] = useState<string | null>(null)
@@ -43,10 +44,12 @@ export function AddProductDialog({
   const normalizedBrand = form.brand?.trim() || undefined
   const normalizedVariant = form.variant?.trim() || undefined
   const normalizedThreshold = form.lowStockThreshold && form.lowStockThreshold > 0 ? form.lowStockThreshold : undefined
+  const normalizedHsnCode = form.hsnCode?.trim() || undefined
 
   const validate = () => {
     if (!normalizedName) return 'Product name is required'
     if (!form.packageSize || form.packageSize <= 0) return 'Package size must be greater than 0'
+    if (!isValidHsnCode(form.hsnCode ?? '')) return 'HSN code must be 4 to 8 digits'
     return null
   }
 
@@ -73,6 +76,7 @@ export function AddProductDialog({
       packageSize: form.packageSize,
       unitOfMeasure: form.unitOfMeasure,
       lowStockThreshold: normalizedThreshold,
+      hsnCode: normalizedHsnCode,
     })
   }
 
@@ -155,7 +159,20 @@ export function AddProductDialog({
                   />
                 </div>
               </div>
-              <div className="sm:col-span-2">
+              <div>
+                <label className="block">
+                  <span className="ui-label">HSN Code</span>
+                  <input
+                    className="text-sm"
+                    inputMode="numeric"
+                    maxLength={8}
+                    value={form.hsnCode ?? ''}
+                    onChange={e => setForm(f => ({ ...f, hsnCode: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="e.g. 27101980 — printed on invoices"
+                  />
+                </label>
+              </div>
+              <div>
                 <label className="block">
                   <span className="ui-label">Low Stock Alert (units)</span>
                   <input
@@ -183,6 +200,7 @@ export function AddProductDialog({
               <ReviewRow label="Variant" value={normalizedVariant ?? '—'} />
               <ReviewRow label="Package Size" value={String(form.packageSize)} />
               <ReviewRow label="Unit" value={form.unitOfMeasure} />
+              <ReviewRow label="HSN Code" value={normalizedHsnCode ?? '—'} />
               <ReviewRow label="Low Stock Alert" value={normalizedThreshold != null ? `${normalizedThreshold} units` : 'Disabled'} />
             </div>
           </div>

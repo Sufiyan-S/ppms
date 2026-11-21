@@ -126,6 +126,7 @@ public class AncillaryProductQueryService {
                 .unitOfMeasure(product.getUnitOfMeasure().name())
                 .currentStockUnits(product.getCurrentStockUnits())
                 .lowStockThreshold(product.getLowStockThreshold())
+                .hsnCode(product.getHsnCode())
                 .status(product.getStatus().name())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
@@ -135,7 +136,7 @@ public class AncillaryProductQueryService {
                 .build();
     }
 
-    private String buildDisplayName(AncillaryProduct product) {
+    public static String buildDisplayName(AncillaryProduct product) {
         StringBuilder sb = new StringBuilder();
         if (product.getBrand() != null && !product.getBrand().isBlank()) {
             sb.append(product.getBrand()).append(' ');

@@ -59,6 +59,9 @@ public class AncillaryProduct {
     @Column(name = "gst_rate_percent", nullable = false, precision = 5, scale = 2)
     private BigDecimal gstRatePercent;
 
+    @Column(name = "hsn_code", length = 8)
+    private String hsnCode;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", nullable = false)

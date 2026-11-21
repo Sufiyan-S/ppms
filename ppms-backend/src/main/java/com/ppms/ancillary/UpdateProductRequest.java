@@ -36,4 +36,7 @@ public class UpdateProductRequest {
     @DecimalMin(value = "0.00", message = "GST rate must be 0 or greater")
     @DecimalMax(value = "100.00", message = "GST rate cannot exceed 100%")
     private BigDecimal gstRatePercent;
+
+    /** Optional. If null, the existing HSN code is unchanged; an empty value removes it. */
+    private String hsnCode;
 }

@@ -23,12 +23,13 @@ public class AuthController {
     private final AuthService authService;
     private final JwtService jwtService;
     private final TokenRevocationService tokenRevocationService;
+    private final RefreshTokenService refreshTokenService;
     private final JwtCookieSupport jwtCookieSupport;
     private final ClientIpResolver clientIpResolver;
 
     /**
      * POST /api/auth/login
-     * The JWT is returned only as an httpOnly cookie, never in the body, so JavaScript cannot read it.
+     * The JWT and refresh token are returned only as httpOnly cookies, never in the body, so JavaScript cannot read them.
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
@@ -36,21 +37,36 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
         LoginResult result = authService.login(request, clientIpResolver.resolve(httpRequest));
-        jwtCookieSupport.writeToken(httpResponse, result.token());
+        jwtCookieSupport.writeSessionCookies(httpResponse, result.token(), result.refreshToken());
+        return ResponseEntity.ok(result.loginResponse());
+    }
+
+    /**
+     * POST /api/auth/refresh
+     * Swaps the refresh cookie for a new one and a new JWT; answers with the same body as login.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        LoginResult result = refreshTokenService.refresh(jwtCookieSupport.readRefreshToken(httpRequest));
+        jwtCookieSupport.writeSessionCookies(httpResponse, result.token(), result.refreshToken());
         return ResponseEntity.ok(result.loginResponse());
     }
 
     /**
      * POST /api/auth/logout
-     * Revokes the JWT and clears the httpOnly cookie.
+     * Revokes the JWT (when still valid) and the refresh token family, and clears both cookies.
+     * Open to callers whose JWT already expired, so the refresh token is still revoked.
      */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse,
             @AuthenticationPrincipal User currentUser) {
-        revokeCurrentToken(httpRequest, currentUser);
-        jwtCookieSupport.clearToken(httpResponse);
+        if (currentUser != null) {
+            revokeCurrentToken(httpRequest, currentUser);
+        }
+        refreshTokenService.endSession(jwtCookieSupport.readRefreshToken(httpRequest));
+        jwtCookieSupport.clearSessionCookies(httpResponse);
         return ResponseEntity.noContent().build();
     }
 
@@ -64,7 +80,7 @@ public class AuthController {
         authService.changePassword(currentUser, request.getCurrentPassword(), request.getNewPassword());
 
         revokeCurrentToken(httpRequest, currentUser);
-        jwtCookieSupport.clearToken(httpResponse);
+        jwtCookieSupport.clearSessionCookies(httpResponse);
         return ResponseEntity.ok(Map.of("message", "Password updated successfully. Please sign in again."));
     }
 

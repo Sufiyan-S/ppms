@@ -131,6 +131,7 @@ export default function CreditPage() {
           isLoading={isLoading}
           hasError={!!error}
           canAdjustLimit={canAdjustLimit}
+          canIssueInvoices={canPerformAction('credit:issue-invoice', user?.role)}
           onSelectClient={setSelectedClient}
         />
       )}

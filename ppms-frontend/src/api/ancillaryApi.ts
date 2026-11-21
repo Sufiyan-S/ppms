@@ -16,6 +16,8 @@ export interface AncillaryProduct {
   unitOfMeasure: UnitOfMeasure
   currentStockUnits: number
   lowStockThreshold: number | null
+  /** 4–8 digit HSN code printed on tax invoices. */
+  hsnCode?: string | null
   status: AncillaryProductStatus
   /** Cost price of the oldest active FIFO lot. Null when out of stock. */
   fifoCostPricePerUnit: number | null
@@ -80,12 +82,15 @@ export interface CreateProductRequest {
   packageSize: number
   unitOfMeasure: UnitOfMeasure
   lowStockThreshold?: number
+  hsnCode?: string
 }
 
 export interface UpdateProductRequest {
   brand?: string
   variant?: string
   lowStockThreshold?: number | null
+  /** An empty string removes the HSN code. */
+  hsnCode?: string
 }
 
 export interface SetProductPriceRequest {

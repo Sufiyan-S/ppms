@@ -19,6 +19,10 @@ public class PumpResponse {
     private OffsetDateTime createdAt;
     private BigDecimal discrepancyEscalationThreshold;
     private BigDecimal expenseApprovalThreshold;
+    private String gstin;
+    private String legalName;
+    private String stateName;
+    private String invoicePrefix;
     /** Active Dispensary Units with their nozzles. */
     private List<DUResponse> dus;
 }

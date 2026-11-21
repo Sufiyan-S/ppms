@@ -13,8 +13,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -22,6 +20,7 @@ public class AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final LoginRateLimiterService rateLimiterService;
     private final AuthLoginEventService authLoginEventService;
     private final PasswordEncoder passwordEncoder;
@@ -30,7 +29,7 @@ public class AuthService {
     private final BusinessClock businessClock;
 
     /**
-     * Authenticates the user and returns a signed JWT.
+     * Authenticates the user and returns a signed JWT plus the first refresh token of a new session.
      * Rate limiting: see LoginRateLimiterService (per phone number and per IP).
      *
      * @param request   Login credentials.
@@ -49,26 +48,12 @@ public class AuthService {
             );
 
             User user = (User) auth.getPrincipal();
-
-            // Embed role and pump into the JWT so the frontend can read them without an extra API call
-            String token = jwtService.generateToken(user, Map.of(
-                    "role", user.getRole().name(),
-                    JwtService.USER_ID_CLAIM, user.getId(),
-                    "pumpId", user.getAssignedPumpId() != null ? user.getAssignedPumpId() : "",
-                    JwtService.TOKEN_VERSION_CLAIM, user.getTokenVersion()
-            ));
+            String token = jwtService.generateAccessToken(user);
+            IssuedRefreshToken refreshToken = refreshTokenService.startSession(user);
 
             authLoginEventService.onLoginSuccess(user, ipAddress);
 
-            LoginResponse loginResponse = LoginResponse.builder()
-                    .userId(user.getId())
-                    .fullName(user.getFullName())
-                    .phoneNumber(user.getPhoneNumber())
-                    .role(user.getRole())
-                    .assignedPumpId(user.getAssignedPumpId())
-                    .build();
-
-            return new LoginResult(token, loginResponse);
+            return new LoginResult(token, refreshToken, LoginResponse.from(user));
 
         } catch (AuthenticationException ex) {
             authLoginEventService.onLoginFailure(request.getPhoneNumber(), ipAddress);

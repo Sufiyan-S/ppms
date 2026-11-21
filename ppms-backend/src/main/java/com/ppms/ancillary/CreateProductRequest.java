@@ -36,4 +36,7 @@ public class CreateProductRequest {
     @DecimalMin(value = "0.00", message = "GST rate must be 0 or greater")
     @DecimalMax(value = "100.00", message = "GST rate cannot exceed 100%")
     private BigDecimal gstRatePercent;
+
+    /** Optional HSN code (4 to 8 digits) printed on tax invoices. */
+    private String hsnCode;
 }

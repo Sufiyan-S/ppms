@@ -20,6 +20,7 @@ public class PumpController {
     private final PumpShiftDefinitionService shiftDefinitionService;
     private final TankService tankService;
     private final PumpService pumpService;
+    private final PumpOverviewService pumpOverviewService;
 
     // ─────────────────────────────────────────────────────────────────────────
     // PUMPS
@@ -29,6 +30,12 @@ public class PumpController {
     @GetMapping
     public ResponseEntity<List<PumpResponse>> getMyPumps(@AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(pumpService.getMyPumps(currentUser));
+    }
+
+    /** Today's sales, open shifts, low tanks and price status for each of the current user's pumps. */
+    @GetMapping("/overview")
+    public ResponseEntity<PumpOverviewResponse> getMyPumpsOverview(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(pumpOverviewService.getOverview(currentUser));
     }
 
     @PostMapping
@@ -98,12 +105,12 @@ public class PumpController {
         return ResponseEntity.ok(pumpService.updateMaxDuCount(pumpId, request.maxDuCount(), currentUser));
     }
 
-    /** Discrepancy escalation and expense approval thresholds. */
+    /** Discrepancy escalation and expense approval thresholds, and the GST details used on invoices. */
     @PatchMapping("/{pumpId}/settings")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<PumpResponse> updatePumpSettings(
             @PathVariable Long pumpId,
-            @RequestBody UpdatePumpSettingsRequest request,
+            @Valid @RequestBody UpdatePumpSettingsRequest request,
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(pumpService.updatePumpSettings(pumpId, request, currentUser));
     }

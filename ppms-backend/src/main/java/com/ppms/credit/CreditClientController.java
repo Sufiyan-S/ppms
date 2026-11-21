@@ -1,6 +1,7 @@
 package com.ppms.credit;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.invoice.GstFields;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -126,6 +127,8 @@ public class CreditClientController {
                 .notes(request.getNotes())
                 .creditLimit(BigDecimal.ZERO) // credit limit lives on the parent account
                 .parentClientId(parentClientId)
+                .gstin(GstFields.normaliseGstin(request.getGstin()))
+                .billingAddress(GstFields.trimmedOrNull(request.getBillingAddress()))
                 .build();
 
         client = creditClientRepository.save(client);
@@ -141,7 +144,7 @@ public class CreditClientController {
 
     /**
      * PATCH /api/pumps/{pumpId}/credit-clients/{clientId}
-     * Updates name, phone, and/or notes for a credit client. Owner/Admin only.
+     * Updates name, phone, notes, GSTIN and/or billing address for a credit client.
      * Only non-null fields in the request are applied.
      * Name uniqueness is re-enforced if the name is being changed.
      */
@@ -188,6 +191,12 @@ public class CreditClientController {
         }
         if (request.notes() != null) {
             client.setNotes(request.notes().trim().isEmpty() ? null : request.notes().trim());
+        }
+        if (request.gstin() != null) {
+            client.setGstin(GstFields.normaliseGstin(request.gstin()));
+        }
+        if (request.billingAddress() != null) {
+            client.setBillingAddress(GstFields.trimmedOrNull(request.billingAddress()));
         }
 
         client = creditClientRepository.save(client);
@@ -297,6 +306,8 @@ public class CreditClientController {
                 .isParent(isParent)
                 .isActive(c.isActive())
                 .hasPortalPin(c.getPortalPinHash() != null)
+                .gstin(c.getGstin())
+                .billingAddress(c.getBillingAddress())
                 .build();
     }
 }

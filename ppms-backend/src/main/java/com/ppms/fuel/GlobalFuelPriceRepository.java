@@ -2,9 +2,11 @@ package com.ppms.fuel;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +26,17 @@ public interface GlobalFuelPriceRepository extends JpaRepository<GlobalFuelPrice
               )
             """)
     List<GlobalFuelPrice> findCurrentPricesForPump(Long pumpId);
+
+    // Same as findCurrentPricesForPump, for several pumps in one query
+    @Query("""
+            SELECT g FROM GlobalFuelPrice g
+            WHERE g.pumpId IN :pumpIds
+              AND g.effectiveFrom = (
+                  SELECT MAX(g2.effectiveFrom) FROM GlobalFuelPrice g2
+                  WHERE g2.pumpId = g.pumpId AND g2.fuelType = g.fuelType
+              )
+            """)
+    List<GlobalFuelPrice> findCurrentPricesForPumps(@Param("pumpIds") Collection<Long> pumpIds);
 
     /**
      * Returns the most recently set price for a pump and fuel type on or before a given point in time.

@@ -4,6 +4,7 @@ import { pumpApi } from '../../api/pumpApi'
 import type { CreditClient as PumpCreditClient, UpdateCreditClientRequest } from '../../api/pumpApi'
 import { Spinner } from '../../components/Spinner'
 import { parseApiError } from '../../utils/apiError'
+import { GSTIN_FORMAT_MESSAGE, isValidGstin, normaliseGstText } from '../../utils/gst'
 
 interface EditCreditClientFormProps {
   pumpId: number
@@ -17,6 +18,8 @@ export function EditCreditClientForm({ pumpId, client, indent = false, onSaved }
   const [editName, setEditName]   = useState(client.name)
   const [editPhone, setEditPhone] = useState(client.phone ?? '')
   const [editNotes, setEditNotes] = useState(client.notes ?? '')
+  const [editGstin, setEditGstin] = useState(client.gstin ?? '')
+  const [editBillingAddress, setEditBillingAddress] = useState(client.billingAddress ?? '')
   const [editError, setEditError] = useState<string | null>(null)
 
   const updateMutation = useMutation({
@@ -32,7 +35,11 @@ export function EditCreditClientForm({ pumpId, client, indent = false, onSaved }
   const submitEdit = (e: React.FormEvent) => {
     e.preventDefault(); setEditError(null)
     if (!/^\d{10}$/.test(editPhone.trim())) { setEditError('Phone must be exactly 10 digits.'); return }
-    updateMutation.mutate({ name: editName.trim(), phone: editPhone.trim(), notes: editNotes.trim() || undefined })
+    if (!isValidGstin(editGstin)) { setEditError(GSTIN_FORMAT_MESSAGE); return }
+    updateMutation.mutate({
+      name: editName.trim(), phone: editPhone.trim(), notes: editNotes.trim() || undefined,
+      gstin: normaliseGstText(editGstin), billingAddress: editBillingAddress.trim(),
+    })
   }
 
   return (
@@ -59,6 +66,18 @@ export function EditCreditClientForm({ pumpId, client, indent = false, onSaved }
           <span className="ui-label">Notes <span className="text-slate-500">(optional)</span></span>
           <input value={editNotes} onChange={e => setEditNotes(e.target.value)}
             placeholder="e.g. Fleet manager, lorry owner" className="text-xs min-h-10" />
+        </label>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label className="block">
+          <span className="ui-label">GSTIN <span className="text-slate-500">(blank if unregistered)</span></span>
+          <input value={editGstin} onChange={e => setEditGstin(e.target.value.toUpperCase())}
+            maxLength={15} autoCapitalize="characters" placeholder="e.g. 27ABCDE1234F1Z5" className="text-xs min-h-10" />
+        </label>
+        <label className="block">
+          <span className="ui-label">Billing address <span className="text-slate-500">(optional)</span></span>
+          <input value={editBillingAddress} onChange={e => setEditBillingAddress(e.target.value)}
+            maxLength={500} placeholder="Printed on invoices" className="text-xs min-h-10" />
         </label>
       </div>
       {editError && <p role="alert" className="ui-error-text">{editError}</p>}

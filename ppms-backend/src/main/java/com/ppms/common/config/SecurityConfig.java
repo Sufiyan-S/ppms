@@ -54,7 +54,8 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/refresh", "/api/auth/logout",
+                        "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
                 // Public credit balance portal — no authentication required
                 .requestMatchers("/api/public/**").permitAll()
                 // Actuator health probes for Kubernetes liveness/readiness checks.

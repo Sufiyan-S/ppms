@@ -14,6 +14,7 @@ import { IconButton } from '../../components/IconButton'
 import { AddProductDialog } from './AddProductDialog'
 import { SellDialog } from './SellDialog'
 import { StockLotsDialog } from './StockLotsDialog'
+import { EditHsnDialog } from './EditHsnDialog'
 import { fmtCurrency } from './ancillaryFormat'
 import { useAuthStore } from '../../store/authStore'
 import { canPerformAction } from '../../permissions/permissions'
@@ -41,6 +42,7 @@ export function ProductsTab({
   const [productsPageSize, setProductsPageSize] = useState(10)
   const [sellProduct, setSellProduct] = useState<AncillaryProduct | null>(null)
   const [stockLotsProduct, setStockLotsProduct] = useState<AncillaryProduct | null>(null)
+  const [hsnProduct, setHsnProduct] = useState<AncillaryProduct | null>(null)
 
   useOnValuesChange([deferredSearch], () => setProductsPage(0))
 
@@ -150,7 +152,9 @@ export function ProductsTab({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-slate-800 leading-tight">{product.displayName}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{product.unitOfMeasure} · {product.packageSize}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {product.unitOfMeasure} · {product.packageSize}{product.hsnCode ? ` · HSN ${product.hsnCode}` : ''}
+                  </p>
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
                   product.status === 'ACTIVE'
@@ -193,6 +197,16 @@ export function ProductsTab({
                 >
                   Inventory
                 </button>
+                {isOwnerOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setHsnProduct(product)}
+                    className="ui-btn ui-btn-secondary min-h-0 px-2.5 py-1 text-xs"
+                    aria-label={`Edit HSN code of ${product.displayName}`}
+                  >
+                    HSN
+                  </button>
+                )}
                 {isOwnerOrAdmin && (
                   <button
                     onClick={() => statusMutation.mutate({
@@ -246,6 +260,18 @@ export function ProductsTab({
             setSellProduct(null)
             onRefresh()
             qc.invalidateQueries({ queryKey: ['ancillarySales', pumpId] })
+          }}
+        />
+      )}
+
+      {hsnProduct && (
+        <EditHsnDialog
+          pumpId={pumpId}
+          product={hsnProduct}
+          onClose={() => setHsnProduct(null)}
+          onSuccess={() => {
+            setHsnProduct(null)
+            onRefresh()
           }}
         />
       )}

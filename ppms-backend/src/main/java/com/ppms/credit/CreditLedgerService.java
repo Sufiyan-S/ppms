@@ -5,6 +5,7 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.expense.ApprovalPolicy;
 import com.ppms.expense.ExpenseApprovalStatus;
+import com.ppms.invoice.InvoicedSaleGuard;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftCreditEntry;
 import com.ppms.shift.ShiftCreditEntryRepository;
@@ -38,6 +39,7 @@ public class CreditLedgerService {
     private final ShiftCreditEntryRepository creditEntryRepository;
     private final ShiftRepository shiftRepository;
     private final CreditEntryReassignmentRepository reassignmentRepository;
+    private final InvoicedSaleGuard invoicedSaleGuard;
     private final CreditInterestService interestService;
     private final ApprovalPolicy approvalPolicy;
     private final CreditAccountPolicyService creditAccountPolicyService;
@@ -135,7 +137,7 @@ public class CreditLedgerService {
     public void reassignCreditEntry(Long pumpId, Long entryId,
                                     ReassignCreditEntryRequest request, User currentUser) {
 
-        ShiftCreditEntry entry = creditEntryRepository.findById(entryId)
+        ShiftCreditEntry entry = creditEntryRepository.findByIdForUpdate(entryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Credit entry not found"));
 
         Shift shift = shiftRepository.findById(entry.getShiftId())
@@ -143,6 +145,7 @@ public class CreditLedgerService {
         if (!shift.getPumpId().equals(pumpId)) {
             throw new ResourceNotFoundException("Credit entry not found");
         }
+        invoicedSaleGuard.requireFuelEntriesNotInvoiced(List.of(entryId));
 
         CreditClient toClient = clientRepository.findById(request.getToClientId())
                 .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));

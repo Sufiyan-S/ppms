@@ -1,6 +1,8 @@
 package com.ppms.shift;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -51,4 +53,13 @@ public interface ShiftCreditEntryRepository extends JpaRepository<ShiftCreditEnt
     Optional<OffsetDateTime> findOldestEntryDateByClientId(@Param("clientId") Long clientId);
 
     boolean existsByClientId(Long clientId);
+
+    /** Waits for an invoice being issued that includes this entry, so the invoice check after it is reliable. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM ShiftCreditEntry e WHERE e.id = :id")
+    Optional<ShiftCreditEntry> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM ShiftCreditEntry e WHERE e.id IN :ids ORDER BY e.id")
+    List<ShiftCreditEntry> findAllByIdForUpdate(@Param("ids") java.util.Collection<Long> ids);
 }

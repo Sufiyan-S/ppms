@@ -26,14 +26,15 @@ import java.util.Set;
  *
  * The pump id is read from the {pumpId} path variable Spring bound for the handler,
  * not from the raw URI, so encoded paths such as /api/pumps/%37/... cannot skip the check.
- * Handlers on these paths without a {pumpId} variable are rejected, except the pump list/create endpoint.
+ * Handlers on these paths without a {pumpId} variable are rejected, except the pump list/create endpoint
+ * and the overview, which only reads the pumps the user can already see.
  */
 @Component
 @RequiredArgsConstructor
 public class PumpAccessInterceptor implements HandlerInterceptor {
 
     private static final String PUMP_ID_VARIABLE = "pumpId";
-    private static final Set<String> PATHS_WITHOUT_PUMP_ID = Set.of("/api/pumps", "/api/pumps/");
+    private static final Set<String> PATHS_WITHOUT_PUMP_ID = Set.of("/api/pumps", "/api/pumps/", "/api/pumps/overview");
 
     private final PumpLocationRepository pumpLocationRepository;
 

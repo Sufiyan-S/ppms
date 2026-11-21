@@ -18,5 +18,11 @@ public record UpdateCreditClientRequest(
         @Pattern(regexp = "^\\d{10}$", message = "Phone must be exactly 10 digits")
         String phone,
 
-        String notes
+        String notes,
+
+        /** An empty value removes the GSTIN (unregistered customer). */
+        String gstin,
+
+        @Size(max = 500, message = "Billing address must be at most 500 characters")
+        String billingAddress
 ) {}

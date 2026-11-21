@@ -26,4 +26,10 @@ public class CreateCreditClientRequest {
      * Maximum nesting depth is 1 — a sub-account cannot itself be a parent.
      */
     private Long parentClientId;
+
+    /** Optional; blank for unregistered (B2C) customers. Format is checked after upper-casing. */
+    private String gstin;
+
+    @Size(max = 500, message = "Billing address must be at most 500 characters")
+    private String billingAddress;
 }

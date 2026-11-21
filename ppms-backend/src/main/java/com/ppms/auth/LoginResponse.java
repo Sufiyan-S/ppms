@@ -1,5 +1,6 @@
 package com.ppms.auth;
 
+import com.ppms.user.User;
 import com.ppms.user.UserRole;
 import lombok.Builder;
 import lombok.Data;
@@ -12,4 +13,14 @@ public class LoginResponse {
     private String phoneNumber;
     private UserRole role;
     private Long assignedPumpId;    // null for OWNER
+
+    public static LoginResponse from(User user) {
+        return LoginResponse.builder()
+                .userId(user.getId())
+                .fullName(user.getFullName())
+                .phoneNumber(user.getPhoneNumber())
+                .role(user.getRole())
+                .assignedPumpId(user.getAssignedPumpId())
+                .build();
+    }
 }

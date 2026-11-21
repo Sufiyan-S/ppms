@@ -10,6 +10,7 @@ import com.ppms.credit.CreditAccountPolicyService;
 import com.ppms.credit.CreditClient;
 import com.ppms.fuel.FuelType;
 import com.ppms.fuel.GlobalFuelPriceRepository;
+import com.ppms.invoice.InvoicedSaleGuard;
 import com.ppms.pump.CurrentShiftWindow;
 import com.ppms.pump.DispensaryUnit;
 import com.ppms.pump.Nozzle;
@@ -60,6 +61,7 @@ public class ShiftLifecycleSupportService {
     private final CashEventRepository cashEventRepository;
     private final UserRepository userRepository;
     private final BusinessClock businessClock;
+    private final InvoicedSaleGuard invoicedSaleGuard;
 
     public User findOperatorForPump(Long operatorId, Long pumpId) {
         return userRepository.findById(operatorId)
@@ -295,7 +297,8 @@ public class ShiftLifecycleSupportService {
         if (replacedEntryIds == null || replacedEntryIds.isEmpty()) {
             return;
         }
-        List<ShiftCreditEntry> replaced = creditEntryRepository.findAllById(replacedEntryIds);
+        List<ShiftCreditEntry> replaced = creditEntryRepository.findAllByIdForUpdate(replacedEntryIds);
+        invoicedSaleGuard.requireFuelEntriesNotInvoiced(replaced.stream().map(ShiftCreditEntry::getId).toList());
         creditAccountPolicyService.lockLimitHoldersOfClients(replaced.stream()
                 .map(ShiftCreditEntry::getClientId)
                 .filter(Objects::nonNull)

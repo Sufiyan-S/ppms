@@ -15,3 +15,9 @@ export function getWeekKey(dateOrIso: string): string {
 export function getMonthKey(dateOrIso: string): string {
   return formatIstDate(dateOrIso, { month: 'long', year: 'numeric' })
 }
+
+/** The calendar month before the current IST month, both dates inclusive (YYYY-MM-DD). */
+export function lastCompletedMonth(today: string = istDateString()) {
+  const periodTo = addDays(`${today.slice(0, 8)}01`, -1)
+  return { periodFrom: `${periodTo.slice(0, 8)}01`, periodTo }
+}

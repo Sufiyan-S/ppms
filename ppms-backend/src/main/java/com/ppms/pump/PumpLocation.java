@@ -60,6 +60,19 @@ public class PumpLocation {
      * they continue to access it via their assignedPumpId.
      * Only SuperAdmin can toggle this flag.
      */
+    @Column(name = "gstin", length = 15)
+    private String gstin;
+
+    /** Registered legal name printed on tax invoices; the trade name stays in {@code name}. */
+    @Column(name = "legal_name", length = 150)
+    private String legalName;
+
+    @Column(name = "state_name", length = 60)
+    private String stateName;
+
+    @Column(name = "invoice_prefix", length = 5)
+    private String invoicePrefix;
+
     @Column(name = "enabled", nullable = false)
     @Builder.Default
     private boolean enabled = true;

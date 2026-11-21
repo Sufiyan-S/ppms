@@ -80,7 +80,9 @@ ppms:
   jwt:
     # No default on purpose — JwtService refuses to start without JWT_SECRET (min 32 bytes).
     secret: ${JWT_SECRET:}
-    expiration-ms: ${JWT_EXPIRY_MS:86400000}   # 24 hours
+    expiration-ms: ${JWT_EXPIRY_MS:900000}   # 15 minutes; the refresh cookie renews it
+    refresh-token-days: ${REFRESH_TOKEN_DAYS:7}   # idle limit: a session unused for this long must log in again
+    session-max-days: ${SESSION_MAX_DAYS:30}      # absolute limit for one login, however often it is refreshed
 
   cookie:
     secure: ${COOKIE_SECURE:true}    # Requires HTTPS; override with COOKIE_SECURE=false for local HTTP dev

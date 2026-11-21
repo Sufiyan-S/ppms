@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Gauge, Database, IndianRupee, Users, Clock, Settings, Truck } from 'lucide-react'
+import { Gauge, Database, IndianRupee, Users, Clock, Settings, Truck, Receipt } from 'lucide-react'
 import { pumpApi } from '../../api/pumpApi'
 import { userApi } from '../../api/userApi'
 import { useAuthStore } from '../../store/authStore'
@@ -8,6 +8,7 @@ import type { PumpSummary } from '../../api/pumpApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import { AccordionSection } from './AccordionSection'
 import { FuelPricesContent } from './FuelPricesContent'
+import { GstDetailsContent } from './GstDetailsContent'
 import { PumpSettingsContent } from './PumpSettingsContent'
 import { TanksContent } from './TanksContent'
 import { NozzleContent } from './nozzles/NozzleContent'
@@ -184,6 +185,21 @@ export function PumpManagementPanel({
             badgeColor="bg-amber-50 text-amber-700"
           >
             <PumpSettingsContent pump={pump} onUpdated={onPumpUpdated} />
+          </AccordionSection>
+        )}
+
+        {/* ── GST & Invoices — OWNER/ADMIN only ── */}
+        {!isManager && (
+          <AccordionSection
+            sectionKey="gst"
+            open={openSection === 'gst'}
+            onToggle={() => toggle('gst')}
+            icon={<div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0"><Receipt size={14} strokeWidth={2} className="text-sky-600" /></div>}
+            title="GST & Invoices"
+            summary={pump.gstin ? `GSTIN ${pump.gstin}` : 'Not configured'}
+            badgeColor="bg-sky-50 text-sky-700"
+          >
+            <GstDetailsContent pump={pump} onUpdated={onPumpUpdated} />
           </AccordionSection>
         )}
 

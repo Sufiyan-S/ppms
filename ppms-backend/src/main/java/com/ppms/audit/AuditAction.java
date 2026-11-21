@@ -34,6 +34,8 @@ public enum AuditAction {
     CREDIT_CLIENT_CREATED,
     CREDIT_CLIENT_DELETED,
     CREDIT_ENTRY_REASSIGNED,
+    CREDIT_INVOICE_ISSUED,
+    CREDIT_INVOICE_CANCELLED,
 
     // ── Inventory ─────────────────────────────────────────────────────────────
     DELIVERY_RECORDED,

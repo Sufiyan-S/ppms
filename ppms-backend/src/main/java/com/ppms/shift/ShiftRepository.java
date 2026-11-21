@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -382,4 +383,28 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             @Param("shiftDefinitionId") Long shiftDefinitionId);
 
     boolean existsByPumpId(Long pumpId);
+
+    // ── Multi-pump overview ───────────────────────────────────────────────────
+
+    /** One row per pump: [pumpId, SUM(totalAmountDue)] for shifts dated {@code shiftDate} that have an amount due. */
+    @Query("""
+            SELECT s.pumpId, SUM(s.totalAmountDue)
+            FROM Shift s
+            WHERE s.pumpId IN :pumpIds
+              AND s.shiftDate = :shiftDate
+              AND s.totalAmountDue IS NOT NULL
+            GROUP BY s.pumpId
+            """)
+    List<Object[]> sumAmountDueByPumpForDate(@Param("pumpIds") Collection<Long> pumpIds,
+                                             @Param("shiftDate") LocalDate shiftDate);
+
+    /** One row per pump and status: [pumpId, status, count] for shifts that are still open. */
+    @Query("""
+            SELECT s.pumpId, s.status, COUNT(s)
+            FROM Shift s
+            WHERE s.pumpId IN :pumpIds
+              AND s.status IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            GROUP BY s.pumpId, s.status
+            """)
+    List<Object[]> countOpenShiftsByPumpAndStatus(@Param("pumpIds") Collection<Long> pumpIds);
 }

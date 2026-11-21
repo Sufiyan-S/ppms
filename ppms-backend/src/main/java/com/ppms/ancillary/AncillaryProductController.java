@@ -75,7 +75,7 @@ public class AncillaryProductController {
 
     /**
      * PATCH /api/pumps/{pumpId}/ancillary/products/{id}
-     * Updates brand, variant, and/or lowStockThreshold.
+     * Updates brand, variant, lowStockThreshold, GST rate and/or HSN code.
      * Name, packageSize, and unitOfMeasure cannot be changed after creation.
      * Owner/Admin only.
      */
