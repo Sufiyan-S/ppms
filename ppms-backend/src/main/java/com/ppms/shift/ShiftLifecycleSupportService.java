@@ -4,19 +4,23 @@ import com.ppms.cash.CashEvent;
 import com.ppms.cash.CashEventRepository;
 import com.ppms.cash.CashEventType;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.time.BusinessClock;
 import com.ppms.credit.CreditAccountPolicyService;
 import com.ppms.credit.CreditClient;
 import com.ppms.fuel.FuelType;
 import com.ppms.fuel.GlobalFuelPriceRepository;
+import com.ppms.pump.CurrentShiftWindow;
 import com.ppms.pump.DispensaryUnit;
 import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleStatus;
-import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionService;
 import com.ppms.pump.TankStatus;
 import com.ppms.pump.UndergroundTankRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserGender;
+import com.ppms.user.UserRepository;
+import com.ppms.user.UserRole;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -25,12 +29,15 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -39,6 +46,7 @@ import java.util.stream.Collectors;
 public class ShiftLifecycleSupportService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final BigDecimal ROLLOVER_START_FRACTION = new BigDecimal("0.99");
 
     private final ShiftRepository shiftRepository;
     private final ShiftFuelReadingRepository fuelReadingRepository;
@@ -50,6 +58,14 @@ public class ShiftLifecycleSupportService {
     private final com.ppms.pump.PumpClosureRepository pumpClosureRepository;
     private final com.ppms.pump.NozzleCalibrationLogRepository calibrationLogRepository;
     private final CashEventRepository cashEventRepository;
+    private final UserRepository userRepository;
+    private final BusinessClock businessClock;
+
+    public User findOperatorForPump(Long operatorId, Long pumpId) {
+        return userRepository.findById(operatorId)
+                .filter(user -> user.getRole() == UserRole.OPERATOR && pumpId.equals(user.getAssignedPumpId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Operator not found"));
+    }
 
     /**
      * Validates that a shift can be opened for the given nozzles on the given DU.
@@ -62,12 +78,12 @@ public class ShiftLifecycleSupportService {
      * 5. Operator does not already have an open shift
      * 6. Night-shift consent for female operators
      *
-     * Returns the active PumpShiftDefinition.
+     * Returns the matching shift definition and the business date of the shift.
      */
-    public PumpShiftDefinition validateShiftCanOpen(DispensaryUnit du, List<Nozzle> nozzles, User operator) {
+    public CurrentShiftWindow validateShiftCanOpen(DispensaryUnit du, List<Nozzle> nozzles, User operator) {
         Long pumpId = du.getPumpId();
 
-        pumpClosureRepository.findByPumpIdAndClosureDate(pumpId, LocalDate.now())
+        pumpClosureRepository.findByPumpIdAndClosureDate(pumpId, businessClock.today())
                 .ifPresent(closure -> {
                     throw new BusinessException(
                             "This pump is closed today (" + closure.getClosureDate() + "): " + closure.getReason() +
@@ -82,7 +98,7 @@ public class ShiftLifecycleSupportService {
 
             calibrationLogRepository.findLatestByNozzleId(nozzle.getId()).ifPresent(latest -> {
                 if (latest.getNextCalibrationDue() != null
-                        && LocalDate.now().isAfter(latest.getNextCalibrationDue())) {
+                        && businessClock.today().isAfter(latest.getNextCalibrationDue())) {
                     throw new BusinessException(
                             "Nozzle #" + nozzle.getNozzleNumber() + " calibration was due on " +
                             latest.getNextCalibrationDue() + " and has expired. " +
@@ -127,16 +143,16 @@ public class ShiftLifecycleSupportService {
                     operator.getFullName() + " already has an open shift (ID " + existing.getId() + ").");
         });
 
-        PumpShiftDefinition shiftDef = shiftDefinitionService.detectCurrentShift(pumpId);
+        CurrentShiftWindow window = shiftDefinitionService.detectCurrentShift(pumpId);
 
-        if (shiftDef.isNightShift()
+        if (window.definition().isNightShift()
                 && operator.getGender() == UserGender.FEMALE
                 && !operator.isNightShiftConsent()) {
             throw new BusinessException(
                     operator.getFullName() + " has not given consent to work night shifts and cannot be assigned to this shift.");
         }
 
-        return shiftDef;
+        return window;
     }
 
     /**
@@ -163,6 +179,9 @@ public class ShiftLifecycleSupportService {
      */
     public ClosingSummary processClosingReadings(Long shiftId, Map<Long, BigDecimal> maxMeterByNozzleId,
                                                   CloseShiftRequest request, List<ShiftFuelReading> readings) {
+        rejectDuplicateNozzles(request.getFuelReadings().stream()
+                .map(CloseShiftRequest.OutletEndReadingRequest::nozzleId)
+                .toList());
         Map<Long, BigDecimal> endReadingByNozzleId = request.getFuelReadings().stream()
                 .collect(Collectors.toMap(
                         CloseShiftRequest.OutletEndReadingRequest::nozzleId,
@@ -186,6 +205,14 @@ public class ShiftLifecycleSupportService {
                         "End reading " + endReading.toPlainString() + " exceeds the maximum meter value of " +
                         maxMeter.toPlainString() + " for the " + reading.getFuelType() + " nozzle. " +
                         "Please verify the meter reading.");
+            }
+
+            if (endReading.compareTo(reading.getStartReading()) < 0
+                    && !isNearMeterMaximum(reading.getStartReading(), maxMeter)) {
+                throw new BusinessException(
+                        "Closing reading " + endReading.toPlainString() + " is below the opening reading " +
+                        reading.getStartReading().toPlainString() + " for the " + reading.getFuelType() +
+                        " nozzle. Please verify the meter reading.");
             }
 
             BigDecimal unitsSold = calcUnits(reading.getStartReading(), endReading, maxMeter);
@@ -224,11 +251,21 @@ public class ShiftLifecycleSupportService {
     }
 
     public List<CloseShiftRequest.CreditEntryRequest> validateCloseCreditEntries(Long shiftId, BigDecimal creditTotal,
-                                                                                  List<CloseShiftRequest.CreditEntryRequest> creditEntries) {
+                                                                                  List<CloseShiftRequest.CreditEntryRequest> creditEntries,
+                                                                                  Collection<Long> replacedEntryIds) {
         List<CloseShiftRequest.CreditEntryRequest> safeEntries = creditEntries == null ? Collections.emptyList() : creditEntries;
-
-        BigDecimal preExistingCreditSum = creditEntryRepository.findByShiftId(shiftId).stream()
+        Set<Long> replacedIds = replacedEntryIds == null ? Set.of() : new HashSet<>(replacedEntryIds);
+        List<ShiftCreditEntry> shiftEntries = creditEntryRepository.findByShiftId(shiftId);
+        Set<Long> activeEntryIds = shiftEntries.stream()
                 .filter(e -> !"VOIDED".equals(e.getVoidStatus()))
+                .map(ShiftCreditEntry::getId)
+                .collect(Collectors.toSet());
+        if (!activeEntryIds.containsAll(replacedIds)) {
+            throw new BusinessException("Only active credit entries of this shift can be replaced at close.");
+        }
+
+        BigDecimal preExistingCreditSum = shiftEntries.stream()
+                .filter(e -> activeEntryIds.contains(e.getId()) && !replacedIds.contains(e.getId()))
                 .map(ShiftCreditEntry::getAmount)
                 .reduce(ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
@@ -254,12 +291,33 @@ public class ShiftLifecycleSupportService {
         return safeEntries;
     }
 
+    public void voidReplacedCreditEntries(Collection<Long> replacedEntryIds, User currentUser) {
+        if (replacedEntryIds == null || replacedEntryIds.isEmpty()) {
+            return;
+        }
+        List<ShiftCreditEntry> replaced = creditEntryRepository.findAllById(replacedEntryIds);
+        creditAccountPolicyService.lockLimitHoldersOfClients(replaced.stream()
+                .map(ShiftCreditEntry::getClientId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet()));
+        for (ShiftCreditEntry entry : replaced) {
+            entry.setVoidStatus("VOIDED");
+            entry.setVoidReason("Replaced by a corrected entry at shift close");
+            entry.setVoidedByUserId(currentUser.getId());
+            entry.setVoidedAt(businessClock.now());
+        }
+        creditEntryRepository.saveAll(replaced);
+    }
+
     public void persistCloseCreditEntries(Long shiftId, Long pumpId, List<CloseShiftRequest.CreditEntryRequest> creditEntries) {
         List<ShiftCreditEntry> toSave = new ArrayList<>();
+        Map<CreditClient, BigDecimal> amountByClient = new LinkedHashMap<>();
         for (CloseShiftRequest.CreditEntryRequest entry : creditEntries) {
             CreditClient matchedClient = creditAccountPolicyService.resolveClientForPump(
                     pumpId, entry.clientId(), entry.clientName());
-            creditAccountPolicyService.validateCreditLimit(pumpId, matchedClient, entry.amount());
+            if (matchedClient != null) {
+                amountByClient.merge(matchedClient, entry.amount(), BigDecimal::add);
+            }
 
             toSave.add(ShiftCreditEntry.builder()
                     .shiftId(shiftId)
@@ -273,6 +331,7 @@ public class ShiftLifecycleSupportService {
                     .driverName(entry.driverName())
                     .build());
         }
+        creditAccountPolicyService.validateCreditLimits(amountByClient);
         creditEntryRepository.saveAll(toSave);
     }
 
@@ -288,10 +347,22 @@ public class ShiftLifecycleSupportService {
                 .eventType(CashEventType.CASH_IN)
                 .amount(shift.getCashCollected().setScale(2, RoundingMode.HALF_UP))
                 .description("Cash collection from " + nozzleLabel + " shift close (Shift #" + shift.getId() + ")")
-                .eventDate(LocalDate.now())
+                .eventDate(businessClock.today())
                 .recordedByUserId(currentUser.getId())
                 .build());
         log.info("Auto-created CASH_IN event for shift {}: amount={}", shift.getId(), shift.getCashCollected());
+    }
+
+    /** Request ids must be unique; a repeated nozzle would otherwise fail deep inside a map collector. */
+    public void rejectDuplicateNozzles(List<Long> nozzleIds) {
+        if (nozzleIds.size() != new HashSet<>(nozzleIds).size()) {
+            throw new BusinessException("Each nozzle can only appear once in the request.");
+        }
+    }
+
+    /** A meter only rolls over to zero from the top of its range; anything lower is a mistyped reading. */
+    private boolean isNearMeterMaximum(BigDecimal startReading, BigDecimal maxMeterValue) {
+        return startReading.compareTo(maxMeterValue.multiply(ROLLOVER_START_FRACTION)) >= 0;
     }
 
     private BigDecimal calcUnits(BigDecimal start, BigDecimal end, BigDecimal maxMeterValue) {

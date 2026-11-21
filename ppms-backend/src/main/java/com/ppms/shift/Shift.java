@@ -137,8 +137,9 @@ public class Shift {
     @Column(name = "status", nullable = false)
     private ShiftStatus status;
 
+    @Builder.Default
     @Column(name = "is_overdue_flag", nullable = false)
-    private Boolean isOverdueFlag;
+    private Boolean isOverdueFlag = false;
 
     /**
      * True when this shift was entered retroactively by an Admin/Owner via the backfill flow.

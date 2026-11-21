@@ -105,6 +105,11 @@ public class PayrollRecord {
     @Builder.Default
     private BigDecimal netPay = BigDecimal.ZERO;
 
+    /** Deductions above gross pay that net pay (floored at zero) could not absorb. */
+    @Column(name = "uncovered_deductions", nullable = false)
+    @Builder.Default
+    private BigDecimal uncoveredDeductions = BigDecimal.ZERO;
+
     // ── DAILY salary type fields (MANAGER / ADMIN / ACCOUNTANT) ──────────────
 
     /** Total calendar days in the pay period (period_to − period_from + 1). */

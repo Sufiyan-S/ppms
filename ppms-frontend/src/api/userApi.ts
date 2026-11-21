@@ -6,12 +6,14 @@ export interface StaffMember {
   id: number
   employeeId: string
   fullName: string
-  phoneNumber: string
+  /** Null when the viewer's role may not see staff contact details (below Owner/Admin). */
+  phoneNumber: string | null
   gender: UserGender | null
   nightShiftConsent: boolean
   role: string
   assignedPumpId: number | null
   status: string
+  // Pay rates are also null when the viewer's role may not see them.
   dailyRate: number | null           // MANAGER / ADMIN / ACCOUNTANT
   shift1HourlyRate: number | null    // OPERATOR — night shift
   standardHourlyRate: number | null  // OPERATOR — day shifts

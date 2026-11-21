@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
 public record UpdateCreditClientRequest(
 
         @Size(min = 1, max = 100, message = "Name must be between 1 and 100 characters")
+        @Pattern(regexp = "[^<>]*", message = "Name cannot contain < or >")
         String name,
 
         @Pattern(regexp = "^\\d{10}$", message = "Phone must be exactly 10 digits")

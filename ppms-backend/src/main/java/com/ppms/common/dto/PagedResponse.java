@@ -53,21 +53,22 @@ public record PagedResponse<T>(
      */
     public static <T> PagedResponse<T> of(List<T> allItems, int page, int pageSize) {
         long total = allItems.size();
-        int safePage = pageSize > 0 ? pageSize : 50;
-        int totalPages = safePage > 0 ? (int) Math.ceil((double) total / safePage) : 1;
-        int fromIndex = page * safePage;
-        int toIndex = (int) Math.min((long) fromIndex + safePage, total);
+        int size = PageRequests.cappedSize(pageSize);
+        int pageIndex = PageRequests.safePage(page);
+        int totalPages = (int) Math.ceil((double) total / size);
+        long fromIndex = (long) pageIndex * size;
+        int toIndex = (int) Math.min(fromIndex + size, total);
 
-        List<T> content = fromIndex >= total ? List.of() : allItems.subList(fromIndex, toIndex);
+        List<T> content = fromIndex >= total ? List.of() : allItems.subList((int) fromIndex, toIndex);
 
         return new PagedResponse<>(
                 content,
-                page,
-                safePage,
+                pageIndex,
+                size,
                 total,
                 totalPages,
-                page < totalPages - 1,
-                page > 0
+                pageIndex < totalPages - 1,
+                pageIndex > 0
         );
     }
 }

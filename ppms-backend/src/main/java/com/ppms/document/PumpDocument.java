@@ -48,6 +48,9 @@ public class PumpDocument {
     @Column(name = "notes")
     private String notes;
 
+    @Column(name = "uploaded_by_user_id", nullable = false, updatable = false)
+    private Long uploadedByUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

@@ -1,45 +1,34 @@
 import { Suspense, lazy } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './queryClient'
 import ProtectedRoute from './components/ProtectedRoute'
+import { SkeletonRows } from './components/Skeleton'
+import { pageLoaders } from './routes/pageLoaders'
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
 const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'))
-const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
-const OverviewPage = lazy(() => import('./pages/dashboard/OverviewPage'))
-const ShiftsPage = lazy(() => import('./pages/shifts/ShiftsPage'))
-const ShiftPlanningPage = lazy(() => import('./pages/shifts/ShiftPlanningPage'))
-const SetupPage = lazy(() => import('./pages/setup/SetupPage'))
-const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage'))
-const CreditPage = lazy(() => import('./pages/credit/CreditPage'))
-const BalanceSheetPage = lazy(() => import('./pages/balancesheet/BalanceSheetPage'))
-const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'))
-const SuperAdminPage = lazy(() => import('./pages/superadmin/SuperAdminPage'))
-const ExpensesPage = lazy(() => import('./pages/expenses/ExpensesPage'))
-const DocumentsPage = lazy(() => import('./pages/documents/DocumentsPage'))
-const CashDrawerPage = lazy(() => import('./pages/cash/CashDrawerPage'))
-const CalibrationPage = lazy(() => import('./pages/calibration/CalibrationPage'))
-const AuditLogPage = lazy(() => import('./pages/audit/AuditLogPage'))
-const PayrollPage = lazy(() => import('./pages/payroll/PayrollPage'))
-const AncillaryProductsPage = lazy(() => import('./pages/ancillary/AncillaryProductsPage'))
-const PaymentSettlementsPage = lazy(() => import('./pages/settlements/PaymentSettlementsPage'))
+const DashboardPage = lazy(pageLoaders.dashboard)
+const OverviewPage = lazy(pageLoaders.overview)
+const ShiftsPage = lazy(pageLoaders.shifts)
+const ShiftPlanningPage = lazy(pageLoaders.shiftPlanning)
+const SetupPage = lazy(pageLoaders.setup)
+const InventoryPage = lazy(pageLoaders.inventory)
+const CreditPage = lazy(pageLoaders.credit)
+const BalanceSheetPage = lazy(pageLoaders.balanceSheets)
+const ReportsPage = lazy(pageLoaders.reports)
+const SuperAdminPage = lazy(pageLoaders.superAdmin)
+const ExpensesPage = lazy(pageLoaders.expenses)
+const DocumentsPage = lazy(pageLoaders.documents)
+const CashDrawerPage = lazy(pageLoaders.cash)
+const CalibrationPage = lazy(pageLoaders.calibration)
+const AuditLogPage = lazy(pageLoaders.audit)
+const PayrollPage = lazy(pageLoaders.payroll)
+const AncillaryProductsPage = lazy(pageLoaders.ancillary)
+const PaymentSettlementsPage = lazy(pageLoaders.settlements)
 const CreditBalancePortalPage = lazy(() => import('./pages/portal/CreditBalancePortalPage'))
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Never retry a 401 — the token is expired; retrying just fires the logout interceptor again
-      retry: (failureCount, error: any) => {
-        if (error?.response?.status === 401) return false
-        return failureCount < 1
-      },
-      staleTime: 30_000,
-      gcTime: 10 * 60_000, // keep cached data for 10 min after component unmounts
-    },
-  },
-})
 
 function PageFallback() {
   return (
@@ -51,8 +40,21 @@ function PageFallback() {
   )
 }
 
+function NestedPageFallback() {
+  return (
+    <div className="ui-page ui-page--narrow" role="status" aria-busy="true">
+      <span className="sr-only">Loading page…</span>
+      <SkeletonRows count={4} />
+    </div>
+  )
+}
+
 function withSuspense(element: ReactNode) {
   return <Suspense fallback={<PageFallback />}>{element}</Suspense>
+}
+
+function withPageSuspense(element: ReactNode) {
+  return <Suspense fallback={<NestedPageFallback />}>{element}</Suspense>
 }
 
 export default function App() {
@@ -73,7 +75,7 @@ export default function App() {
           >
             <Route
               index
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="overview">
                   <OverviewPage />
                 </ProtectedRoute>
@@ -81,7 +83,7 @@ export default function App() {
             />
             <Route
               path="shifts"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="shifts">
                   <ShiftsPage />
                 </ProtectedRoute>
@@ -89,7 +91,7 @@ export default function App() {
             />
             <Route
               path="shift-planning"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="shiftPlanning">
                   <ShiftPlanningPage />
                 </ProtectedRoute>
@@ -97,7 +99,7 @@ export default function App() {
             />
             <Route
               path="inventory"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="inventory">
                   <InventoryPage />
                 </ProtectedRoute>
@@ -105,7 +107,7 @@ export default function App() {
             />
             <Route
               path="credit"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="credit">
                   <CreditPage />
                 </ProtectedRoute>
@@ -113,7 +115,7 @@ export default function App() {
             />
             <Route
               path="expenses"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="expenses">
                   <ExpensesPage />
                 </ProtectedRoute>
@@ -121,7 +123,7 @@ export default function App() {
             />
             <Route
               path="documents"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="documents">
                   <DocumentsPage />
                 </ProtectedRoute>
@@ -129,7 +131,7 @@ export default function App() {
             />
             <Route
               path="cash"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="cashDrawer">
                   <CashDrawerPage />
                 </ProtectedRoute>
@@ -137,7 +139,7 @@ export default function App() {
             />
             <Route
               path="calibration"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="calibration">
                   <CalibrationPage />
                 </ProtectedRoute>
@@ -145,7 +147,7 @@ export default function App() {
             />
             <Route
               path="payroll"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="payroll">
                   <PayrollPage />
                 </ProtectedRoute>
@@ -153,7 +155,7 @@ export default function App() {
             />
             <Route
               path="ancillary"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="products">
                   <AncillaryProductsPage />
                 </ProtectedRoute>
@@ -161,7 +163,7 @@ export default function App() {
             />
             <Route
               path="audit"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="auditLog">
                   <AuditLogPage />
                 </ProtectedRoute>
@@ -169,7 +171,7 @@ export default function App() {
             />
             <Route
               path="settlements"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="settlements">
                   <PaymentSettlementsPage />
                 </ProtectedRoute>
@@ -177,7 +179,7 @@ export default function App() {
             />
             <Route
               path="balance-sheets"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="balanceSheets">
                   <BalanceSheetPage />
                 </ProtectedRoute>
@@ -185,7 +187,7 @@ export default function App() {
             />
             <Route
               path="reports"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="reports">
                   <ReportsPage />
                 </ProtectedRoute>
@@ -193,7 +195,7 @@ export default function App() {
             />
             <Route
               path="setup"
-              element={withSuspense(
+              element={withPageSuspense(
                 <ProtectedRoute page="setup">
                   <SetupPage />
                 </ProtectedRoute>

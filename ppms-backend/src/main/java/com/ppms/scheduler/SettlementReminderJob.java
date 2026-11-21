@@ -1,5 +1,6 @@
 package com.ppms.scheduler;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.notification.NotificationDedupService;
 import com.ppms.notification.NotificationType;
 import com.ppms.settlement.PaymentSettlementConfig;
@@ -12,7 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -35,10 +35,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SettlementReminderJob {
 
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-
     private final PaymentSettlementConfigRepository configRepository;
     private final NotificationDedupService          dedupService;
+    private final BusinessClock businessClock;
 
     @Scheduled(fixedDelay = 5 * 60 * 1000)   // every 5 minutes
     @SchedulerLock(name = "SettlementReminderJob", lockAtMostFor = "PT4M", lockAtLeastFor = "PT1M")
@@ -46,8 +45,8 @@ public class SettlementReminderJob {
         List<PaymentSettlementConfig> configs = configRepository.findByEnabledTrue();
         if (configs.isEmpty()) return;
 
-        LocalDate today    = LocalDate.now(IST);
-        LocalTime nowTime  = LocalTime.now(IST);
+        LocalDate today    = businessClock.today();
+        LocalTime nowTime  = businessClock.now().toLocalTime();
 
         int fired = 0;
         for (PaymentSettlementConfig cfg : configs) {

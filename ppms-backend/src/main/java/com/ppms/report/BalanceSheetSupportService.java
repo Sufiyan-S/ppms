@@ -12,7 +12,13 @@ import com.ppms.expense.ExpenseApprovalStatus;
 import com.ppms.expense.PumpExpense;
 import com.ppms.expense.PumpExpenseRepository;
 import com.ppms.fuel.FuelType;
+import com.ppms.fuel.GlobalFuelPrice;
+import com.ppms.fuel.GlobalFuelPriceRepository;
 import com.ppms.inventory.DipCheck;
+import com.ppms.settlement.PaymentSettlement;
+import com.ppms.settlement.PaymentSettlementRepository;
+import com.ppms.settlement.SettlementPaymentType;
+import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,10 +45,16 @@ public class BalanceSheetSupportService {
     private final AncillaryProductRepository ancillaryProductRepository;
     private final PumpExpenseRepository pumpExpenseRepository;
     private final UserRepository userRepository;
+    private final GlobalFuelPriceRepository fuelPriceRepository;
     private final BusinessClock businessClock;
+    private final PaymentSettlementRepository settlementRepository;
+    private final ShiftRepository shiftRepository;
 
-    public BalanceSheetDetailResponse.ProductSalesSummary buildProductSalesSummary(Long pumpId, LocalDate reportDate) {
-        List<AncillarySale> sales = ancillarySaleRepository.findByPumpIdAndDateRange(pumpId, reportDate, reportDate);
+    public BalanceSheetDetailResponse.ProductSalesSummary buildProductSalesSummary(Long pumpId, ReportPeriod period) {
+        List<AncillarySale> sales = period.live()
+                ? ancillarySaleRepository.findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(
+                        pumpId, period.start(), period.end())
+                : ancillarySaleRepository.findByPumpIdAndDateRange(pumpId, period.reportDate(), period.reportDate());
         if (sales.isEmpty()) {
             return null;
         }
@@ -111,9 +123,12 @@ public class BalanceSheetSupportService {
                 .build();
     }
 
-    public BalanceSheetDetailResponse.ExpenseSummary buildExpenseSummary(Long pumpId, LocalDate reportDate) {
-        List<PumpExpense> expenses = pumpExpenseRepository.findByPumpIdAndExpenseDateAndApprovalStatus(
-                pumpId, reportDate, ExpenseApprovalStatus.APPROVED);
+    public BalanceSheetDetailResponse.ExpenseSummary buildExpenseSummary(Long pumpId, ReportPeriod period) {
+        List<PumpExpense> expenses = period.live()
+                ? pumpExpenseRepository.findByPumpIdAndApprovalStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        pumpId, ExpenseApprovalStatus.APPROVED, period.start(), period.end())
+                : pumpExpenseRepository.findByPumpIdAndExpenseDateAndApprovalStatus(
+                        pumpId, period.reportDate(), ExpenseApprovalStatus.APPROVED);
         if (expenses.isEmpty()) {
             return null;
         }
@@ -143,9 +158,10 @@ public class BalanceSheetSupportService {
                 .build();
     }
 
-    public List<DipPlLineResponse> buildDipPlEntries(List<FuelDipEntry> dipEntries,
+    /** Dip check variances are valued at the selling price in force when each check was taken. */
+    public List<DipPlLineResponse> buildDipPlEntries(Long pumpId,
+                                                     List<FuelDipEntry> dipEntries,
                                                      List<DipCheck> dipChecks,
-                                                     Map<FuelType, BigDecimal> priceMap,
                                                      Map<Long, FuelType> tankFuelTypeMap) {
         List<DipPlLineResponse> entries = new ArrayList<>();
 
@@ -167,8 +183,12 @@ public class BalanceSheetSupportService {
             }
             BigDecimal litresVariance = dipCheck.getMeasuredQuantity().subtract(dipCheck.getSystemStock())
                     .setScale(3, RoundingMode.HALF_UP);
-            BigDecimal monetaryAmount = litresVariance.multiply(priceMap.getOrDefault(fuelType, BigDecimal.ZERO))
-                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal priceAtCheck = fuelPriceRepository
+                    .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
+                            pumpId, fuelType, dipCheck.getCheckedAt())
+                    .map(GlobalFuelPrice::getPricePerUnit)
+                    .orElse(BigDecimal.ZERO);
+            BigDecimal monetaryAmount = litresVariance.multiply(priceAtCheck).setScale(2, RoundingMode.HALF_UP);
             entries.add(DipPlLineResponse.builder()
                     .type("DIP_CHECK")
                     .fuelType(fuelType.name())
@@ -189,5 +209,77 @@ public class BalanceSheetSupportService {
 
     public OffsetDateTime startOfBusinessDay(LocalDate date) {
         return businessClock.startOfDay(date);
+    }
+
+    /**
+     * Builds the settlement summary for a DAY balance sheet.
+     *
+     * settlementsOnDate — entries dated on the report date (the date money arrived in bank), or for a
+     *                     live report, entries recorded within its 24-hour window.
+     * settled amounts   — totals per type for this date.
+     * wallet pending    — cumulative (all collections up to reportDate) − (all settlements up to reportDate).
+     *
+     * The "as-of" wallet snapshot uses reportDate as the cut-off so the figure is historically
+     * accurate even when viewed months later.
+     */
+    public BalanceSheetDetailResponse.SettlementSummary buildSettlementSummary(Long pumpId, ReportPeriod period) {
+        LocalDate reportDate = period.reportDate();
+        List<PaymentSettlement> onDate = period.live()
+                ? settlementRepository.findActiveByPumpIdRecordedBetween(pumpId, period.start(), period.end())
+                : settlementRepository.findActiveByPumpIdAndSettlementDate(pumpId, reportDate);
+
+        // Batch-load recorder names
+        Set<Long> recorderIds = onDate.stream()
+                .map(PaymentSettlement::getRecordedByUserId)
+                .collect(Collectors.toSet());
+        Map<Long, String> recorderNames = recorderIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(recorderIds).stream()
+                        .collect(Collectors.toMap(User::getId, User::getFullName));
+
+        // Per-type settled amounts on this date
+        BigDecimal upiOnDate   = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.UPI)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cardOnDate  = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.CARD)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal fleetOnDate = onDate.stream()
+                .filter(s -> s.getPaymentType() == SettlementPaymentType.FLEET_CARD)
+                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Cumulative wallet as-of reportDate
+        BigDecimal upiCollected   = shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, reportDate);
+        BigDecimal cardCollected  = shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, reportDate);
+        BigDecimal fleetCollected = shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, reportDate);
+
+        BigDecimal upiSettledTotal   = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.UPI, reportDate);
+        BigDecimal cardSettledTotal  = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.CARD, reportDate);
+        BigDecimal fleetSettledTotal = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.FLEET_CARD, reportDate);
+
+        BigDecimal upiPending   = orZero(upiCollected).subtract(orZero(upiSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal cardPending  = orZero(cardCollected).subtract(orZero(cardSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal fleetPending = orZero(fleetCollected).subtract(orZero(fleetSettledTotal)).setScale(2, RoundingMode.HALF_UP);
+
+        List<BalanceSheetDetailResponse.SettlementLine> lines = onDate.stream()
+                .map(s -> BalanceSheetDetailResponse.SettlementLine.builder()
+                        .id(s.getId())
+                        .paymentType(s.getPaymentType().name())
+                        .amountReceived(s.getAmountReceived())
+                        .notes(s.getNotes())
+                        .recordedByUserName(recorderNames.getOrDefault(s.getRecordedByUserId(), "Unknown"))
+                        .createdAt(s.getCreatedAt())
+                        .build())
+                .toList();
+
+        return BalanceSheetDetailResponse.SettlementSummary.builder()
+                .upiSettledOnDate(upiOnDate.setScale(2, RoundingMode.HALF_UP))
+                .cardSettledOnDate(cardOnDate.setScale(2, RoundingMode.HALF_UP))
+                .fleetCardSettledOnDate(fleetOnDate.setScale(2, RoundingMode.HALF_UP))
+                .walletUpiPending(upiPending)
+                .walletCardPending(cardPending)
+                .walletFleetCardPending(fleetPending)
+                .settlementsOnDate(lines)
+                .build();
     }
 }

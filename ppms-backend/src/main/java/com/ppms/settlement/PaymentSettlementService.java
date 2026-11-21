@@ -4,24 +4,33 @@ import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.time.BusinessClock;
+import com.ppms.pump.PumpLocationRepository;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
-import lombok.Builder;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -29,77 +38,22 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaymentSettlementService {
 
-    private static final SettlementPaymentType[] SETTLEMENT_TYPES = {
-        SettlementPaymentType.UPI, SettlementPaymentType.CARD, SettlementPaymentType.FLEET_CARD
-    };
+    private static final Duration DUPLICATE_WINDOW = Duration.ofMinutes(2);
 
-    private final PaymentSettlementRepository    settlementRepository;
+     private final PaymentSettlementRepository    settlementRepository;
     private final PaymentSettlementConfigRepository configRepository;
     private final ShiftRepository                shiftRepository;
     private final UserRepository                 userRepository;
+    private final PumpLocationRepository         pumpLocationRepository;
     private final AuditService                   auditService;
+    private final BusinessClock businessClock;
 
-    // ── DTOs ─────────────────────────────────────────────────────────────────
 
-    @Data @Builder
-    public static class SettlementResponse {
-        private Long   id;
-        private Long   pumpId;
-        private String paymentType;
-        private String settlementDate;
-        private BigDecimal amountReceived;
-        private String notes;
-        private String recordedByUserName;
-        private String createdAt;
-        /** Wallet balance for this payment type at the time of recording. Null for legacy entries. */
-        private BigDecimal pendingAtRecordTime;
-        /** True when amountReceived was less than the pending balance at record time (partial settlement). */
-        private boolean isPartial;
-    }
 
-    @Data @Builder
-    public static class ConfigResponse {
-        private Long   id;
-        private String paymentType;
-        private String alertTime;   // HH:mm
-        private boolean enabled;
-    }
 
-    @Data @Builder
-    public static class WalletSummary {
-        /** Running balance (all-time collected − all-time settled) per type. */
-        private BigDecimal upiPending;
-        private BigDecimal cardPending;
-        private BigDecimal fleetCardPending;
-        private BigDecimal totalPending;
-    }
 
-    @Data @Builder
-    public static class RecordSettlementRequest {
-        private String     paymentType;   // UPI | CARD | FLEET_CARD
-        private String     settlementDate; // YYYY-MM-DD
-        private BigDecimal amountReceived;
-        private String     notes;
-    }
 
-    @Data @Builder
-    public static class UpdateConfigRequest {
-        private String  alertTime;  // HH:mm
-        private boolean enabled;
-    }
 
-    /** One entry per date in the requested range. Combines shift collections and recorded settlements. */
-    @Data @Builder
-    public static class DailySummaryEntry {
-        private String     date;               // YYYY-MM-DD
-        private BigDecimal upiCollected;       // from closed shifts
-        private BigDecimal cardCollected;
-        private BigDecimal fleetCardCollected;
-        private BigDecimal upiSettled;         // FIFO-allocated from recorded settlements
-        private BigDecimal cardSettled;        // FIFO-allocated from recorded settlements
-        private BigDecimal fleetCardSettled;   // FIFO-allocated from recorded settlements
-        private List<SettlementResponse> settlements; // individual records for this date
-    }
 
     // ── Config endpoints ──────────────────────────────────────────────────────
 
@@ -136,16 +90,7 @@ public class PaymentSettlementService {
     public ConfigResponse upsertConfig(Long pumpId, String paymentTypeStr,
                                        UpdateConfigRequest req, User currentUser) {
         SettlementPaymentType type = parsePaymentType(paymentTypeStr);
-        String[] parts = req.getAlertTime().split(":");
-        if (parts.length < 2) {
-            throw new BusinessException("alertTime must be in HH:mm format.");
-        }
-        java.time.LocalTime alertTime;
-        try {
-            alertTime = java.time.LocalTime.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
-        } catch (NumberFormatException | java.time.DateTimeException e) {
-            throw new BusinessException("Invalid alertTime: " + req.getAlertTime());
-        }
+        LocalTime alertTime = req.getAlertTime();
 
         PaymentSettlementConfig cfg = configRepository
                 .findByPumpIdAndPaymentType(pumpId, type)
@@ -187,33 +132,27 @@ public class PaymentSettlementService {
                 .map(PaymentSettlement::getRecordedByUserId)
                 .collect(Collectors.toSet());
         Map<Long, String> names = userRepository.findAllById(userIds).stream()
-                .collect(Collectors.toMap(com.ppms.user.User::getId, com.ppms.user.User::getFullName));
+                .collect(Collectors.toMap(User::getId, User::getFullName));
 
         return PagedResponse.of(page.map(s -> toResponse(s, names)));
     }
 
     @Transactional
     public SettlementResponse record(Long pumpId, RecordSettlementRequest req, User currentUser) {
-        SettlementPaymentType type = parsePaymentType(req.getPaymentType());
-
-        if (req.getAmountReceived() == null || req.getAmountReceived().compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException("amountReceived must be a non-negative number.");
-        }
-        if (req.getSettlementDate() == null || req.getSettlementDate().isBlank()) {
-            throw new BusinessException("settlementDate is required.");
-        }
-
-        LocalDate settlementDate;
-        try {
-            settlementDate = LocalDate.parse(req.getSettlementDate());
-        } catch (Exception e) {
-            throw new BusinessException("settlementDate must be in YYYY-MM-DD format.");
-        }
-        if (settlementDate.isAfter(LocalDate.now())) {
+        SettlementPaymentType type = req.getPaymentType();
+        LocalDate settlementDate = req.getSettlementDate();
+        if (settlementDate.isAfter(businessClock.today())) {
             throw new BusinessException("settlementDate cannot be in the future.");
         }
 
         BigDecimal amount = req.getAmountReceived().setScale(2, RoundingMode.HALF_UP);
+
+        lockPump(pumpId);
+        if (settlementRepository.existsRecentDuplicate(pumpId, type, settlementDate, amount,
+                businessClock.now().minus(DUPLICATE_WINDOW))) {
+            throw new BusinessException("An identical " + type.name() + " settlement of ₹" + amount + " for "
+                    + settlementDate + " was recorded in the last 2 minutes. Refresh the list before recording it again.");
+        }
 
         // Capture wallet balance BEFORE this settlement is saved — used to detect partial settlements.
         BigDecimal collected = type == SettlementPaymentType.UPI   ? orZero(shiftRepository.sumUpiCollectedByPumpId(pumpId))
@@ -243,6 +182,39 @@ public class PaymentSettlementService {
                 pumpId, type, amount, settlementDate, currentUser.getId());
 
         Map<Long, String> names = Map.of(currentUser.getId(), currentUser.getFullName());
+        return toResponse(settlement, names);
+    }
+
+    /**
+     * Voids a settlement entered by mistake. The record stays in history; every total
+     * (wallet balance, daily FIFO allocation, balance sheet) is computed from ACTIVE rows only,
+     * so voiding automatically re-opens the collections it had cleared.
+     */
+    @Transactional
+    public SettlementResponse voidSettlement(Long pumpId, Long settlementId, VoidSettlementRequest req, User currentUser) {
+        lockPump(pumpId);
+        PaymentSettlement settlement = settlementRepository.findByIdAndPumpId(settlementId, pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Settlement not found"));
+        if (PaymentSettlement.VOIDED.equals(settlement.getVoidStatus())) {
+            throw new BusinessException("This settlement is already voided.");
+        }
+
+        settlement.setVoidStatus(PaymentSettlement.VOIDED);
+        settlement.setVoidReason(req.getReason().trim());
+        settlement.setVoidedByUserId(currentUser.getId());
+        settlement.setVoidedAt(businessClock.now());
+        settlement = settlementRepository.save(settlement);
+
+        auditService.log(pumpId, AuditAction.SETTLEMENT_VOIDED,
+                "PaymentSettlement", settlementId.toString(),
+                "Voided " + settlement.getPaymentType().name() + " settlement of ₹" + settlement.getAmountReceived()
+                        + " on " + settlement.getSettlementDate() + ". Reason: " + settlement.getVoidReason(),
+                currentUser);
+        log.info("Settlement voided: pump={} id={} type={} amount={} by={}",
+                pumpId, settlementId, settlement.getPaymentType(), settlement.getAmountReceived(), currentUser.getId());
+
+        Map<Long, String> names = userRepository.findAllById(Set.of(settlement.getRecordedByUserId())).stream()
+                .collect(Collectors.toMap(User::getId, User::getFullName));
         return toResponse(settlement, names);
     }
 
@@ -285,137 +257,99 @@ public class PaymentSettlementService {
      */
     @Transactional(readOnly = true)
     public PagedResponse<DailySummaryEntry> getDailySummary(Long pumpId, LocalDate from, LocalDate to, Pageable pageable) {
-        // Per-date shift collections within the requested window
-        List<Object[]> rows = shiftRepository.collectionsGroupedByDate(pumpId, from, to);
-        Map<LocalDate, BigDecimal[]> collections = new java.util.LinkedHashMap<>();
-        for (Object[] row : rows) {
-            LocalDate date = (LocalDate) row[0];
-            collections.put(date, new BigDecimal[]{
-                    orZero((BigDecimal) row[1]),
-                    orZero((BigDecimal) row[2]),
-                    orZero((BigDecimal) row[3])
-            });
-        }
+        Map<LocalDate, Map<SettlementPaymentType, BigDecimal>> collected = collectionsByDate(pumpId, from, to);
 
-        // All settlement records in the window
+        // Every settlement record in the window is listed; only ACTIVE ones count towards settled amounts.
         List<PaymentSettlement> allSettlements =
-                settlementRepository.findByPumpIdAndSettlementDateBetweenOrderBySettlementDateAscCreatedAtAsc(pumpId, from, to);
-
-        java.util.Set<Long> recorderIds = allSettlements.stream().map(PaymentSettlement::getRecordedByUserId).collect(Collectors.toSet());
-        Map<Long, String> names = recorderIds.isEmpty() ? Map.of()
-                : userRepository.findAllById(recorderIds).stream()
-                        .collect(Collectors.toMap(com.ppms.user.User::getId, com.ppms.user.User::getFullName));
-
+                settlementRepository.findAllByPumpIdAndSettlementDateBetween(pumpId, from, to);
         Map<LocalDate, List<PaymentSettlement>> settlementsByDate = allSettlements.stream()
                 .collect(Collectors.groupingBy(PaymentSettlement::getSettlementDate));
 
-        // Union of dates from both sides — TreeSet iterates ascending by default
-        java.util.TreeSet<LocalDate> allDates = new java.util.TreeSet<>();
-        allDates.addAll(collections.keySet());
+        TreeSet<LocalDate> allDates = new TreeSet<>(collected.keySet());
         allDates.addAll(settlementsByDate.keySet());
 
-        // ── FIFO baseline: cumulative state just before the window starts ─────────
-        // pool[i]         = surplus settlement money carried in from before this window
-        //                   (happens when prior settlements exceeded prior collections)
-        // pendingCarry[i] = collections from before this window not yet covered by any settlement
-        //                   (oldest debt — must be consumed before current dates are credited)
-        // Indices: 0=UPI, 1=CARD, 2=FLEET_CARD
+        // The repository returns settlements by settlement date then creation time, which is FIFO order.
+        List<SettlementFifoAllocator.Settlement> activeSettlements = allSettlements.stream()
+                .filter(s -> PaymentSettlement.ACTIVE.equals(s.getVoidStatus()))
+                .map(s -> new SettlementFifoAllocator.Settlement(s.getPaymentType(), s.getAmountReceived()))
+                .toList();
         LocalDate dayBefore = from.isAfter(LocalDate.MIN) ? from.minusDays(1) : LocalDate.MIN;
-        BigDecimal prevCollectedUpi   = orZero(shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, dayBefore));
-        BigDecimal prevCollectedCard  = orZero(shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, dayBefore));
-        BigDecimal prevCollectedFleet = orZero(shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, dayBefore));
-        BigDecimal prevSettledUpi     = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.UPI,        dayBefore));
-        BigDecimal prevSettledCard    = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.CARD,       dayBefore));
-        BigDecimal prevSettledFleet   = orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.FLEET_CARD, dayBefore));
+        Map<LocalDate, Map<SettlementPaymentType, BigDecimal>> settled = SettlementFifoAllocator.allocate(
+                allDates, collected, collectedAsOf(pumpId, dayBefore), settledAsOf(pumpId, dayBefore), activeSettlements);
 
-        BigDecimal[] pool         = {
-            prevSettledUpi  .subtract(prevCollectedUpi  ).max(BigDecimal.ZERO),
-            prevSettledCard .subtract(prevCollectedCard ).max(BigDecimal.ZERO),
-            prevSettledFleet.subtract(prevCollectedFleet).max(BigDecimal.ZERO)
-        };
-        BigDecimal[] pendingCarry = {
-            prevCollectedUpi  .subtract(prevSettledUpi  ).max(BigDecimal.ZERO),
-            prevCollectedCard .subtract(prevSettledCard ).max(BigDecimal.ZERO),
-            prevCollectedFleet.subtract(prevSettledFleet).max(BigDecimal.ZERO)
-        };
-
-        // ── FIFO allocation: process each settlement record chronologically ─────────
-        // For each settlement, first clear pre-window pending debt, then apply to the
-        // oldest outstanding window collections. This means a settlement recorded on
-        // May 4 will correctly show April 29's pending as cleared in April 29's row.
-        Map<LocalDate, BigDecimal[]> fifoSettled = new java.util.LinkedHashMap<>();
-        Map<LocalDate, BigDecimal[]> outstanding = new java.util.LinkedHashMap<>();
-        for (LocalDate date : allDates) {
-            BigDecimal[] col = collections.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
-            outstanding.put(date, new BigDecimal[]{col[0], col[1], col[2]});
-            fifoSettled.put(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
-        }
-
-        // Pre-window surplus (settled > collected before window) clears oldest dates first
-        for (int i = 0; i < 3; i++) {
-            BigDecimal surplus = pool[i];
-            for (LocalDate date : allDates) {
-                if (surplus.compareTo(BigDecimal.ZERO) <= 0) break;
-                BigDecimal[] out = outstanding.get(date);
-                BigDecimal applyAmt = out[i].min(surplus);
-                if (applyAmt.compareTo(BigDecimal.ZERO) > 0) {
-                    out[i] = out[i].subtract(applyAmt);
-                    fifoSettled.get(date)[i] = fifoSettled.get(date)[i].add(applyAmt);
-                    surplus = surplus.subtract(applyAmt);
-                }
-            }
-        }
-
-        // allSettlements is ordered settlementDate asc, createdAt asc — correct FIFO order
-        for (PaymentSettlement s : allSettlements) {
-            int typeIdx = typeIndex(s.getPaymentType());
-            BigDecimal remaining = s.getAmountReceived();
-
-            // Clear pre-window pending carry (oldest debt) before touching window dates
-            BigDecimal drain = pendingCarry[typeIdx].min(remaining);
-            remaining = remaining.subtract(drain);
-            pendingCarry[typeIdx] = pendingCarry[typeIdx].subtract(drain);
-
-            // Apply to oldest outstanding window collections
-            for (LocalDate date : allDates) {
-                if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
-                BigDecimal[] out = outstanding.get(date);
-                BigDecimal applyAmt = out[typeIdx].min(remaining);
-                if (applyAmt.compareTo(BigDecimal.ZERO) > 0) {
-                    out[typeIdx] = out[typeIdx].subtract(applyAmt);
-                    fifoSettled.get(date)[typeIdx] = fifoSettled.get(date)[typeIdx].add(applyAmt);
-                    remaining = remaining.subtract(applyAmt);
-                }
-            }
-            // remaining > 0: over-settlement; wallet balance reflects this, no date allocated
-        }
-
-        // ── Build response (newest first for display) ─────────────────────────────
-        List<DailySummaryEntry> result = new java.util.ArrayList<>();
+        Map<Long, String> names = recorderNames(allSettlements);
+        List<DailySummaryEntry> newestFirst = new ArrayList<>();
         for (LocalDate date : allDates.descendingSet()) {
-            BigDecimal[] col = collections.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
-            BigDecimal[] fs  = fifoSettled.getOrDefault(date, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
-            List<PaymentSettlement> daySettlements = settlementsByDate.getOrDefault(date, List.of());
-
-            result.add(DailySummaryEntry.builder()
+            Map<SettlementPaymentType, BigDecimal> dayCollected =
+                    collected.getOrDefault(date, SettlementFifoAllocator.zeros());
+            Map<SettlementPaymentType, BigDecimal> daySettled = settled.get(date);
+            newestFirst.add(DailySummaryEntry.builder()
                     .date(date.toString())
-                    .upiCollected(col[0].setScale(2, RoundingMode.HALF_UP))
-                    .cardCollected(col[1].setScale(2, RoundingMode.HALF_UP))
-                    .fleetCardCollected(col[2].setScale(2, RoundingMode.HALF_UP))
-                    .upiSettled(fs[0].setScale(2, RoundingMode.HALF_UP))
-                    .cardSettled(fs[1].setScale(2, RoundingMode.HALF_UP))
-                    .fleetCardSettled(fs[2].setScale(2, RoundingMode.HALF_UP))
-                    .settlements(daySettlements.stream().map(s -> toResponse(s, names)).toList())
+                    .upiCollected(money(dayCollected.get(SettlementPaymentType.UPI)))
+                    .cardCollected(money(dayCollected.get(SettlementPaymentType.CARD)))
+                    .fleetCardCollected(money(dayCollected.get(SettlementPaymentType.FLEET_CARD)))
+                    .upiSettled(money(daySettled.get(SettlementPaymentType.UPI)))
+                    .cardSettled(money(daySettled.get(SettlementPaymentType.CARD)))
+                    .fleetCardSettled(money(daySettled.get(SettlementPaymentType.FLEET_CARD)))
+                    .settlements(settlementsByDate.getOrDefault(date, List.of()).stream()
+                            .map(s -> toResponse(s, names))
+                            .toList())
                     .build());
         }
-        int total = result.size();
+
+        int total = newestFirst.size();
         int start = (int) pageable.getOffset();
-        int end   = Math.min(start + pageable.getPageSize(), total);
-        List<DailySummaryEntry> pageSlice = start >= total ? List.of() : result.subList(start, end);
-        return PagedResponse.of(new org.springframework.data.domain.PageImpl<>(pageSlice, pageable, total));
+        int end = Math.min(start + pageable.getPageSize(), total);
+        List<DailySummaryEntry> pageSlice = start >= total ? List.of() : newestFirst.subList(start, end);
+        return PagedResponse.of(new PageImpl<>(pageSlice, pageable, total));
+    }
+
+    private Map<LocalDate, Map<SettlementPaymentType, BigDecimal>> collectionsByDate(Long pumpId, LocalDate from, LocalDate to) {
+        Map<LocalDate, Map<SettlementPaymentType, BigDecimal>> collected = new LinkedHashMap<>();
+        for (Object[] row : shiftRepository.collectionsGroupedByDate(pumpId, from, to)) {
+            Map<SettlementPaymentType, BigDecimal> day = SettlementFifoAllocator.zeros();
+            day.put(SettlementPaymentType.UPI, orZero((BigDecimal) row[1]));
+            day.put(SettlementPaymentType.CARD, orZero((BigDecimal) row[2]));
+            day.put(SettlementPaymentType.FLEET_CARD, orZero((BigDecimal) row[3]));
+            collected.put((LocalDate) row[0], day);
+        }
+        return collected;
+    }
+
+    private Map<SettlementPaymentType, BigDecimal> collectedAsOf(Long pumpId, LocalDate date) {
+        Map<SettlementPaymentType, BigDecimal> collected = new EnumMap<>(SettlementPaymentType.class);
+        collected.put(SettlementPaymentType.UPI, orZero(shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, date)));
+        collected.put(SettlementPaymentType.CARD, orZero(shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, date)));
+        collected.put(SettlementPaymentType.FLEET_CARD, orZero(shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, date)));
+        return collected;
+    }
+
+    private Map<SettlementPaymentType, BigDecimal> settledAsOf(Long pumpId, LocalDate date) {
+        Map<SettlementPaymentType, BigDecimal> settled = new EnumMap<>(SettlementPaymentType.class);
+        for (SettlementPaymentType type : SettlementPaymentType.values()) {
+            settled.put(type, orZero(settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, type, date)));
+        }
+        return settled;
+    }
+
+    private Map<Long, String> recorderNames(List<PaymentSettlement> settlements) {
+        Set<Long> recorderIds = settlements.stream().map(PaymentSettlement::getRecordedByUserId).collect(Collectors.toSet());
+        return recorderIds.isEmpty() ? Map.of()
+                : userRepository.findAllById(recorderIds).stream()
+                        .collect(Collectors.toMap(User::getId, User::getFullName));
+    }
+
+    private BigDecimal money(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /** Serialises settlement writes per pump so duplicate detection and voiding see each other's results. */
+    private void lockPump(Long pumpId) {
+        pumpLocationRepository.findByIdForUpdate(pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+    }
 
     private SettlementPaymentType parsePaymentType(String value) {
         try {
@@ -439,6 +373,9 @@ public class PaymentSettlementService {
                 .createdAt(s.getCreatedAt() != null ? s.getCreatedAt().toString() : null)
                 .pendingAtRecordTime(s.getPendingAtRecordTime())
                 .isPartial(partial)
+                .voidStatus(s.getVoidStatus())
+                .voidReason(s.getVoidReason())
+                .voidedAt(s.getVoidedAt() != null ? s.getVoidedAt().toString() : null)
                 .build();
     }
 
@@ -449,13 +386,6 @@ public class PaymentSettlementService {
                 .alertTime(String.format("%02d:%02d", cfg.getAlertTime().getHour(), cfg.getAlertTime().getMinute()))
                 .enabled(cfg.isEnabled())
                 .build();
-    }
-
-    private static int typeIndex(SettlementPaymentType type) {
-        for (int i = 0; i < SETTLEMENT_TYPES.length; i++) {
-            if (SETTLEMENT_TYPES[i] == type) return i;
-        }
-        throw new IllegalStateException("Unknown settlement type: " + type);
     }
 
     private BigDecimal orZero(BigDecimal v) {

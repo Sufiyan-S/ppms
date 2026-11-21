@@ -58,10 +58,10 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             """)
     List<InventoryLot> findActiveLotsByTankFifo(Long tankId);
 
-    // ── Backfill-specific queries (historically accurate: deliveryDate ≤ asOf) ──────────────────
+    // ── Backfill-specific queries (historically accurate: deliveryDate < asOf) ──────────────────
 
     /**
-     * FIFO lots for pump + fuelType whose delivery arrived on or before the backfill shift date.
+     * FIFO lots for pump + fuelType delivered before {@code asOf} (the start of the day after the backfill shift).
      * Prevents consuming stock from tankers delivered AFTER the historical shift date.
      * Used by backfillShift() for both pre-validation and FIFO deduction.
      */
@@ -69,7 +69,7 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
     @Query("""
             SELECT l FROM InventoryLot l
             WHERE l.pumpId = :pumpId AND l.fuelType = :fuelType AND l.status = 'ACTIVE'
-                  AND l.deliveryDate <= :asOf
+                  AND l.deliveryDate < :asOf
                   AND l.tankId NOT IN (
                       SELECT t.id FROM UndergroundTank t WHERE t.status = 'INACTIVE'
                   )
@@ -81,14 +81,14 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             @Param("asOf") OffsetDateTime asOf);
 
     /**
-     * FIFO lots for a specific tank whose delivery arrived on or before the backfill shift date.
+     * FIFO lots for a specific tank delivered before {@code asOf} (the start of the day after the backfill shift).
      * Used by backfillShift() for both pre-validation and FIFO deduction when tankId is set.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT l FROM InventoryLot l
             WHERE l.tankId = :tankId AND l.status = 'ACTIVE'
-                  AND l.deliveryDate <= :asOf
+                  AND l.deliveryDate < :asOf
             ORDER BY l.deliveryDate ASC, l.id ASC
             """)
     List<InventoryLot> findActiveLotsByTankAvailableAsOf(
@@ -103,9 +103,16 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             """)
     List<InventoryLot> findAllByTankIdOrdered(Long tankId);
 
-    /** All lots for a pump across all tanks, ordered by tank then delivery date. Used by all-tanks inventory report. */
-    @Query("SELECT l FROM InventoryLot l WHERE l.pumpId = :pumpId ORDER BY l.tankId ASC, l.deliveryDate ASC, l.id ASC")
-    List<InventoryLot> findAllByPumpIdOrderedByTankAndDelivery(@Param("pumpId") Long pumpId);
+    /** Lots for the all-tanks report: every ACTIVE lot plus lots delivered in [from, to), ordered by tank then delivery. */
+    @Query("""
+            SELECT l FROM InventoryLot l
+            WHERE l.pumpId = :pumpId
+              AND (l.status = 'ACTIVE' OR (l.deliveryDate >= :from AND l.deliveryDate < :to))
+            ORDER BY l.tankId ASC, l.deliveryDate ASC, l.id ASC
+            """)
+    List<InventoryLot> findReportLots(@Param("pumpId") Long pumpId,
+                                      @Param("from") OffsetDateTime from,
+                                      @Param("to") OffsetDateTime to);
 
     /**
      * ACTIVE lots for a specific tank in FIFO order — display use only (no row lock).
@@ -127,4 +134,14 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
     /** Most recent lot (any status) for a pump + fuelType — used to approximate cost price for synthetic healing lots. */
     java.util.Optional<InventoryLot> findFirstByPumpIdAndFuelTypeAndIsDipAdjustmentFalseOrderByDeliveryDateDesc(
             Long pumpId, FuelType fuelType);
+
+    /** Litres received per fuel type strictly before {@code asOf}, including dip-gain lots. */
+    @Query("""
+            SELECT l.fuelType, SUM(l.originalQuantity)
+            FROM InventoryLot l
+            WHERE l.pumpId = :pumpId AND l.deliveryDate < :asOf
+            GROUP BY l.fuelType
+            """)
+    List<Object[]> sumReceivedByFuelTypeBefore(@Param("pumpId") Long pumpId,
+                                                @Param("asOf") OffsetDateTime asOf);
 }

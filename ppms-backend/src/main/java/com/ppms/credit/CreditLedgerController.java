@@ -30,8 +30,14 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CreditLedgerController {
 
+    // Only the inline styles and the single print button handler of the statement page may run.
+    private static final String STATEMENT_CONTENT_SECURITY_POLICY =
+            "default-src 'none'; style-src 'unsafe-inline'; "
+            + "script-src 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU='; frame-ancestors 'none'";
+
     private final CreditClientAccessService clientAccessService;
     private final CreditInterestService interestService;
+    private final CreditInterestRunService interestRunService;
     private final CreditLedgerService ledgerService;
     private final CreditLedgerQueryService queryService;
     private final CreditStatementRenderer statementRenderer;
@@ -57,6 +63,7 @@ public class CreditLedgerController {
      * balance values on each page are always correct relative to the full history.
      */
     @GetMapping("/{clientId}/transactions")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<PagedResponse<CreditTransactionResponse>> getTransactions(
             @PathVariable Long pumpId,
             @PathVariable Long clientId,
@@ -67,12 +74,24 @@ public class CreditLedgerController {
     }
 
     /**
+     * GET /api/pumps/{pumpId}/credit-ledger/{clientId}/transactions/all?includeChildren=false
+     * The client's whole ledger in one response, newest first; each row's running balance is for its own account.
+     * With includeChildren=true a parent's sub-account rows are included, tagged with clientId and clientName.
+     */
+    @GetMapping("/{clientId}/transactions/all")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<CreditTransactionResponse>> getAllTransactions(
+            @PathVariable Long pumpId,
+            @PathVariable Long clientId,
+            @RequestParam(defaultValue = "false") boolean includeChildren) {
+        CreditClient client = clientAccessService.requireClientForPump(pumpId, clientId);
+        return ResponseEntity.ok(queryService.getAllTransactions(client, includeChildren));
+    }
+
+    /**
      * POST /api/pumps/{pumpId}/credit-ledger/{clientId}/payments
      * Records a payment settlement against the client's outstanding balance.
-     * Owner/Admin only.
-     *
-     * Bug 10: @Transactional moved to CreditLedgerService.recordPayment().
-     * Bug 1: overpayment guard now uses combined outstanding for parent accounts.
+     * Owner/Admin/Manager; payments above the pump's threshold wait for Owner/Admin approval.
      */
     @PostMapping("/{clientId}/payments")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -98,6 +117,7 @@ public class CreditLedgerController {
      * Returns all payment records for a client, newest first.
      */
     @GetMapping("/{clientId}/payments")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<CreditPaymentResponse>> getPayments(
             @PathVariable Long pumpId,
             @PathVariable Long clientId) {
@@ -108,8 +128,6 @@ public class CreditLedgerController {
     /**
      * PATCH /api/pumps/{pumpId}/credit-ledger/clients/{clientId}/credit-limit
      * Updates the credit limit for a client. 0 = no limit.
-     *
-     * Bug 4: toClientResponse() N+1 fixed by pre-loading all pump clients in one query.
      */
     @PatchMapping("/clients/{clientId}/credit-limit")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -132,14 +150,12 @@ public class CreditLedgerController {
                 "Credit limit for " + client.getName() + " changed from ₹" + oldLimit + " to ₹" + client.getCreditLimit(),
                 currentUser);
 
-        return ResponseEntity.ok(queryService.toClientResponse(client, clientAccessService.loadPumpClients(pumpId)));
+        return ResponseEntity.ok(queryService.toClientResponse(client));
     }
 
     /**
      * PATCH /api/pumps/{pumpId}/credit-ledger/clients/{clientId}/interest-settings
-     * Updates monthly interest rate and grace days for a client. Owner/Admin only.
-     *
-     * Bug 4: toClientResponse() N+1 fixed by pre-loading all pump clients in one query.
+     * Updates monthly interest rate and grace days for a client. Owner/Admin/Manager.
      */
     @PatchMapping("/clients/{clientId}/interest-settings")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -157,14 +173,12 @@ public class CreditLedgerController {
         log.info("Interest settings updated: pump={}, client={}, rate={}%, graceDays={}",
                 pumpId, clientId, client.getMonthlyInterestRate(), client.getInterestGraceDays());
 
-        return ResponseEntity.ok(queryService.toClientResponse(client, clientAccessService.loadPumpClients(pumpId)));
+        return ResponseEntity.ok(queryService.toClientResponse(client));
     }
 
     /**
      * POST /api/pumps/{pumpId}/credit-ledger/{clientId}/interest/apply
-     * Applies pro-rata interest for a single client up to today. Owner/Admin only.
-     *
-     * Bug 10: @Transactional is on CreditInterestService.applyProRata(), not here.
+     * Applies pro-rata interest for a single client up to today. Owner/Admin/Manager.
      */
     @PostMapping("/{clientId}/interest/apply")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -191,7 +205,7 @@ public class CreditLedgerController {
      * POST /api/pumps/{pumpId}/credit-ledger/interest/apply-all
      * Applies pro-rata interest to ALL eligible clients for the pump. Owner/Admin only.
      *
-     * Bug 10: @Transactional is on CreditInterestService.applyProRataForAllClients(), not here.
+     * Each client group runs in its own transaction (CreditInterestRunService).
      */
     @PostMapping("/interest/apply-all")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -199,12 +213,12 @@ public class CreditLedgerController {
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {
 
-        CreditInterestService.InterestApplicationResult result =
-                interestService.applyProRataForAllClients(pumpId, currentUser.getId());
+        CreditInterestRunService.InterestRunResult result =
+                interestRunService.applyProRataForAllClients(pumpId, currentUser.getId());
         return ResponseEntity.ok(Map.of(
-                "clientsCharged",    result.charged(),
-                "clientsSkipped",    result.skipped(),
-                "clientsFailed",     result.failed(),
+                "clientsCharged",    result.groupsCharged(),
+                "clientsSkipped",    result.groupsSkipped(),
+                "clientsFailed",     result.groupsFailed(),
                 "failedClientIds",   result.failedClientIds()
         ));
     }
@@ -215,6 +229,7 @@ public class CreditLedgerController {
      * For standalone or sub-accounts, returns only the client's own interest total.
      */
     @GetMapping("/{clientId}/interest/total-recovered")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<Map<String, Object>> getTotalInterestRecovered(
             @PathVariable Long pumpId,
             @PathVariable Long clientId) {
@@ -226,9 +241,7 @@ public class CreditLedgerController {
 
     /**
      * DELETE /api/pumps/{pumpId}/credit-ledger/{clientId}/interest/{chargeId}
-     * Permanently removes an interest charge from the ledger. Owner/Admin only.
-     *
-     * Bug 10: @Transactional moved to CreditLedgerService.deleteInterestCharge().
+     * Permanently removes an interest charge from the ledger. Owner/Admin/Manager.
      */
     @DeleteMapping("/{clientId}/interest/{chargeId}")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -244,10 +257,7 @@ public class CreditLedgerController {
 
     /**
      * POST /api/pumps/{pumpId}/credit-ledger/entries/{entryId}/reassign
-     * Moves a credit entry from its current account to a different account. Owner/Admin only.
-     *
-     * Bug 6: audit trail no longer stores from==to for previously unlinked entries.
-     * Bug 10: @Transactional moved to CreditLedgerService.reassignCreditEntry().
+     * Moves a credit entry from its current account to a different account. Owner/Admin/Manager.
      */
     @PostMapping("/entries/{entryId}/reassign")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
@@ -296,6 +306,7 @@ public class CreditLedgerController {
      * balance, and the current outstanding balance as a footer summary.
      */
     @GetMapping(value = "/{clientId}/statement", produces = MediaType.TEXT_HTML_VALUE)
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<String> getCreditStatement(
             @PathVariable Long pumpId,
             @PathVariable Long clientId,
@@ -318,6 +329,7 @@ public class CreditLedgerController {
 
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
+                .header("Content-Security-Policy", STATEMENT_CONTENT_SECURITY_POLICY)
                 .body(html);
     }
 
@@ -336,11 +348,11 @@ public class CreditLedgerController {
     /**
      * PATCH /api/pumps/{pumpId}/credit-ledger/payments/{paymentId}/approve
      * Approves or rejects a PENDING_APPROVAL credit payment.
-     * Accepted status values: APPROVED, REJECTED.
+     * Accepted status values: APPROVED, REJECTED. The user who recorded the payment cannot act on it.
      * Once approved, the payment is counted in the client's outstanding balance.
      */
     @PatchMapping("/payments/{paymentId}/approve")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<CreditPaymentResponse> approvePayment(
             @PathVariable Long pumpId,
             @PathVariable Long paymentId,
@@ -352,16 +364,11 @@ public class CreditLedgerController {
             throw new BusinessException("status is required (APPROVED or REJECTED)");
         }
 
-        com.ppms.expense.ExpenseApprovalStatus newStatus;
-        try {
-            newStatus = com.ppms.expense.ExpenseApprovalStatus.valueOf(statusStr.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException("Invalid status. Allowed: APPROVED, REJECTED");
-        }
-
-        if (newStatus == com.ppms.expense.ExpenseApprovalStatus.PENDING_APPROVAL) {
-            throw new BusinessException("Cannot set status back to PENDING_APPROVAL");
-        }
+        com.ppms.expense.ExpenseApprovalStatus newStatus = switch (statusStr.toUpperCase()) {
+            case "APPROVED" -> com.ppms.expense.ExpenseApprovalStatus.APPROVED;
+            case "REJECTED" -> com.ppms.expense.ExpenseApprovalStatus.REJECTED;
+            default -> throw new BusinessException("Invalid status. Allowed: APPROVED, REJECTED");
+        };
 
         CreditPayment saved = ledgerService.approvePayment(pumpId, paymentId, newStatus, currentUser);
 

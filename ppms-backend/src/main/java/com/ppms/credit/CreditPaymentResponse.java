@@ -17,6 +17,7 @@ public class CreditPaymentResponse {
     private String referenceNo;
     private String notes;
     private LocalDate paidAt;
+    private Long recordedById;
     private String recordedByUserName;
     private String paymentApprovalStatus;
     private Long approvedByUserId;

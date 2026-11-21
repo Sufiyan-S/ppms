@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { PagedResponse } from '../types/paged'
 
 interface PaginationProps<T> {
@@ -22,6 +23,7 @@ export function Pagination<T>({
   onPageSizeChange,
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: PaginationProps<T>) {
+  const pageSizeSelectId = useId()
   // Only show pagination controls when there is more than one page
   if (data.totalPages <= 1) return null
 
@@ -50,7 +52,7 @@ export function Pagination<T>({
 
         {buildPageNumbers(page, totalPages).map((p, i) =>
           p === '…' ? (
-            <span key={`ellipsis-${i}`} className="px-2 py-1 text-slate-400">
+            <span key={`ellipsis-${i}`} className="px-2 py-1 text-slate-500">
               …
             </span>
           ) : (
@@ -80,11 +82,11 @@ export function Pagination<T>({
       </div>
 
       <div className="ui-pagination__size">
-        <label htmlFor="page-size-select" className="ui-pagination__size-label">
+        <label htmlFor={pageSizeSelectId} className="ui-pagination__size-label">
           Rows per page
         </label>
         <select
-          id="page-size-select"
+          id={pageSizeSelectId}
           value={pageSize}
           onChange={e => {
             onPageSizeChange(Number(e.target.value))

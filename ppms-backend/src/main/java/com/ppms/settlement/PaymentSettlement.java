@@ -16,7 +16,7 @@ import java.time.OffsetDateTime;
  * was created). Partial settlements are allowed: Admin can record ₹5,000 settled on Monday
  * and ₹3,000 on Tuesday for the same period's collections.
  *
- * The "wallet balance" for a payment type = SUM(all shift collections) − SUM(all settlements).
+ * The "wallet balance" for a payment type = SUM(all shift collections) − SUM(all ACTIVE settlements).
  */
 @Entity
 @Table(name = "payment_settlements")
@@ -26,6 +26,9 @@ import java.time.OffsetDateTime;
 @AllArgsConstructor
 @Builder
 public class PaymentSettlement {
+
+    public static final String ACTIVE = "ACTIVE";
+    public static final String VOIDED = "VOIDED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,6 +62,20 @@ public class PaymentSettlement {
 
     @Column(name = "recorded_by_user_id", nullable = false)
     private Long recordedByUserId;
+
+    // ACTIVE by default; VOIDED settlements stay in history but are excluded from every total.
+    @Column(name = "void_status", nullable = false)
+    @Builder.Default
+    private String voidStatus = ACTIVE;
+
+    @Column(name = "void_reason")
+    private String voidReason;
+
+    @Column(name = "voided_by_user_id")
+    private Long voidedByUserId;
+
+    @Column(name = "voided_at")
+    private OffsetDateTime voidedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

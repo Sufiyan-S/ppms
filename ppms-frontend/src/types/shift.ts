@@ -43,12 +43,14 @@ export interface FuelReading {
   endReading: number | null
   priceSnapshot: number
   unitsSold: number | null
+  maxMeterValue: number | null
 }
 
 // ── Shift ──────────────────────────────────────────────────────────────────
 
 export interface CreditEntry {
   id: number
+  clientId: number | null
   clientName: string
   billNo: string | null
   amount: number
@@ -133,6 +135,8 @@ export interface CloseShiftRequest {
   fleetCardCollected: number
   creditTotal: number
   creditEntries: CreditEntryInput[]
+  /** Pre-recorded entries corrected in the close form; the backend voids them in the same transaction as the close. */
+  replacedCreditEntryIds: number[]
   discrepancyReason?: string
 }
 

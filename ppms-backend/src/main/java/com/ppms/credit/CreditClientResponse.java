@@ -36,4 +36,5 @@ public class CreditClientResponse {
     private Boolean isParent;
     /** False when the client has been soft-disabled by an Owner/Admin. */
     private Boolean isActive;
+    private Boolean hasPortalPin;
 }

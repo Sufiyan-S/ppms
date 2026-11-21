@@ -14,18 +14,27 @@ public interface CreditExtensionRepository extends JpaRepository<CreditExtension
 
     List<CreditExtension> findByPumpIdAndClientIdOrderByCreatedAtDesc(Long pumpId, Long clientId);
 
-    /** Active extension of a specific type for a client at a pump — used to enforce Business Rule 60. */
-    Optional<CreditExtension> findByPumpIdAndClientIdAndExtensionTypeAndStatus(
-            Long pumpId, Long clientId, CreditExtensionType type, CreditExtensionStatus status);
+    /** ACTIVE extensions still in effect on the given day; rows past expiry stay ACTIVE until the daily expiry job runs. */
+    @Query("""
+            SELECT e FROM CreditExtension e
+            WHERE e.pumpId = :pumpId AND e.clientId = :clientId
+              AND e.status = 'ACTIVE' AND e.expiryDate >= :today
+            """)
+    List<CreditExtension> findInEffect(Long pumpId, Long clientId, LocalDate today);
 
-    /** All ACTIVE extensions for a client at a pump — used to determine which blocks to suppress. */
-    List<CreditExtension> findByPumpIdAndClientIdAndStatus(Long pumpId, Long clientId, CreditExtensionStatus status);
+    @Query("""
+            SELECT e FROM CreditExtension e
+            WHERE e.pumpId = :pumpId AND e.clientId = :clientId AND e.extensionType = :type
+              AND e.status = 'ACTIVE' AND e.expiryDate >= :today
+            """)
+    Optional<CreditExtension> findInEffectOfType(Long pumpId, Long clientId, CreditExtensionType type, LocalDate today);
 
-    /** Expire all ACTIVE extensions whose expiry_date < today — called by the scheduler or on-demand. */
     @Modifying
     @Query("""
             UPDATE CreditExtension e SET e.status = 'EXPIRED'
             WHERE e.status = 'ACTIVE' AND e.expiryDate < :today
             """)
     int expireOverdueExtensions(LocalDate today);
+
+    boolean existsByClientId(Long clientId);
 }

@@ -1,5 +1,6 @@
 import client from './client'
-import type { DUOption, Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput, BackfillShiftRequest } from '../types/shift'
+import type { SpringPage } from '../types/paged'
+import type { Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput, BackfillShiftRequest } from '../types/shift'
 
 export type { CreditEntryInput }
 
@@ -8,13 +9,42 @@ export interface ResolveDiscrepancyRequest {
   resolutionNote?: string
 }
 
+export interface ShiftHistoryFilter {
+  from?: string
+  to?: string
+  discrepanciesOnly?: boolean
+  discrepancyType?: 'SHORT' | 'OVER'
+}
+
+const HISTORY_PAGE_SIZE = 200
+const MAX_HISTORY_PAGES = 25
+
 export const shiftApi = {
   getActiveShifts: (pumpId: number) =>
     client.get<Shift[]>(`/pumps/${pumpId}/shifts/active`).then((r) => r.data),
 
-  // Backend returns a Spring Page — extract the content array
-  getShiftHistory: (pumpId: number) =>
-    client.get<{ content: Shift[] }>(`/pumps/${pumpId}/shifts/history`).then((r) => r.data.content),
+  getShiftHistoryPage: (pumpId: number, filter: ShiftHistoryFilter, page: number, size: number) =>
+    client.get<SpringPage<Shift>>(`/pumps/${pumpId}/shifts/history`, {
+      params: {
+        page,
+        size,
+        ...(filter.from && { from: filter.from }),
+        ...(filter.to && { to: filter.to }),
+        ...(filter.discrepanciesOnly && { discrepanciesOnly: true }),
+        ...(filter.discrepancyType && { discrepancyType: filter.discrepancyType }),
+      },
+    }).then((r) => r.data),
+
+  // Loads every shift matching the filter; callers pass a filter that bounds the result (a date range or discrepancies only)
+  getShiftHistory: async (pumpId: number, filter: ShiftHistoryFilter): Promise<Shift[]> => {
+    const all: Shift[] = []
+    for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+      const result = await shiftApi.getShiftHistoryPage(pumpId, filter, page, HISTORY_PAGE_SIZE)
+      all.push(...result.content)
+      if (result.content.length === 0 || page + 1 >= result.page.totalPages) break
+    }
+    return all
+  },
 
   getShift: (pumpId: number, id: number) =>
     client.get<Shift>(`/pumps/${pumpId}/shifts/${id}`).then((r) => r.data),
@@ -27,9 +57,6 @@ export const shiftApi = {
 
   closeShift: (pumpId: number, shiftId: number, request: CloseShiftRequest) =>
     client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/close`, request).then((r) => r.data),
-
-  getDUs: (pumpId: number) =>
-    client.get<DUOption[]>(`/pumps/${pumpId}/dus`).then((r) => r.data),
 
   resolveDiscrepancy: (pumpId: number, shiftId: number, req: ResolveDiscrepancyRequest) =>
     client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/discrepancy-resolution`, req).then((r) => r.data),

@@ -1,9 +1,9 @@
 package com.ppms.ancillary;
 
+import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -39,7 +39,7 @@ public class AncillaryProductQueryService {
 
     public PagedResponse<AncillarySaleResponse> getSales(Long pumpId, int page, int size) {
         Page<AncillarySale> salesPage = saleRepository.findByPumpIdOrderBySaleDateDescCreatedAtDesc(
-                pumpId, PageRequest.of(page, size));
+                pumpId, PageRequests.of(page, size));
         Map<Long, AncillaryProduct> productById = productRepository.findAllById(
                         salesPage.getContent().stream().map(AncillarySale::getProductId).collect(Collectors.toSet()))
                 .stream()

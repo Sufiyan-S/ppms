@@ -1,5 +1,6 @@
 package com.ppms.auth;
 
+import com.ppms.user.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -18,6 +19,9 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    public static final String TOKEN_VERSION_CLAIM = "tokenVersion";
+    public static final String USER_ID_CLAIM = "userId";
+
     @Value("${ppms.jwt.secret}")
     private String jwtSecret;
 
@@ -25,17 +29,19 @@ public class JwtService {
     private long jwtExpirationMs;
 
     /**
-     * Fails fast at startup if the JWT secret is shorter than 256 bits (32 bytes).
-     * HMAC-SHA256 requires a key of at least 256 bits — shorter keys are rejected by
-     * the JJWT library at runtime anyway, but this gives a clear error message instead
-     * of an obscure WeakKeyException buried in the first login request.
+     * Fails fast at startup when the secret is missing or shorter than the 256 bits HMAC-SHA256 needs.
      */
     @PostConstruct
     public void validateJwtSecret() {
-        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
             throw new IllegalStateException(
-                    "ppms.jwt.secret must be at least 256 bits (32 bytes). " +
-                    "Set the JWT_SECRET environment variable to a secure random value in production.");
+                    "JWT_SECRET environment variable is not set. " +
+                    "Set it to a random value of at least 32 bytes (e.g. `openssl rand -base64 48`).");
+        }
+        if (jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "JWT_SECRET must be at least 256 bits (32 bytes). " +
+                    "Set it to a random value (e.g. `openssl rand -base64 48`).");
         }
     }
 
@@ -53,9 +59,15 @@ public class JwtService {
         return generateToken(userDetails, new HashMap<>());
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+    public boolean isTokenValid(String token, User user) {
+        Claims claims = extractAllClaims(token);
+        Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
+        Long userId = claims.get(USER_ID_CLAIM, Long.class);
+        return claims.getSubject().equals(user.getUsername())
+                && user.getId().equals(userId)
+                && claims.getExpiration().after(new Date())
+                && tokenVersion != null
+                && tokenVersion == user.getTokenVersion();
     }
 
     public String extractUsername(String token) {
@@ -69,10 +81,6 @@ public class JwtService {
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         return claimsResolver.apply(extractAllClaims(token));
-    }
-
-    private boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
     }
 
     private Claims extractAllClaims(String token) {

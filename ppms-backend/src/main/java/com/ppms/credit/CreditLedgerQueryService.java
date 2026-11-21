@@ -1,6 +1,8 @@
 package com.ppms.credit;
 
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.common.time.BusinessClock;
+import com.ppms.expense.ExpenseApprovalStatus;
 import com.ppms.shift.ShiftCreditEntryRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -10,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -21,12 +24,19 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CreditLedgerQueryService {
 
+    private static final String ACTIVE = "ACTIVE";
+    private static final Comparator<CreditTransactionResponse> NEWEST_FIRST =
+            Comparator.comparing(CreditTransactionResponse::getOccurredAt).reversed()
+                    .thenComparing(CreditTransactionResponse::getType)
+                    .thenComparing(CreditTransactionResponse::getReferenceId);
+
     private final CreditClientRepository clientRepository;
     private final CreditPaymentRepository paymentRepository;
     private final CreditInterestChargeRepository interestChargeRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
     private final CreditInterestService interestService;
     private final UserRepository userRepository;
+    private final BusinessClock businessClock;
 
     public List<CreditClientResponse> getLedgerSummary(Long pumpId) {
         List<CreditClient> clients = clientRepository.findByPumpIdOrderByNameAsc(pumpId);
@@ -49,9 +59,7 @@ public class CreditLedgerQueryService {
 
     public PagedResponse<CreditTransactionResponse> getTransactions(Long clientId, int page, int size) {
         List<CreditTransactionResponse> transactions = buildTransactionList(clientId);
-        transactions.sort(Comparator.comparing(CreditTransactionResponse::getOccurredAt).reversed()
-                .thenComparing(CreditTransactionResponse::getType)
-                .thenComparing(CreditTransactionResponse::getReferenceId));
+        transactions.sort(NEWEST_FIRST);
         return PagedResponse.of(transactions, page, size);
     }
 
@@ -63,23 +71,52 @@ public class CreditLedgerQueryService {
         return mapPayments(paymentRepository.findPendingApprovalByPumpId(pumpId));
     }
 
-    public CreditClientResponse toClientResponse(CreditClient client, List<CreditClient> allPumpClients) {
-        List<Long> ids = allPumpClients.stream().map(CreditClient::getId).toList();
+    public CreditClientResponse toClientResponse(CreditClient client) {
+        List<CreditClient> family = new ArrayList<>();
+        family.add(client);
+        family.addAll(clientRepository.findByParentClientId(client.getId()));
+        if (client.getParentClientId() != null) {
+            clientRepository.findById(client.getParentClientId()).ifPresent(family::add);
+        }
+        List<Long> ids = family.stream().map(CreditClient::getId).toList();
         Map<Long, BigDecimal> outstandingByClientId = interestService.computeOutstandingBatch(ids);
         Map<Long, CreditInterestService.InterestBreakdown> breakdownMap = interestService.computeInterestBreakdownBatch(ids);
-        Map<Long, List<CreditClient>> childrenByParentId = allPumpClients.stream()
+        Map<Long, List<CreditClient>> childrenByParentId = family.stream()
                 .filter(item -> item.getParentClientId() != null)
                 .collect(Collectors.groupingBy(CreditClient::getParentClientId));
-        Map<Long, String> nameById = allPumpClients.stream()
+        Map<Long, String> nameById = family.stream()
                 .collect(Collectors.toMap(CreditClient::getId, CreditClient::getName));
-        return toClientResponse(client, allPumpClients, outstandingByClientId, breakdownMap, childrenByParentId, nameById);
+        return toClientResponse(client, family, outstandingByClientId, breakdownMap, childrenByParentId, nameById);
+    }
+
+    public List<CreditTransactionResponse> getAllTransactions(CreditClient client, boolean includeChildren) {
+        List<CreditClient> accounts = new ArrayList<>();
+        accounts.add(client);
+        if (includeChildren) {
+            accounts.addAll(clientRepository.findByParentClientId(client.getId()));
+        }
+        List<CreditTransactionResponse> transactions = new ArrayList<>();
+        for (CreditClient account : accounts) {
+            List<CreditTransactionResponse> accountRows = buildTransactionList(account.getId());
+            accountRows.forEach(row -> {
+                row.setClientId(account.getId());
+                row.setClientName(account.getName());
+            });
+            transactions.addAll(accountRows);
+        }
+        transactions.sort(NEWEST_FIRST);
+        return transactions;
     }
 
     public List<CreditTransactionResponse> getStatementTransactions(Long clientId, LocalDate fromDate, LocalDate toDate) {
         return buildTransactionList(clientId).stream()
-                .filter(tx -> fromDate == null || !tx.getOccurredAt().toLocalDate().isBefore(fromDate))
-                .filter(tx -> toDate == null || !tx.getOccurredAt().toLocalDate().isAfter(toDate))
+                .filter(tx -> fromDate == null || !tx.getBusinessDate().isBefore(fromDate))
+                .filter(tx -> toDate == null || !tx.getBusinessDate().isAfter(toDate))
                 .toList();
+    }
+
+    private LocalDate businessDateOf(OffsetDateTime moment) {
+        return moment.atZoneSameInstant(businessClock.zone()).toLocalDate();
     }
 
     public CreditPaymentResponse toPaymentResponse(CreditPayment payment, String recordedByName) {
@@ -91,6 +128,7 @@ public class CreditLedgerQueryService {
                 .referenceNo(payment.getReferenceNo())
                 .notes(payment.getNotes())
                 .paidAt(payment.getPaidAt())
+                .recordedById(payment.getRecordedById())
                 .recordedByUserName(recordedByName)
                 .paymentApprovalStatus(payment.getPaymentApprovalStatus().name())
                 .approvedByUserId(payment.getApprovedByUserId())
@@ -123,6 +161,9 @@ public class CreditLedgerQueryService {
                         .detail(sale.getFuelType())
                         .amount(sale.getAmount().setScale(2, RoundingMode.HALF_UP))
                         .occurredAt(sale.getCreatedAt())
+                        .businessDate(businessDateOf(sale.getCreatedAt()))
+                        .status(sale.getVoidStatus())
+                        .countedInBalance(ACTIVE.equals(sale.getVoidStatus()))
                         .build()));
 
         List<CreditPayment> payments = paymentRepository.findByClientIdOrderByPaidAtDesc(clientId);
@@ -138,6 +179,9 @@ public class CreditLedgerQueryService {
                     .detail(payment.getPaymentMode().name())
                     .amount(payment.getAmount().setScale(2, RoundingMode.HALF_UP))
                     .occurredAt(payment.getCreatedAt())
+                    .businessDate(payment.getPaidAt())
+                    .status(payment.getPaymentApprovalStatus().name())
+                    .countedInBalance(payment.getPaymentApprovalStatus() == ExpenseApprovalStatus.APPROVED)
                     .build());
         });
 
@@ -151,6 +195,9 @@ public class CreditLedgerQueryService {
                             .detail(String.format("%s – %s", charge.getPeriodFrom(), charge.getPeriodTo()))
                             .amount(charge.getAmount().setScale(2, RoundingMode.HALF_UP))
                             .occurredAt(charge.getCreatedAt())
+                            .businessDate(businessDateOf(charge.getCreatedAt()))
+                            .status(ACTIVE)
+                            .countedInBalance(true)
                             .build());
                 });
 
@@ -160,6 +207,10 @@ public class CreditLedgerQueryService {
 
         BigDecimal runningBalance = BigDecimal.ZERO;
         for (CreditTransactionResponse transaction : transactions) {
+            if (!transaction.isCountedInBalance()) {
+                transaction.setRunningBalance(runningBalance.setScale(2, RoundingMode.HALF_UP));
+                continue;
+            }
             if ("PAYMENT".equals(transaction.getType())) {
                 runningBalance = runningBalance.subtract(transaction.getAmount());
             } else {

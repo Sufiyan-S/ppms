@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AncillaryStockLotRepository extends JpaRepository<AncillaryStockLot, Long> {
@@ -67,4 +68,7 @@ public interface AncillaryStockLotRepository extends JpaRepository<AncillaryStoc
     @Query("SELECT l FROM AncillaryStockLot l WHERE l.productId = :productId AND l.status = 'ACTIVE' AND l.deliveryDate <= :saleDate ORDER BY l.deliveryDate ASC, l.id ASC")
     List<AncillaryStockLot> findActiveLotsByProductAvailableOnDate(
             @Param("productId") Long productId, @Param("saleDate") LocalDate saleDate);
+
+    @Query("SELECT l.productId FROM AncillaryStockLot l WHERE l.id = :id AND l.pumpId = :pumpId")
+    Optional<Long> findProductIdByIdAndPumpId(@Param("id") Long id, @Param("pumpId") Long pumpId);
 }

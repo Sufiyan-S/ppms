@@ -169,6 +169,8 @@ export interface BalanceSheetDetail {
   totalDipNetAmount: number
   /** Net profit = fuel gross profit + dip net + ancillary product gross profit (DAY only) − approved expenses (DAY only). */
   totalNetProfit: number
+  /** True when the dip, product or expense lines below no longer add up to the totals saved at generation. */
+  linesChangedSinceGenerated: boolean
   fuelLines: BsFuelLine[]
   shiftLines: BsShiftLine[]
   meterAmendments: MeterAmendmentLine[]

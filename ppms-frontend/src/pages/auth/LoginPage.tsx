@@ -9,6 +9,8 @@ import { useAuthStore } from '../../store/authStore'
 import type { AuthUser } from '../../types/auth'
 import { PasswordInput } from '../../components/PasswordInput'
 import { parseApiError } from '../../utils/apiError'
+import { getDefaultPath } from '../../permissions/permissions'
+import { prefetchLandingPage } from '../../routes/pageLoaders'
 
 const loginSchema = z.object({
   phoneNumber: z.string().length(10, 'Phone number must be exactly 10 digits').regex(/^\d+$/, 'Must be digits only'),
@@ -39,12 +41,13 @@ export default function LoginPage() {
       const user: AuthUser = {
         userId: response.userId,
         fullName: response.fullName,
-        phoneNumber: response.phoneNumber,
         role: response.role,
         assignedPumpId: response.assignedPumpId,
       }
       setAuth(user)
-      navigate(response.role === 'SUPER_ADMIN' ? '/super-admin' : '/dashboard')
+      const landingPath = getDefaultPath(response.role)
+      prefetchLandingPage(landingPath)
+      navigate(landingPath)
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } }
       setServerError(parseApiError(error, 'Login failed. Please try again.'))
@@ -175,7 +178,7 @@ export default function LoginPage() {
             </button>
 
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-slate-400">Need help accessing your account?</span>
+              <span className="text-slate-500">Need help accessing your account?</span>
               <Link to="/forgot-password" className="ui-link text-sm">
                 Forgot password?
               </Link>

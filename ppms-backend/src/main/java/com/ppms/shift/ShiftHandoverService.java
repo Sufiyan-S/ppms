@@ -2,9 +2,12 @@ package com.ppms.shift;
 
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.user.User;
 import com.ppms.user.UserRepository;
+import com.ppms.user.UserRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,12 +27,12 @@ public class ShiftHandoverService {
     private final UserRepository userRepository;
 
     @Transactional
-    public ShiftHandover createHandover(Long pumpId, CreateHandoverRequest request) {
-        Shift outgoingShift = shiftRepository.findById(request.outgoingShiftId())
+    public ShiftHandover createHandover(Long pumpId, CreateHandoverRequest request, User currentUser) {
+        Shift outgoingShift = shiftRepository.findByIdAndPumpIdForUpdate(request.outgoingShiftId(), pumpId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
-        if (!outgoingShift.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Shift does not belong to this pump");
+        if (currentUser.getRole() == UserRole.OPERATOR && !outgoingShift.getOperatorId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("Only the operator running this shift can hand it over.");
         }
 
         if (outgoingShift.getStatus() != ShiftStatus.OPEN
@@ -44,7 +47,8 @@ public class ShiftHandoverService {
                     " (handover ID: " + existing.getId() + ")");
         });
 
-        com.ppms.user.User incomingOperator = userRepository.findById(request.incomingOperatorId())
+        User incomingOperator = userRepository.findById(request.incomingOperatorId())
+                .filter(user -> user.getRole() == UserRole.OPERATOR && pumpId.equals(user.getAssignedPumpId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Incoming operator not found"));
 
         if (outgoingShift.getOperatorId().equals(request.incomingOperatorId())) {

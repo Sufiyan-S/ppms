@@ -9,7 +9,9 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PaymentSettlementRepository extends JpaRepository<PaymentSettlement, Long> {
@@ -21,29 +23,54 @@ public interface PaymentSettlementRepository extends JpaRepository<PaymentSettle
     Page<PaymentSettlement> findByPumpIdAndPaymentTypeOrderBySettlementDateDescCreatedAtDesc(
             Long pumpId, SettlementPaymentType paymentType, Pageable pageable);
 
-    /** All settlements for a pump on a specific date — used for balance sheet drill-down. */
-    List<PaymentSettlement> findByPumpIdAndSettlementDateOrderByCreatedAtDesc(Long pumpId, LocalDate settlementDate);
+    /** ACTIVE settlements for a pump on a specific date — used for balance sheet drill-down. */
+    @Query("""
+            SELECT ps FROM PaymentSettlement ps
+            WHERE ps.pumpId = :pumpId AND ps.settlementDate = :settlementDate AND ps.voidStatus = 'ACTIVE'
+            ORDER BY ps.createdAt DESC
+            """)
+    List<PaymentSettlement> findActiveByPumpIdAndSettlementDate(
+            @Param("pumpId") Long pumpId,
+            @Param("settlementDate") LocalDate settlementDate);
 
-    /** All settlements for a pump within a date range — used for the daily-summary endpoint. */
-    List<PaymentSettlement> findByPumpIdAndSettlementDateBetweenOrderBySettlementDateAscCreatedAtAsc(
-            Long pumpId, LocalDate from, LocalDate to);
+    /** ACTIVE settlements recorded within [from, to) — used by live DAY balance sheets. */
+    @Query("""
+            SELECT ps FROM PaymentSettlement ps
+            WHERE ps.pumpId = :pumpId AND ps.voidStatus = 'ACTIVE'
+              AND ps.createdAt >= :from AND ps.createdAt < :to
+            ORDER BY ps.createdAt DESC
+            """)
+    List<PaymentSettlement> findActiveByPumpIdRecordedBetween(
+            @Param("pumpId") Long pumpId,
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    /** Settlements of every status within a date range, oldest first — voided ones are listed for the record. */
+    @Query("""
+            SELECT ps FROM PaymentSettlement ps
+            WHERE ps.pumpId = :pumpId AND ps.settlementDate BETWEEN :from AND :to
+            ORDER BY ps.settlementDate ASC, ps.createdAt ASC
+            """)
+    List<PaymentSettlement> findAllByPumpIdAndSettlementDateBetween(
+            @Param("pumpId") Long pumpId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
 
     /**
-     * Total amount settled for a pump + payment type across ALL time.
+     * Total ACTIVE amount settled for a pump + payment type across ALL time.
      * Used in wallet balance calculation: walletPending = totalCollected − totalSettled.
-     * COALESCE(SUM(...), 0) guarantees a non-null result even when no settlements exist.
      */
     @Query("""
             SELECT COALESCE(SUM(ps.amountReceived), 0)
             FROM PaymentSettlement ps
-            WHERE ps.pumpId = :pumpId AND ps.paymentType = :paymentType
+            WHERE ps.pumpId = :pumpId AND ps.paymentType = :paymentType AND ps.voidStatus = 'ACTIVE'
             """)
     BigDecimal sumAmountByPumpIdAndPaymentType(
             @Param("pumpId") Long pumpId,
             @Param("paymentType") SettlementPaymentType paymentType);
 
     /**
-     * Total amount settled for a pump + payment type on or before a given date.
+     * Total ACTIVE amount settled for a pump + payment type on or before a given date.
      * Used for historical wallet snapshot on balance sheets (as of reportDate).
      */
     @Query("""
@@ -52,9 +79,29 @@ public interface PaymentSettlementRepository extends JpaRepository<PaymentSettle
             WHERE ps.pumpId = :pumpId
               AND ps.paymentType = :paymentType
               AND ps.settlementDate <= :asOf
+              AND ps.voidStatus = 'ACTIVE'
             """)
     BigDecimal sumAmountByPumpIdAndPaymentTypeAsOf(
             @Param("pumpId") Long pumpId,
             @Param("paymentType") SettlementPaymentType paymentType,
             @Param("asOf") LocalDate asOf);
+
+    /** Detects a double submission: the same ACTIVE settlement recorded again shortly after the first. */
+    @Query("""
+            SELECT COUNT(ps) > 0 FROM PaymentSettlement ps
+            WHERE ps.pumpId = :pumpId
+              AND ps.paymentType = :paymentType
+              AND ps.settlementDate = :settlementDate
+              AND ps.amountReceived = :amount
+              AND ps.voidStatus = 'ACTIVE'
+              AND ps.createdAt > :createdAfter
+            """)
+    boolean existsRecentDuplicate(
+            @Param("pumpId") Long pumpId,
+            @Param("paymentType") SettlementPaymentType paymentType,
+            @Param("settlementDate") LocalDate settlementDate,
+            @Param("amount") BigDecimal amount,
+            @Param("createdAfter") OffsetDateTime createdAfter);
+
+    Optional<PaymentSettlement> findByIdAndPumpId(Long id, Long pumpId);
 }

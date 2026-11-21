@@ -85,6 +85,10 @@ public class User implements UserDetails {
     @Column(name = "standard_hourly_rate")
     private BigDecimal standardHourlyRate;
 
+    // Bumped on every password change/reset; JWTs carrying an older value are rejected.
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

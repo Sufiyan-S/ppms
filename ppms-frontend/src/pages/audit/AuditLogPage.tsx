@@ -7,6 +7,7 @@ import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
 import { Reveal } from '../../components/Reveal'
 import { formatIstDateTime, localDateInputValue } from '../../utils/date'
+import { codeLabel } from '../../constants/labels'
 
 const ACTION_STYLES: Partial<Record<AuditAction, string>> = {
   // User management
@@ -132,36 +133,42 @@ export default function AuditLogPage() {
       <Reveal delay={130}>
       <div className="ui-card ui-form-shell [grid-template-columns:repeat(3,minmax(0,1fr))_auto] items-end">
         <div className="flex flex-col gap-1">
-          <label className="ui-label mb-0">From</label>
-          <input
-            type="date"
-            value={from}
-            onChange={e => handleFromChange(e.target.value)}
-            max={to || undefined}
-            className="text-sm"
-          />
+          <label className="block">
+            <span className="ui-label mb-0">From</span>
+            <input
+              type="date"
+              value={from}
+              onChange={e => handleFromChange(e.target.value)}
+              max={to || undefined}
+              className="text-sm"
+            />
+          </label>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="ui-label mb-0">To</label>
-          <input
-            type="date"
-            value={to}
-            onChange={e => handleToChange(e.target.value)}
-            min={from || undefined}
-            className="text-sm"
-          />
+          <label className="block">
+            <span className="ui-label mb-0">To</span>
+            <input
+              type="date"
+              value={to}
+              onChange={e => handleToChange(e.target.value)}
+              min={from || undefined}
+              className="text-sm"
+            />
+          </label>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="ui-label mb-0">Per page</label>
-          <select
-            value={pageSize}
-            onChange={e => handlePageSizeChange(Number(e.target.value))}
-            className="text-sm bg-white"
-          >
-            {PAGE_SIZE_OPTIONS.map(n => (
-              <option key={n} value={n}>{n} / page</option>
-            ))}
-          </select>
+          <label className="block">
+            <span className="ui-label mb-0">Per page</span>
+            <select
+              value={pageSize}
+              onChange={e => handlePageSizeChange(Number(e.target.value))}
+              className="text-sm bg-white"
+            >
+              {PAGE_SIZE_OPTIONS.map(n => (
+                <option key={n} value={n}>{n} / page</option>
+              ))}
+            </select>
+          </label>
         </div>
         <button
           onClick={clearFilters}
@@ -199,15 +206,15 @@ export default function AuditLogPage() {
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACTION_STYLES[log.action] ?? 'bg-slate-100 text-slate-600'}`}>
-                      {log.action.replace(/_/g, ' ')}
+                      {codeLabel(log.action)}
                     </span>
                     <span className="text-xs text-slate-500">by <span className="font-medium text-slate-700">{log.actorName}</span></span>
                   </div>
-                  <p className="text-xs text-slate-400 flex-shrink-0">{fmtDateTime(log.createdAt)}</p>
+                  <p className="text-xs text-slate-500 flex-shrink-0">{fmtDateTime(log.createdAt)}</p>
                 </div>
                 <p className="text-sm text-slate-700">{log.description}</p>
                 {log.entityId && (
-                  <p className="text-xs text-slate-400 mt-0.5">{log.entityType} #{log.entityId}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{log.entityType} #{log.entityId}</p>
                 )}
               </div>
             ))}
@@ -232,7 +239,7 @@ export default function AuditLogPage() {
               pageSizeOptions={PAGE_SIZE_OPTIONS}
             />
             <div className="pt-2 text-center">
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500">
                 Showing {rangeStart}–{rangeEnd} of {totalEvents} events
               </span>
             </div>

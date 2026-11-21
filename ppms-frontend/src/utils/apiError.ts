@@ -1,3 +1,7 @@
+import { isAxiosError } from 'axios'
+
+export type ApiErrorBody = { message?: unknown }
+
 /**
  * Extracts a safe, user-facing error message from an Axios error response.
  *
@@ -8,13 +12,17 @@
  * are never exposed.
  */
 export function parseApiError(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
-  const status: unknown  = (err as any)?.response?.status
-  const message: unknown = (err as any)?.response?.data?.message
-  if (
-    typeof status === 'number' && status >= 400 && status < 500 &&
-    typeof message === 'string' && message.trim().length > 0
-  ) {
-    return message.trim()
+  if (!isAxiosError<ApiErrorBody>(err)) return fallback
+  const status = err.response?.status
+  const message = serverMessage(err)
+  if (status !== undefined && status >= 400 && status < 500 && message !== undefined) {
+    return message
   }
   return fallback
+}
+
+export function serverMessage(err: unknown): string | undefined {
+  if (!isAxiosError<ApiErrorBody>(err)) return undefined
+  const message = err.response?.data?.message
+  return typeof message === 'string' && message.trim().length > 0 ? message.trim() : undefined
 }

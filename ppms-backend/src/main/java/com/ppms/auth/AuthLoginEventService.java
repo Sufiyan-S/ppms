@@ -20,7 +20,7 @@ public class AuthLoginEventService {
 
     public void onLoginSuccess(User user, String ipAddress) {
         rateLimiterService.recordAttempt(user.getPhoneNumber(), ipAddress, true);
-        log.info("Login successful: userId={} phone={} ip={}", user.getId(), user.getPhoneNumber(), ipAddress);
+        log.info("Login successful: userId={} ip={}", user.getId(), ipAddress);
         loginSuccessCounter.increment();
 
         auditService.log(user.getAssignedPumpId(), AuditAction.LOGIN,
@@ -31,7 +31,7 @@ public class AuthLoginEventService {
 
     public void onLoginFailure(String phoneNumber, String ipAddress) {
         rateLimiterService.recordAttempt(phoneNumber, ipAddress, false);
-        log.warn("Login failed: phone={} ip={}", phoneNumber, ipAddress);
+        log.warn("Login failed: phone={} ip={}", PhoneNumberMasking.mask(phoneNumber), ipAddress);
         loginFailureCounter.increment();
 
         auditService.log(null, AuditAction.LOGIN_FAILED,

@@ -11,4 +11,6 @@ public interface ShiftPlanRepository extends JpaRepository<ShiftPlan, Long> {
     Optional<ShiftPlan> findByPumpIdAndWeekStart(Long pumpId, LocalDate weekStart);
 
     List<ShiftPlan> findByPumpIdOrderByWeekStartDesc(Long pumpId);
+
+    Optional<ShiftPlan> findByIdAndPumpId(Long id, Long pumpId);
 }

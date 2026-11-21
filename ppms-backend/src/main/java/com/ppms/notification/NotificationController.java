@@ -1,12 +1,12 @@
 package com.ppms.notification;
 
 import com.ppms.user.User;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -18,7 +18,7 @@ public class NotificationController {
 
     /**
      * GET /api/pumps/{pumpId}/notifications
-     * Returns all unread notifications for the pump.
+     * Returns the newest 100 unread notifications for the pump and the total unread count.
      *
      * Notifications are generated in the background by NotificationGenerationJob
      * every 5 minutes — this endpoint only reads pre-computed results from the DB.
@@ -27,22 +27,23 @@ public class NotificationController {
      */
     @GetMapping("/{pumpId}/notifications")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
-    public List<Notification> getNotifications(
+    public NotificationListResponse getNotifications(
             @PathVariable Long pumpId,
             @AuthenticationPrincipal User currentUser) {
         return notificationService.getUnreadNotifications(pumpId);
     }
 
     /**
-     * POST /api/pumps/{pumpId}/notifications/mark-all-read
-     * Marks all unread notifications as read (clears the bell badge).
+     * POST /api/pumps/{pumpId}/notifications/mark-read
+     * Marks the notifications the user was shown as read; anything beyond the shown page stays unread.
      */
-    @PostMapping("/{pumpId}/notifications/mark-all-read")
+    @PostMapping("/{pumpId}/notifications/mark-read")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
-    public Map<String, Object> markAllRead(
+    public Map<String, Object> markRead(
             @PathVariable Long pumpId,
+            @Valid @RequestBody MarkNotificationsReadRequest request,
             @AuthenticationPrincipal User currentUser) {
-        notificationService.markAllRead(pumpId);
-        return Map.of("success", true);
+        int marked = notificationService.markRead(pumpId, request.getIds());
+        return Map.of("success", true, "marked", marked);
     }
 }

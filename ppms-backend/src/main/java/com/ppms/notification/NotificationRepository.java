@@ -5,19 +5,35 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
-    List<Notification> findByPumpIdOrderByCreatedAtDesc(Long pumpId);
-
-    List<Notification> findByPumpIdAndReadAtIsNullOrderByCreatedAtDesc(Long pumpId);
+    List<Notification> findTop100ByPumpIdAndReadAtIsNullOrderByCreatedAtDesc(Long pumpId);
 
     boolean existsByPumpIdAndDedupKey(Long pumpId, String dedupKey);
 
+    long countByPumpIdAndReadAtIsNull(Long pumpId);
+
     @Modifying
-    @Query("UPDATE Notification n SET n.readAt = CURRENT_TIMESTAMP WHERE n.pumpId = :pumpId AND n.readAt IS NULL")
-    int markAllReadForPump(Long pumpId);
+    @Query("""
+            UPDATE Notification n SET n.readAt = CURRENT_TIMESTAMP
+            WHERE n.pumpId = :pumpId AND n.id IN :ids AND n.readAt IS NULL
+            """)
+    int markReadForPump(@Param("pumpId") Long pumpId, @Param("ids") List<Long> ids);
+
+    /** Deletes up to {@code batchSize} notifications read before {@code readBefore}; uses idx_notifications_read_at. */
+    @Modifying
+    @Query(value = """
+            DELETE FROM notifications
+            WHERE id IN (
+                SELECT id FROM notifications
+                WHERE read_at IS NOT NULL AND read_at < :readBefore
+                LIMIT :batchSize
+            )
+            """, nativeQuery = true)
+    int deleteReadBefore(@Param("readBefore") OffsetDateTime readBefore, @Param("batchSize") int batchSize);
 
     /**
      * Atomically inserts a notification if no row with the same (pump_id, dedup_key) exists.

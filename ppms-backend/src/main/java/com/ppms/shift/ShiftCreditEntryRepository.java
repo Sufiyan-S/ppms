@@ -36,6 +36,9 @@ public interface ShiftCreditEntryRepository extends JpaRepository<ShiftCreditEnt
     @Query("SELECT e.clientId, COALESCE(SUM(e.amount), 0) FROM ShiftCreditEntry e WHERE e.clientId IN :clientIds AND e.voidStatus = 'ACTIVE' GROUP BY e.clientId")
     List<Object[]> sumAmountsByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
+    @Query("SELECT e FROM ShiftCreditEntry e WHERE e.clientId = :clientId AND e.voidStatus = 'ACTIVE'")
+    List<ShiftCreditEntry> findActiveByClientId(@Param("clientId") Long clientId);
+
     /**
      * Date of the oldest ACTIVE (non-voided) credit entry for a client.
      * Used by the interest calculator to determine when the grace period starts.
@@ -46,4 +49,6 @@ public interface ShiftCreditEntryRepository extends JpaRepository<ShiftCreditEnt
      */
     @Query("SELECT MIN(e.createdAt) FROM ShiftCreditEntry e WHERE e.clientId = :clientId AND e.voidStatus = 'ACTIVE'")
     Optional<OffsetDateTime> findOldestEntryDateByClientId(@Param("clientId") Long clientId);
+
+    boolean existsByClientId(Long clientId);
 }

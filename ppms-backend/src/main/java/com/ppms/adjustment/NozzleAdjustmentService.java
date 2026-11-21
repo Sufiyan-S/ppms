@@ -1,5 +1,6 @@
 package com.ppms.adjustment;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.fuel.FuelType;
 import com.ppms.pump.Nozzle;
 import com.ppms.user.User;
@@ -21,6 +22,7 @@ public class NozzleAdjustmentService {
     private final NozzleReadingAdjustmentRepository adjustmentRepository;
     private final FuelDipEntryRepository            dipEntryRepository;
     private final NozzleAdjustmentSupportService    supportService;
+    private final BusinessClock businessClock;
 
     // ── Meter reading adjustment ──────────────────────────────────────────────
 
@@ -93,7 +95,7 @@ public class NozzleAdjustmentService {
 
         BigDecimal litresRemoved = req.getLitresRemoved().setScale(3, RoundingMode.HALF_UP);
         BigDecimal monetaryLoss  = litresRemoved.multiply(pricePerUnit).setScale(2, RoundingMode.HALF_UP);
-        LocalDate  dipDate       = req.getDipDate() != null ? req.getDipDate() : LocalDate.now();
+        LocalDate  dipDate       = req.getDipDate() != null ? req.getDipDate() : businessClock.today();
 
         FuelDipEntry entry = FuelDipEntry.builder()
                 .pumpId(pumpId)

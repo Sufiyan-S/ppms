@@ -9,9 +9,6 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.ZoneOffset;
 import java.util.Date;
 
@@ -40,7 +37,7 @@ public class DbTokenRevocationService implements TokenRevocationService {
     @Override
     @Transactional
     public void revoke(String jwt, Long userId, Date expiresAt) {
-        String hash = sha256Hex(jwt);
+        String hash = TokenHashing.sha256Hex(jwt);
         if (!blacklistRepository.existsByTokenHash(hash)) {
             TokenBlacklist entry = TokenBlacklist.builder()
                     .tokenHash(hash)
@@ -68,26 +65,6 @@ public class DbTokenRevocationService implements TokenRevocationService {
     @Override
     @Cacheable(value = CacheConfig.TOKEN_BLACKLIST_CACHE, key = "#jwt", unless = "#result == false")
     public boolean isRevoked(String jwt) {
-        return blacklistRepository.existsByTokenHash(sha256Hex(jwt));
+        return blacklistRepository.existsByTokenHash(TokenHashing.sha256Hex(jwt));
     }
-
-    /**
-     * Computes the SHA-256 hex digest of the input string.
-     * SHA-256 is always available in the JVM — NoSuchAlgorithmException is
-     * wrapped in IllegalStateException since it cannot occur in practice.
-     */
-    private String sha256Hex(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 algorithm not available — this should never happen", e);
-        }
-    }
-
 }

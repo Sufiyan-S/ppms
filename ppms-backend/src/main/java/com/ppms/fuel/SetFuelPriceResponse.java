@@ -4,7 +4,7 @@ import lombok.Builder;
 import lombok.Value;
 
 /**
- * Response for POST /api/fuel-prices.
+ * Response for POST /api/pumps/{pumpId}/fuel-prices.
  *
  * Contains the newly created price record plus an optional warning about open shifts.
  * When openShiftsCount > 0, the frontend should alert the user that existing open shifts

@@ -33,15 +33,25 @@ public class BalanceSheetDetailAssembler {
             BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary,
             BalanceSheetDetailResponse.ExpenseSummary expenseSummary) {
 
-        BigDecimal totalDipNetAmount = dipPlEntries.stream()
+        BigDecimal liveDipNetAmount = dipPlEntries.stream()
                 .map(DipPlLineResponse::getMonetaryAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
-
-        BigDecimal productSalesGrossProfit = productSalesSummary != null
+        BigDecimal liveProductSalesGrossProfit = productSalesSummary != null
                 ? supportService.orZero(productSalesSummary.getGrossProfit()) : BigDecimal.ZERO;
-        BigDecimal totalExpensesAmount = expenseSummary != null
+        BigDecimal liveExpensesAmount = expenseSummary != null
                 ? supportService.orZero(expenseSummary.getTotalAmount()) : BigDecimal.ZERO;
+
+        // Sheets saved before the totals were stored fall back to the live line items.
+        BigDecimal totalDipNetAmount = balanceSheet.getTotalDipNetAmount() != null
+                ? balanceSheet.getTotalDipNetAmount() : liveDipNetAmount;
+        BigDecimal productSalesGrossProfit = balanceSheet.getProductSalesGrossProfit() != null
+                ? balanceSheet.getProductSalesGrossProfit() : liveProductSalesGrossProfit;
+        BigDecimal totalExpensesAmount = balanceSheet.getTotalExpensesAmount() != null
+                ? balanceSheet.getTotalExpensesAmount() : liveExpensesAmount;
+        boolean linesChangedSinceGenerated = totalDipNetAmount.compareTo(liveDipNetAmount) != 0
+                || productSalesGrossProfit.compareTo(liveProductSalesGrossProfit) != 0
+                || totalExpensesAmount.compareTo(liveExpensesAmount) != 0;
 
         BigDecimal totalNetProfit = supportService.orZero(balanceSheet.getTotalGrossProfit())
                 .add(totalDipNetAmount)
@@ -49,7 +59,6 @@ public class BalanceSheetDetailAssembler {
                 .subtract(totalExpensesAmount)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Batch fetch per-nozzle fuel readings for all shifts in this report — avoids N+1
         List<Long> shiftIds = shiftLines.stream().map(BsShiftLine::getShiftId).toList();
         Map<Long, List<ShiftFuelReading>> readingsByShift = shiftFuelReadingRepository
                 .findByShiftIdIn(shiftIds)
@@ -90,58 +99,69 @@ public class BalanceSheetDetailAssembler {
                 .totalGrossProfit(balanceSheet.getTotalGrossProfit())
                 .totalDipNetAmount(totalDipNetAmount)
                 .totalNetProfit(totalNetProfit)
-                .fuelLines(fuelLines.stream().map(line -> BsFuelLineResponse.builder()
-                        .fuelType(line.getFuelType())
-                        .openingStock(line.getOpeningStock())
-                        .closingStock(line.getClosingStock())
-                        .deliveredLitres(line.getDeliveredLitres())
-                        .deliveredCost(line.getDeliveredCost())
-                        .soldLitres(line.getSoldLitres())
-                        .sellingPrice(line.getSellingPrice())
-                        .expectedRevenue(line.getExpectedRevenue())
-                        .costOfGoods(line.getCostOfGoods())
-                        .grossProfit(line.getGrossProfit())
-                        .creditSoldAmount(line.getCreditSoldAmount())
-                        .stockVariance(line.getStockVariance())
-                        .dipLossLitres(supportService.orZero(line.getDipLossLitres()))
-                        .dipLossAmount(supportService.orZero(line.getDipLossAmount()))
-                        .build()).toList())
-                .shiftLines(shiftLines.stream().map(line -> {
-                    List<BsShiftLineResponse.NozzleReadingLine> nozzleReadings = readingsByShift
-                            .getOrDefault(line.getShiftId(), List.of())
-                            .stream()
-                            .filter(r -> r.getUnitsSold() != null)
-                            .sorted(Comparator.comparingInt(r -> nozzleNumberById.getOrDefault(r.getNozzleId(), 0)))
-                            .map(r -> BsShiftLineResponse.NozzleReadingLine.builder()
-                                    .nozzleNumber(nozzleNumberById.getOrDefault(r.getNozzleId(), 0))
-                                    .fuelType(r.getFuelType().name())
-                                    .litresSold(r.getUnitsSold().setScale(3, RoundingMode.HALF_UP))
-                                    .expectedRevenue(r.getUnitsSold()
-                                            .multiply(r.getPriceSnapshot())
-                                            .setScale(2, RoundingMode.HALF_UP))
-                                    .build())
-                            .toList();
-                    return BsShiftLineResponse.builder()
-                            .shiftId(line.getShiftId())
-                            .operatorName(line.getOperatorName())
-                            .duNumber(line.getDuNumber())
-                            .duName(line.getDuName())
-                            .fuelTypesSummary(line.getFuelTypesSummary())
-                            .litresSold(line.getLitresSold())
-                            .expectedRevenue(line.getExpectedRevenue())
-                            .cashCollected(line.getCashCollected())
-                            .upiCollected(line.getUpiCollected())
-                            .cardCollected(line.getCardCollected())
-                            .fleetCardCollected(supportService.orZero(line.getFleetCardCollected()))
-                            .creditAmount(line.getCreditAmount())
-                            .discrepancy(line.getDiscrepancy())
-                            .nozzleReadings(nozzleReadings)
-                            .build();
-                }).toList())
+                .linesChangedSinceGenerated(linesChangedSinceGenerated)
+                .fuelLines(fuelLines.stream().map(this::toFuelLineResponse).toList())
+                .shiftLines(shiftLines.stream()
+                        .map(line -> toShiftLineResponse(line, readingsByShift, nozzleNumberById))
+                        .toList())
                 .meterAmendments(amendmentLines)
                 .dipPlEntries(dipPlEntries)
                 .productSales(productSalesSummary)
                 .expenses(expenseSummary)
+                .build();
+    }
+
+    private BsFuelLineResponse toFuelLineResponse(BsFuelLine line) {
+        return BsFuelLineResponse.builder()
+                .fuelType(line.getFuelType())
+                .openingStock(line.getOpeningStock())
+                .closingStock(line.getClosingStock())
+                .deliveredLitres(line.getDeliveredLitres())
+                .deliveredCost(line.getDeliveredCost())
+                .soldLitres(line.getSoldLitres())
+                .sellingPrice(line.getSellingPrice())
+                .expectedRevenue(line.getExpectedRevenue())
+                .costOfGoods(line.getCostOfGoods())
+                .grossProfit(line.getGrossProfit())
+                .creditSoldAmount(line.getCreditSoldAmount())
+                .stockVariance(line.getStockVariance())
+                .dipLossLitres(supportService.orZero(line.getDipLossLitres()))
+                .dipLossAmount(supportService.orZero(line.getDipLossAmount()))
+                .build();
+    }
+
+    private BsShiftLineResponse toShiftLineResponse(BsShiftLine line,
+                                                    Map<Long, List<ShiftFuelReading>> readingsByShift,
+                                                    Map<Long, Integer> nozzleNumberById) {
+        List<BsShiftLineResponse.NozzleReadingLine> nozzleReadings = readingsByShift
+                .getOrDefault(line.getShiftId(), List.of())
+                .stream()
+                .filter(r -> r.getUnitsSold() != null)
+                .sorted(Comparator.comparingInt(r -> nozzleNumberById.getOrDefault(r.getNozzleId(), 0)))
+                .map(r -> BsShiftLineResponse.NozzleReadingLine.builder()
+                        .nozzleNumber(nozzleNumberById.getOrDefault(r.getNozzleId(), 0))
+                        .fuelType(r.getFuelType().name())
+                        .litresSold(r.getUnitsSold().setScale(3, RoundingMode.HALF_UP))
+                        .expectedRevenue(r.getUnitsSold()
+                                .multiply(r.getPriceSnapshot())
+                                .setScale(2, RoundingMode.HALF_UP))
+                        .build())
+                .toList();
+        return BsShiftLineResponse.builder()
+                .shiftId(line.getShiftId())
+                .operatorName(line.getOperatorName())
+                .duNumber(line.getDuNumber())
+                .duName(line.getDuName())
+                .fuelTypesSummary(line.getFuelTypesSummary())
+                .litresSold(line.getLitresSold())
+                .expectedRevenue(line.getExpectedRevenue())
+                .cashCollected(line.getCashCollected())
+                .upiCollected(line.getUpiCollected())
+                .cardCollected(line.getCardCollected())
+                .fleetCardCollected(supportService.orZero(line.getFleetCardCollected()))
+                .creditAmount(line.getCreditAmount())
+                .discrepancy(line.getDiscrepancy())
+                .nozzleReadings(nozzleReadings)
                 .build();
     }
 }

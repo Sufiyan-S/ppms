@@ -7,7 +7,7 @@ import type { UserRole } from '../types/auth'
  * Sidebar items and route guards both derive from this map, keeping UI and routing consistent.
  *
  * ACTION_PERMISSIONS — controls which roles can perform specific actions within a page
- * (e.g. open a shift, add a calibration record). Used by the usePermission hook for
+ * (e.g. open a shift, add a calibration record). Read through canPerformAction for
  * conditional rendering of buttons, forms, and action menus.
  */
 
@@ -18,8 +18,8 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   shifts:          ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'],
   shiftPlanning:   ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'],
   inventory:       ['OWNER', 'ADMIN', 'MANAGER'],
-  credit:          ['OWNER', 'ADMIN', 'MANAGER'],
-  expenses:        ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'],
+  credit:          ['OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT'],
+  expenses:        ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT'],
   documents:       ['OWNER', 'ADMIN'],
   cashDrawer:      ['OWNER', 'ADMIN', 'MANAGER'],
   calibration:     ['OWNER', 'ADMIN', 'MANAGER'],
@@ -30,6 +30,25 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
   reports:         ['OWNER', 'ADMIN', 'MANAGER'],
   setup:           ['OWNER', 'ADMIN', 'MANAGER'],
   settlements:     ['OWNER', 'ADMIN', 'MANAGER'],
+}
+
+const PAGE_PATHS: Record<string, string> = {
+  overview:      '/dashboard',
+  shifts:        '/dashboard/shifts',
+  shiftPlanning: '/dashboard/shift-planning',
+  inventory:     '/dashboard/inventory',
+  credit:        '/dashboard/credit',
+  expenses:      '/dashboard/expenses',
+  documents:     '/dashboard/documents',
+  cashDrawer:    '/dashboard/cash',
+  calibration:   '/dashboard/calibration',
+  payroll:       '/dashboard/payroll',
+  products:      '/dashboard/ancillary',
+  auditLog:      '/dashboard/audit',
+  balanceSheets: '/dashboard/balance-sheets',
+  reports:       '/dashboard/reports',
+  setup:         '/dashboard/setup',
+  settlements:   '/dashboard/settlements',
 }
 
 // ─── Action-Level Permissions ───────────────────────────────────────────────
@@ -58,8 +77,11 @@ export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
   'credit:record-payment':         ['OWNER', 'ADMIN', 'MANAGER'],
   'credit:adjust-limit':           ['OWNER', 'ADMIN', 'MANAGER'],
   'credit:manage-interest':        ['OWNER', 'ADMIN', 'MANAGER'],
-  'credit:approve-payment':        ['OWNER', 'ADMIN', 'MANAGER'],
+  'credit:approve-payment':        ['OWNER', 'ADMIN'],
   'credit:grant-extension':        ['OWNER', 'ADMIN'],
+  'credit:reassign':               ['OWNER', 'ADMIN', 'MANAGER'],
+  'credit:delete-interest':        ['OWNER', 'ADMIN', 'MANAGER'],
+  'credit:manage-portal-pin':      ['OWNER', 'ADMIN'],
 
   // Expenses
   // MANAGER and OPERATOR can create expenses (subject to approval threshold).
@@ -75,8 +97,8 @@ export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
   'calibration:add':               ['OWNER', 'ADMIN'],
 
   // Products (Ancillary)
-  'product:manage':                ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'],
-  'product:record-sale':           ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR'],
+  'product:manage':                ['OWNER', 'ADMIN'],
+  'product:record-sale':           ['OWNER', 'ADMIN', 'MANAGER'],
 
   // Payroll — OWNER only (backend tightened from OWNER/ADMIN to OWNER only)
   'payroll:generate':              ['OWNER'],
@@ -91,6 +113,7 @@ export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
   // Payment Settlements
   'settlement:write':              ['OWNER', 'ADMIN', 'MANAGER'],
   'settlement:configure':          ['OWNER', 'ADMIN'],
+  'settlement:void':               ['OWNER', 'ADMIN'],
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -122,6 +145,6 @@ export function canPerformAction(action: string, role: UserRole | undefined): bo
 export function getDefaultPath(role: UserRole | undefined): string {
   if (!role) return '/login'
   if (role === 'SUPER_ADMIN') return '/super-admin'
-  if (role === 'OPERATOR') return '/dashboard/shifts'
-  return '/dashboard'
+  const firstPage = Object.keys(PAGE_PATHS).find(page => canAccessPage(page, role))
+  return firstPage ? PAGE_PATHS[firstPage] : '/login'
 }

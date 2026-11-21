@@ -8,6 +8,8 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * Generates in-app notifications for all pumps on a 5-minute schedule.
  *
@@ -41,19 +43,19 @@ public class NotificationGenerationJob {
     @Scheduled(fixedDelay = 5 * 60 * 1000)   // 5 minutes in milliseconds
     @SchedulerLock(name = "NotificationGenerationJob", lockAtMostFor = "PT4M", lockAtLeastFor = "PT1M")
     public void generateNotificationsForAllPumps() {
-        var pumps = pumpLocationRepository.findAll();
-        log.debug("NotificationGenerationJob started: processing {} pumps", pumps.size());
+        List<Long> pumpIds = pumpLocationRepository.findAllIds();
+        log.debug("NotificationGenerationJob started: processing {} pumps", pumpIds.size());
 
         int succeeded = 0;
         int failed = 0;
 
-        for (var pump : pumps) {
+        for (Long pumpId : pumpIds) {
             try {
-                notificationService.generateNotificationsForPump(pump.getId());
+                notificationService.generateNotificationsForPump(pumpId);
                 succeeded++;
             } catch (Exception e) {
                 // Log error for this pump but continue processing others
-                log.error("Failed to generate notifications for pump={}: {}", pump.getId(), e.getMessage(), e);
+                log.error("Failed to generate notifications for pump={}: {}", pumpId, e.getMessage(), e);
                 failed++;
             }
         }

@@ -1,7 +1,10 @@
 package com.ppms.credit;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.shift.ShiftCreditEntryRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -10,9 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.ZoneId;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +29,8 @@ public class CreditAccountPolicyService {
     private final CreditExtensionRepository creditExtensionRepository;
     private final CreditPaymentRepository creditPaymentRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
+    private final BusinessClock businessClock;
+    private final EntityManager entityManager;
 
     public CreditClient resolveClientForPump(Long pumpId, Long clientId, String clientName) {
         if (clientId != null) {
@@ -36,25 +44,78 @@ public class CreditAccountPolicyService {
         return creditClientRepository.findByPumpIdAndName(pumpId, clientName.trim()).orElse(null);
     }
 
-    public void validateCreditLimit(Long pumpId, CreditClient client, BigDecimal amount) {
-        if (client == null) {
-            return;
-        }
+    /**
+     * Checks credit entries captured at shift close against each group's limit. Group rows are
+     * locked first, and entries for the same group are added together before each check.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void validateCreditLimits(Map<CreditClient, BigDecimal> amountByClient) {
+        Map<Long, BigDecimal> amountByHolderId = new HashMap<>();
+        amountByClient.forEach((client, amount) ->
+                amountByHolderId.merge(limitHolderId(client), amount, BigDecimal::add));
 
-        CreditClient limitHolder = getLimitHolder(client);
-        if (limitHolder.getCreditLimit().compareTo(BigDecimal.ZERO) <= 0) {
-            return;
-        }
+        lockLimitHolders(amountByHolderId.keySet());
 
-        BigDecimal combinedOutstanding = creditInterestService.computeOutstandingWithChildren(limitHolder.getId());
-        BigDecimal projectedOutstanding = combinedOutstanding.add(amount).setScale(2, RoundingMode.HALF_UP);
-        if (projectedOutstanding.compareTo(limitHolder.getCreditLimit()) > 0) {
-            throw new BusinessException(
-                    "Credit limit exceeded for '" + limitHolder.getName() + "'. " +
-                            "Current outstanding (group): " + combinedOutstanding.setScale(2, RoundingMode.HALF_UP) +
-                            ", this entry: " + amount +
-                            ", limit: " + limitHolder.getCreditLimit() + ". " +
-                            "Please record a payment before adding more credit.");
+        for (Map.Entry<Long, BigDecimal> holderAmount : amountByHolderId.entrySet()) {
+            CreditClient limitHolder = creditClientRepository.findById(holderAmount.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Credit client not found: " + holderAmount.getKey()));
+            if (limitHolder.getCreditLimit().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal amount = holderAmount.getValue();
+            BigDecimal combinedOutstanding = creditInterestService.computeOutstandingWithChildren(limitHolder.getId());
+            BigDecimal projectedOutstanding = combinedOutstanding.add(amount).setScale(2, RoundingMode.HALF_UP);
+            if (projectedOutstanding.compareTo(limitHolder.getCreditLimit()) > 0) {
+                throw new BusinessException(
+                        "Credit limit exceeded for '" + limitHolder.getName() + "'. " +
+                                "Current outstanding (group): " + combinedOutstanding.setScale(2, RoundingMode.HALF_UP) +
+                                ", entries in this shift: " + amount.setScale(2, RoundingMode.HALF_UP) +
+                                ", limit: " + limitHolder.getCreditLimit() + ". " +
+                                "Please record a payment before adding more credit.");
+            }
+        }
+    }
+
+    public Long limitHolderId(CreditClient client) {
+        return client.getParentClientId() != null ? client.getParentClientId() : client.getId();
+    }
+
+    /**
+     * Locks the group's limit-holder row and reloads it, so a copy already held in this
+     * transaction cannot hide a concurrent limit change.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public CreditClient lockLimitHolder(CreditClient client) {
+        Long holderId = limitHolderId(client);
+        CreditClient holder = creditClientRepository.findByIdForUpdate(holderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found: " + holderId));
+        entityManager.refresh(holder);
+        return holder;
+    }
+
+    /** Locks the limit holders of several clients, in holder id order. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockLimitHoldersOfClients(Collection<Long> clientIds) {
+        List<Long> holderIds = creditClientRepository.findAllById(clientIds).stream()
+                .map(this::limitHolderId)
+                .toList();
+        lockLimitHolders(holderIds);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockLimitHolderOfClient(Long clientId) {
+        CreditClient client = creditClientRepository.findById(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found: " + clientId));
+        lockLimitHolder(client);
+    }
+
+    /** Locks limit-holder rows in ascending id order so concurrent callers cannot deadlock. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockLimitHolders(Collection<Long> holderIds) {
+        for (Long holderId : new TreeSet<>(holderIds)) {
+            CreditClient holder = creditClientRepository.findByIdForUpdate(holderId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Credit client not found: " + holderId));
+            entityManager.refresh(holder);
         }
     }
 
@@ -73,10 +134,9 @@ public class CreditAccountPolicyService {
             return;
         }
 
-        CreditClient limitHolder = getLimitHolderWithLock(client);
-        creditExtensionRepository.expireOverdueExtensions(LocalDate.now());
+        CreditClient limitHolder = lockLimitHolder(client);
         List<CreditExtension> activeExtensions = creditExtensionRepository
-                .findByPumpIdAndClientIdAndStatus(pumpId, limitHolder.getId(), CreditExtensionStatus.ACTIVE);
+                .findInEffect(pumpId, limitHolder.getId(), businessClock.today());
 
         if (limitHolder.getCreditLimit().compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal combinedOutstanding = creditInterestService.computeOutstandingWithChildren(limitHolder.getId());
@@ -108,26 +168,6 @@ public class CreditAccountPolicyService {
         }
     }
 
-    private CreditClient getLimitHolder(CreditClient client) {
-        if (client.getParentClientId() == null) {
-            return client;
-        }
-        return creditClientRepository.findById(client.getParentClientId())
-                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException(
-                        "Parent client not found: " + client.getParentClientId()));
-    }
-
-    /**
-     * Like getLimitHolder but acquires a PESSIMISTIC WRITE (SELECT FOR UPDATE) lock on the
-     * limit-holder row. Used only in the real-time credit sale path to prevent concurrent
-     * operators from simultaneously passing the same credit limit check and together
-     * exceeding the limit.
-     */
-    private CreditClient getLimitHolderWithLock(CreditClient client) {
-        Long holderId = client.getParentClientId() != null ? client.getParentClientId() : client.getId();
-        return creditClientRepository.findByIdForUpdate(holderId).orElse(client);
-    }
-
     private boolean isBillingCycleOverdue(CreditClient client) {
         BigDecimal outstanding = creditInterestService.computeOutstanding(client.getId());
         if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
@@ -135,7 +175,7 @@ public class CreditAccountPolicyService {
         }
 
         int cycleDays = client.getBillingCycle() == BillingCycle.WEEKLY ? 7 : 30;
-        LocalDate overdueThreshold = LocalDate.now().minusDays(cycleDays);
+        LocalDate overdueThreshold = businessClock.today().minusDays(cycleDays);
 
         Optional<LocalDate> lastPayment = creditPaymentRepository.findLastPaymentDateByClientId(client.getId());
         if (lastPayment.isPresent()) {
@@ -143,7 +183,7 @@ public class CreditAccountPolicyService {
         }
 
         return creditEntryRepository.findOldestEntryDateByClientId(client.getId())
-                .map(dateTime -> dateTime.atZoneSameInstant(ZoneId.of("Asia/Kolkata")).toLocalDate().isBefore(overdueThreshold))
+                .map(dateTime -> dateTime.atZoneSameInstant(businessClock.zone()).toLocalDate().isBefore(overdueThreshold))
                 .orElse(false);
     }
 }

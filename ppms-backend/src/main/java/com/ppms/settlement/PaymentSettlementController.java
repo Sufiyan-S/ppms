@@ -1,9 +1,10 @@
 package com.ppms.settlement;
 
+import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.user.User;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,7 +19,7 @@ import java.util.List;
  * Manages payment settlement records and per-pump alert configurations.
  *
  * All endpoints are scoped to a pump via /api/pumps/{pumpId}/...
- * Only OWNER and ADMIN can record settlements or update configs — Managers have read access.
+ * OWNER, ADMIN and MANAGER can record settlements; only OWNER and ADMIN can void them or update configs.
  */
 @RestController
 @RequestMapping("/api/pumps")
@@ -36,7 +37,7 @@ public class PaymentSettlementController {
      */
     @GetMapping("/{pumpId}/settlement-configs")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public List<PaymentSettlementService.ConfigResponse> getConfigs(@PathVariable Long pumpId) {
+    public List<ConfigResponse> getConfigs(@PathVariable Long pumpId) {
         return service.getConfigs(pumpId);
     }
 
@@ -47,10 +48,10 @@ public class PaymentSettlementController {
      */
     @PutMapping("/{pumpId}/settlement-configs/{paymentType}")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
-    public PaymentSettlementService.ConfigResponse upsertConfig(
+    public ConfigResponse upsertConfig(
             @PathVariable Long pumpId,
             @PathVariable String paymentType,
-            @RequestBody PaymentSettlementService.UpdateConfigRequest req,
+            @Valid @RequestBody UpdateConfigRequest req,
             @AuthenticationPrincipal User currentUser) {
         return service.upsertConfig(pumpId, paymentType, req, currentUser);
     }
@@ -64,12 +65,12 @@ public class PaymentSettlementController {
      */
     @GetMapping("/{pumpId}/settlements")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public PagedResponse<PaymentSettlementService.SettlementResponse> list(
+    public PagedResponse<SettlementResponse> list(
             @PathVariable Long pumpId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String paymentType) {
-        return service.list(pumpId, paymentType, PageRequest.of(page, size));
+        return service.list(pumpId, paymentType, PageRequests.of(page, size));
     }
 
     /**
@@ -79,21 +80,35 @@ public class PaymentSettlementController {
     @PostMapping("/{pumpId}/settlements")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
     @ResponseStatus(HttpStatus.CREATED)
-    public PaymentSettlementService.SettlementResponse record(
+    public SettlementResponse record(
             @PathVariable Long pumpId,
-            @RequestBody PaymentSettlementService.RecordSettlementRequest req,
+            @Valid @RequestBody RecordSettlementRequest req,
             @AuthenticationPrincipal User currentUser) {
         return service.record(pumpId, req, currentUser);
     }
 
     /**
+     * POST /api/pumps/{pumpId}/settlements/{settlementId}/void
+     * Voids a settlement entered by mistake. Body: { "reason": "..." } (required).
+     */
+    @PostMapping("/{pumpId}/settlements/{settlementId}/void")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    public SettlementResponse voidSettlement(
+            @PathVariable Long pumpId,
+            @PathVariable Long settlementId,
+            @Valid @RequestBody VoidSettlementRequest req,
+            @AuthenticationPrincipal User currentUser) {
+        return service.voidSettlement(pumpId, settlementId, req, currentUser);
+    }
+
+    /**
      * GET /api/pumps/{pumpId}/settlements/wallet
      * Returns the current wallet balance per payment type:
-     *   pending = SUM(all shift collections) − SUM(all settlements recorded)
+     *   pending = SUM(all shift collections) − SUM(all ACTIVE settlements)
      */
     @GetMapping("/{pumpId}/settlements/wallet")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public PaymentSettlementService.WalletSummary getWallet(@PathVariable Long pumpId) {
+    public WalletSummary getWallet(@PathVariable Long pumpId) {
         return service.getWalletSummary(pumpId);
     }
 
@@ -104,12 +119,12 @@ public class PaymentSettlementController {
      */
     @GetMapping("/{pumpId}/settlements/daily-summary")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public PagedResponse<PaymentSettlementService.DailySummaryEntry> getDailySummary(
+    public PagedResponse<DailySummaryEntry> getDailySummary(
             @PathVariable Long pumpId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "10") int size) {
-        return service.getDailySummary(pumpId, from, to, PageRequest.of(page, size));
+        return service.getDailySummary(pumpId, from, to, PageRequests.of(page, size));
     }
 }

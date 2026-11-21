@@ -21,12 +21,12 @@ public class ShiftPlanningRuleService {
         User operator = userRepository.findById(operatorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Operator not found"));
         if (!pumpId.equals(operator.getAssignedPumpId())) {
-            throw new BusinessException("Operator " + operator.getFullName() + " is not assigned to this pump.");
+            throw new ResourceNotFoundException("Operator not found");
         }
     }
 
-    public void validateNightShiftEligibility(Long operatorUserId, Long shiftDefinitionId) {
-        PumpShiftDefinition definition = shiftDefinitionRepository.findById(shiftDefinitionId)
+    public void validateNightShiftEligibility(Long operatorUserId, Long shiftDefinitionId, Long pumpId) {
+        PumpShiftDefinition definition = shiftDefinitionRepository.findByIdAndPumpId(shiftDefinitionId, pumpId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift definition not found"));
         if (!definition.isNightShift()) {
             return;

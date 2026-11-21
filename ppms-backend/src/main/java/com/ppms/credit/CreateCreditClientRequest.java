@@ -2,12 +2,15 @@ package com.ppms.credit;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class CreateCreditClientRequest {
 
     @NotBlank(message = "Client name is required")
+    @Size(max = 100, message = "Name must be at most 100 characters")
+    @Pattern(regexp = "[^<>]*", message = "Name cannot contain < or >")
     private String name;
 
     @NotBlank(message = "Phone number is required")

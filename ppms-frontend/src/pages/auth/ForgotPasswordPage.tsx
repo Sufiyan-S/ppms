@@ -17,7 +17,7 @@ export default function ForgotPasswordPage() {
     try {
       await authApi.forgotPassword(phoneNumber.trim())
       setSent(true)
-    } catch (err: any) {
+    } catch (err) {
       setError(parseApiError(err, 'Something went wrong. Please try again.'))
     } finally {
       setLoading(false)
@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
             If this phone number is registered and has an email address on file,
             we have sent a password reset link. Check your inbox.
           </p>
-          <p className="text-xs text-slate-400">The link expires in 1 hour.</p>
+          <p className="text-xs text-slate-500">The link expires in 1 hour.</p>
           <Link to="/login" className="ui-link inline-flex justify-center">
             Back to login
           </Link>
@@ -68,7 +68,6 @@ export default function ForgotPasswordPage() {
               onChange={e => setPhoneNumber(e.target.value)}
               placeholder="e.g. 9876543210"
               className="shadow-sm"
-              autoFocus
             />
           </div>
 

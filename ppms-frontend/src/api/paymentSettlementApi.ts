@@ -18,6 +18,10 @@ export interface Settlement {
   pendingAtRecordTime: number | null
   /** True when amountReceived < pendingAtRecordTime (partial settlement). */
   isPartial: boolean
+  /** VOIDED settlements are listed for the record but no longer count towards settled amounts. */
+  voidStatus: 'ACTIVE' | 'VOIDED'
+  voidReason: string | null
+  voidedAt: string | null
 }
 
 export interface SettlementConfig {
@@ -70,6 +74,10 @@ export const paymentSettlementApi = {
   /** Record a new settlement (amount received in bank). */
   record: (pumpId: number, data: RecordSettlementRequest): Promise<Settlement> =>
     client.post(`/pumps/${pumpId}/settlements`, data).then(r => r.data),
+
+  /** Void a recorded settlement (Owner/Admin). The reason is required and kept on the record. */
+  voidSettlement: (pumpId: number, settlementId: number, reason: string): Promise<Settlement> =>
+    client.post(`/pumps/${pumpId}/settlements/${settlementId}/void`, { reason }).then(r => r.data),
 
   /** Current wallet balance per payment type. */
   getWallet: (pumpId: number): Promise<WalletSummary> =>

@@ -1,8 +1,5 @@
 package com.ppms.report;
 
-import com.ppms.ancillary.AncillaryLotConsumption;
-import com.ppms.ancillary.AncillaryLotConsumptionRepository;
-import com.ppms.expense.ExpenseApprovalStatus;
 import com.ppms.adjustment.FuelDipEntry;
 import com.ppms.adjustment.FuelDipEntryRepository;
 import com.ppms.adjustment.NozzleReadingAdjustment;
@@ -10,26 +7,22 @@ import com.ppms.adjustment.NozzleReadingAdjustmentRepository;
 import com.ppms.inventory.DipCheck;
 import com.ppms.inventory.DipCheckRepository;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.credit.CreditPaymentRepository;
-import com.ppms.shift.ShiftCreditEntryRepository;
 import com.ppms.fuel.FuelType;
 import com.ppms.fuel.GlobalFuelPrice;
 import com.ppms.fuel.GlobalFuelPriceRepository;
-import com.ppms.inventory.InventoryLot;
-import com.ppms.inventory.InventoryLotRepository;
-import com.ppms.inventory.LotConsumption;
-import com.ppms.inventory.LotConsumptionRepository;
-import com.ppms.inventory.TankerDelivery;
-import com.ppms.inventory.TankerDeliveryRepository;
-import com.ppms.pump.NozzleRepository;
-import com.ppms.pump.UndergroundTank;
-import com.ppms.pump.UndergroundTankRepository;
+import com.ppms.pump.DispensaryUnit;
+import com.ppms.pump.DispensaryUnitRepository;
+import com.ppms.pump.PumpLocationRepository;
 import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionService;
-import com.ppms.settlement.PaymentSettlement;
-import com.ppms.settlement.PaymentSettlementRepository;
-import com.ppms.settlement.SettlementPaymentType;
+import com.ppms.report.BalanceSheetInputsCollector.CostOfGoods;
+import com.ppms.report.BalanceSheetInputsCollector.Deliveries;
+import com.ppms.report.BalanceSheetInputsCollector.DipLosses;
+import com.ppms.report.BalanceSheetInputsCollector.FuelSales;
+import com.ppms.report.BalanceSheetInputsCollector.StockLevels;
 import com.ppms.shift.*;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -45,9 +38,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -62,22 +55,16 @@ public class BalanceSheetService {
     private final DipCheckRepository                   dipCheckRepository;
     private final NozzleReadingAdjustmentRepository    adjustmentRepository;
     private final ShiftRepository           shiftRepository;
-    private final ShiftFuelReadingRepository shiftFuelReadingRepository;
-    private final LotConsumptionRepository  lotConsumptionRepository;
-    private final InventoryLotRepository     inventoryLotRepository;
-    private final TankerDeliveryRepository  tankerDeliveryRepository;
     private final CreditPaymentRepository   creditPaymentRepository;
-    private final ShiftCreditEntryRepository shiftCreditEntryRepository;
     private final GlobalFuelPriceRepository globalFuelPriceRepository;
-    private final UndergroundTankRepository tankRepository;
-    private final NozzleRepository              nozzleRepository;
-    private final com.ppms.pump.DispensaryUnitRepository dispensaryUnitRepository;
+    private final DispensaryUnitRepository dispensaryUnitRepository;
     private final UserRepository            userRepository;
     private final PumpShiftDefinitionService shiftDefinitionService;
     private final BusinessClock             businessClock;
     private final BalanceSheetSupportService supportService;
+    private final BalanceSheetInputsCollector inputs;
     private final BalanceSheetDetailAssembler detailAssembler;
-    private final PaymentSettlementRepository settlementRepository;
+    private final PumpLocationRepository    pumpLocationRepository;
 
     // ── Generate ──────────────────────────────────────────────────────────────
 
@@ -88,265 +75,182 @@ public class BalanceSheetService {
         LocalDate reportDate = req.getReportDate();
         boolean isShift = req.getReportType() == BalanceSheetReportType.SHIFT;
 
-        // Live DAY report: reportDate == today (IST) → use a rolling 24-hour window ending now
-        // so that cross-midnight shifts (e.g. 11pm→9am) are captured correctly.
-        // Historical DAY reports (reportDate < today) use the old calendar-day behaviour.
-        ZoneId ist = ZoneId.of("Asia/Kolkata");
-        boolean isLiveDay = !isShift && reportDate.equals(LocalDate.now(ist));
-        OffsetDateTime windowEnd   = isLiveDay ? businessClock.now() : null;
-        OffsetDateTime windowStart = isLiveDay ? windowEnd.minusHours(24) : null;
+        // Live DAY report: reportDate == today → a rolling 24-hour window ending now, so that
+        // cross-midnight shifts (e.g. 11pm→9am) are captured. Every DAY query uses the same period.
+        // SHIFT reports use the calendar day of reportDate for dip and amendment lookups.
+        boolean isLiveDay = !isShift && reportDate.equals(businessClock.today());
+        ReportPeriod period = isLiveDay
+                ? livePeriod(reportDate, businessClock.now())
+                : businessDayPeriod(reportDate);
 
-        // For SHIFT reports, resolve the definition and use it for duplicate check and querying
-        PumpShiftDefinition shiftDef = null;
-        if (isShift) {
-            shiftDef = shiftDefinitionService.getByIdAndPump(req.getShiftDefinitionId(), pumpId);
-        }
+        PumpShiftDefinition shiftDef = isShift
+                ? shiftDefinitionService.getByIdAndPump(req.getShiftDefinitionId(), pumpId)
+                : null;
 
-        // Guard: prevent accidental duplicate reports unless force flag is set
         if (!req.isForceRegenerate()) {
-            if (isShift) {
-                final Long defId = shiftDef.getId();
-                final String defName = shiftDef.getName();
-                balanceSheetRepository.findFirstByPumpIdAndReportDateAndShiftDefinitionId(pumpId, reportDate, defId)
-                        .ifPresent(bs -> { throw new BusinessException(
-                                "A balance sheet for \"" + defName + "\" on " + reportDate +
-                                " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
-            } else {
-                balanceSheetRepository.findFirstByPumpIdAndReportDateAndReportType(pumpId, reportDate, BalanceSheetReportType.DAY)
-                        .ifPresent(bs -> { throw new BusinessException(
-                                "A day-end balance sheet for " + reportDate + " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
-            }
+            rejectDuplicateSheet(pumpId, reportDate, shiftDef);
         }
 
-        // ── 1. Collect closed shifts ──────────────────────────────────────────
-        // Live DAY: rolling 24-hour window ending now (captures cross-midnight shifts).
-        // Historical DAY / SHIFT: calendar-date or shift-definition filter.
-        List<Shift> shifts = isShift
+        List<Shift> shifts = findClosedShiftsForReport(pumpId, reportDate, shiftDef, isLiveDay, period);
+        List<Long> shiftIds = shifts.stream().map(Shift::getId).toList();
+
+        FuelSales fuelSales = inputs.sumFuelSales(shiftIds);
+        CostOfGoods costOfGoods = inputs.sumCostOfGoods(shiftIds);
+        Map<FuelType, BigDecimal> priceMap = globalFuelPriceRepository.findCurrentPricesForPump(pumpId).stream()
+                .collect(Collectors.toMap(GlobalFuelPrice::getFuelType, GlobalFuelPrice::getPricePerUnit));
+        Deliveries deliveries = isShift ? Deliveries.NONE : inputs.sumDeliveries(pumpId, period);
+        Map<FuelType, BigDecimal> creditByFuel = inputs.sumCreditSoldByFuel(shiftIds);
+
+        Recoveries recoveries = isShift ? Recoveries.NONE : sumRecoveries(pumpId, reportDate, isLiveDay, period);
+        StockLevels stock = inputs.stockLevels(pumpId, reportDate, isShift, isLiveDay, period, shifts);
+
+        Map<Long, FuelType> tankFuelTypeMap = inputs.tankFuelTypesFor(pumpId);
+        List<FuelDipEntry> dipEntries = inputs.dipEntriesFor(pumpId, period);
+        DipLosses dipLosses = inputs.sumDipLosses(dipEntries);
+        // Dipstick variances (measured vs system stock) of every review status; distinct from dip
+        // entries, which are fuel physically removed for maintenance or testing.
+        List<DipCheck> dipChecks = dipCheckRepository.findByPumpIdAndCheckedAtGreaterThanEqualAndCheckedAtLessThan(pumpId, period.start(), period.end());
+        Map<FuelType, BigDecimal> dipVarianceByFuel = BalanceSheetInputsCollector.sumDipCheckVariance(dipChecks, tankFuelTypeMap);
+        List<NozzleReadingAdjustment> amendments =
+                adjustmentRepository.findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(pumpId, period.start(), period.end());
+        List<DipPlLineResponse> dipPlEntries = supportService.buildDipPlEntries(pumpId, dipEntries, dipChecks, tankFuelTypeMap);
+
+        // Totals that feed net profit are stored with the sheet so later price changes or late
+        // approvals cannot change a saved report.
+        BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary =
+                isShift ? null : supportService.buildProductSalesSummary(pumpId, period);
+        BalanceSheetDetailResponse.ExpenseSummary expenseSummary =
+                isShift ? null : supportService.buildExpenseSummary(pumpId, period);
+        BigDecimal dipNetAmount = dipPlEntries.stream()
+                .map(DipPlLineResponse::getMonetaryAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BalanceSheetDetailResponse.SettlementSummary settlementSummary = isShift ? null : supportService.buildSettlementSummary(pumpId, period);
+
+        // The pump row lock is taken only around the final duplicate check and insert, so the
+        // aggregation above does not block cash-outs and settlements on this pump.
+        pumpLocationRepository.findByIdForUpdate(pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+        if (!req.isForceRegenerate()) {
+            rejectDuplicateSheet(pumpId, reportDate, shiftDef);
+        }
+
+        BalanceSheet bs = balanceSheetRepository.save(buildSheet(pumpId, req, shiftDef, generatedBy,
+                buildPeriodLabel(req, pumpId, shiftDef, isLiveDay, period.start(), period.end()),
+                shifts, fuelSales, costOfGoods, deliveries, recoveries.creditRecovered(), recoveries.cashRecovery(),
+                dipLosses, dipNetAmount, productSalesSummary, expenseSummary));
+
+        List<BsFuelLine> fuelLines = BalanceSheetFuelLineBuilder.build(bs.getId(), fuelSales, costOfGoods, deliveries,
+                stock, dipLosses, priceMap, creditByFuel, dipVarianceByFuel);
+        bsFuelLineRepository.saveAll(fuelLines);
+
+        List<BsShiftLine> shiftLines = buildShiftLines(bs.getId(), shifts, fuelSales.readingsByShift());
+        bsShiftLineRepository.saveAll(shiftLines);
+
+        List<MeterAmendmentLineResponse> amendmentLines = buildAmendmentLines(amendments);
+
+        log.info("Balance sheet generated: pump={}, type={}, date={}, window={}, shifts={}, dipChecks={}, dipEntries={}, amendments={}, by={}",
+                pumpId, req.getReportType(), reportDate, shiftDef != null ? shiftDef.getName() : "DAY",
+                shifts.size(), dipChecks.size(), dipEntries.size(), amendmentLines.size(), generatedBy.getId());
+
+        BalanceSheetDetailResponse response = detailAssembler.toDetailResponse(bs, fuelLines, shiftLines,
+                amendmentLines, dipPlEntries, generatedBy.getFullName(), productSalesSummary, expenseSummary);
+
+        if (!isShift) {
+            response.setSettlementSummary(settlementSummary);
+            response.setIncludedShiftNames(distinctShiftNames(shifts));
+        }
+        return response;
+    }
+
+
+
+
+
+    private record Recoveries(BigDecimal creditRecovered, BigDecimal cashRecovery) {
+        static final Recoveries NONE = new Recoveries(BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    private Recoveries sumRecoveries(Long pumpId, LocalDate reportDate, boolean isLiveDay, ReportPeriod period) {
+        BigDecimal creditRecovered = isLiveDay
+                ? creditPaymentRepository.sumApprovedAmountByPumpIdRecordedBetween(pumpId, period.start(), period.end())
+                : creditPaymentRepository.sumAmountByPumpIdAndDate(pumpId, reportDate);
+        BigDecimal cashRecovery = supportService.orZero(isLiveDay
+                ? shiftRepository.sumCashRecoveriesBetween(pumpId, period.start(), period.end())
+                : shiftRepository.sumCashRecoveriesOnDate(pumpId, reportDate));
+        return new Recoveries(creditRecovered, cashRecovery);
+    }
+
+    private void rejectDuplicateSheet(Long pumpId, LocalDate reportDate, PumpShiftDefinition shiftDef) {
+        if (shiftDef != null) {
+            balanceSheetRepository.findFirstByPumpIdAndReportDateAndShiftDefinitionId(pumpId, reportDate, shiftDef.getId())
+                    .ifPresent(bs -> { throw new BusinessException(
+                            "A balance sheet for \"" + shiftDef.getName() + "\" on " + reportDate +
+                            " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
+        } else {
+            balanceSheetRepository.findFirstByPumpIdAndReportDateAndReportType(pumpId, reportDate, BalanceSheetReportType.DAY)
+                    .ifPresent(bs -> { throw new BusinessException(
+                            "A day-end balance sheet for " + reportDate + " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
+        }
+    }
+
+    /**
+     * Live DAY: shifts that ended in the rolling 24-hour window (captures cross-midnight shifts).
+     * Historical DAY / SHIFT: by business date, or by shift definition.
+     */
+    private List<Shift> findClosedShiftsForReport(Long pumpId, LocalDate reportDate, PumpShiftDefinition shiftDef,
+                                                  boolean isLiveDay, ReportPeriod period) {
+        List<Shift> shifts = shiftDef != null
                 ? shiftRepository.findClosedShiftsByDefinition(pumpId, reportDate, shiftDef.getId())
                 : isLiveDay
-                        ? shiftRepository.findClosedShiftsByEndTimeWindow(pumpId, windowStart, windowEnd)
+                        ? shiftRepository.findClosedShiftsByEndTimeWindow(pumpId, period.start(), period.end())
                         : shiftRepository.findClosedShiftsByDate(pumpId, reportDate);
 
         if (shifts.isEmpty()) {
-            String shiftLabel = isShift ? "\"" + shiftDef.getName() + "\" on " : "";
+            String shiftLabel = shiftDef != null ? "\"" + shiftDef.getName() + "\" on " : "";
             String windowHint = isLiveDay
                     ? " (window: last 24 hrs ending now — ensure all shifts for this period are closed)"
                     : "";
             throw new BusinessException("No closed shifts found for " + shiftLabel + reportDate + windowHint + ". Close all shifts before generating a balance sheet.");
         }
+        return shifts;
+    }
 
-        List<Long> shiftIds = shifts.stream().map(Shift::getId).toList();
 
-        // ── 2. Fuel readings — litres sold per fuel type ──────────────────────
-        List<ShiftFuelReading> allReadings = shiftFuelReadingRepository.findByShiftIdIn(shiftIds);
 
-        // Group readings by fuel type
-        Map<FuelType, BigDecimal> litresByFuel      = new EnumMap<>(FuelType.class);
-        // Historical expected revenue per fuel type: sum(unitsSold × priceSnapshot) at close time.
-        // Using priceSnapshot (not current price) keeps the per-fuel revenue consistent with
-        // totalExpectedRevenue which is derived from shift.totalAmountDue (also snapshot-based).
-        Map<FuelType, BigDecimal> expectedRevByFuel = new EnumMap<>(FuelType.class);
-        Map<Long, List<ShiftFuelReading>> readingsByShift = allReadings.stream()
-                .collect(Collectors.groupingBy(ShiftFuelReading::getShiftId));
 
-        for (ShiftFuelReading r : allReadings) {
-            BigDecimal units = r.getUnitsSold() != null ? r.getUnitsSold() : BigDecimal.ZERO;
-            litresByFuel.merge(r.getFuelType(), units, BigDecimal::add);
-            if (r.getPriceSnapshot() != null && units.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal rev = units.multiply(r.getPriceSnapshot());
-                expectedRevByFuel.merge(r.getFuelType(), rev, BigDecimal::add);
-            }
-        }
 
-        // ── 3. COGS — FIFO lot costs for sold litres ──────────────────────────
-        // Batch-fetch all consumptions for all shifts in one query
-        List<LotConsumption> consumptions = shiftIds.isEmpty()
-                ? List.of()
-                : lotConsumptionRepository.findByShiftIdIn(shiftIds);
 
-        // Batch-fetch the lots referenced by these consumptions to get per-fuel-type cost
-        List<Long> consumedLotIds = consumptions.stream().map(LotConsumption::getLotId).distinct().toList();
-        Map<Long, FuelType> lotFuelTypeById = consumedLotIds.isEmpty()
-                ? Map.of()
-                : inventoryLotRepository.findAllById(consumedLotIds).stream()
-                        .collect(Collectors.toMap(InventoryLot::getId, InventoryLot::getFuelType));
 
-        // COGS per fuel type — exact, based on actual lot cost prices consumed in each shift
-        Map<FuelType, BigDecimal> cogsByFuel = new EnumMap<>(FuelType.class);
-        BigDecimal totalCogs = BigDecimal.ZERO;
-        for (LotConsumption c : consumptions) {
-            FuelType ft = lotFuelTypeById.get(c.getLotId());
-            if (ft == null) continue; // orphaned consumption — skip
-            BigDecimal cost = c.getQuantityConsumed().multiply(c.getCostPricePerUnit());
-            cogsByFuel.merge(ft, cost, BigDecimal::add);
-            totalCogs = totalCogs.add(cost);
-        }
-        totalCogs = totalCogs.setScale(2, RoundingMode.HALF_UP);
 
-        // ── 4. Global selling prices ──────────────────────────────────────────
-        List<GlobalFuelPrice> prices = globalFuelPriceRepository.findCurrentPricesForPump(pumpId);
-        Map<FuelType, BigDecimal> priceMap = prices.stream()
-                .collect(Collectors.toMap(GlobalFuelPrice::getFuelType, GlobalFuelPrice::getPricePerUnit));
 
-        // ── 5. Tanker deliveries (DAY reports only) ───────────────────────────
-        List<TankerDelivery> deliveries = Collections.emptyList();
-        if (!isShift) {
-            OffsetDateTime dayStart = isLiveDay ? windowStart : supportService.startOfBusinessDay(reportDate);
-            OffsetDateTime dayEnd   = isLiveDay ? windowEnd   : supportService.startOfBusinessDay(reportDate.plusDays(1));
-            deliveries = tankerDeliveryRepository.findByPumpIdAndDeliveryDateBetween(pumpId, dayStart, dayEnd);
-        }
+    private BalanceSheet buildSheet(Long pumpId, GenerateBalanceSheetRequest req, PumpShiftDefinition shiftDef,
+                                    User generatedBy, String periodLabel, List<Shift> shifts,
+                                    FuelSales fuelSales, CostOfGoods costOfGoods, Deliveries deliveries,
+                                    BigDecimal creditRecovered, BigDecimal totalCashRecovery,
+                                    DipLosses dipLosses, BigDecimal dipNetAmount,
+                                    BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary,
+                                    BalanceSheetDetailResponse.ExpenseSummary expenseSummary) {
+        BigDecimal totalCash      = sumShiftAmounts(shifts, Shift::getCashCollected);
+        BigDecimal totalUpi       = sumShiftAmounts(shifts, Shift::getUpiCollected);
+        BigDecimal totalCard      = sumShiftAmounts(shifts, Shift::getCardCollected);
+        BigDecimal totalFleetCard = sumShiftAmounts(shifts, Shift::getFleetCardCollected);
+        BigDecimal totalCredit    = sumShiftAmounts(shifts, Shift::getCreditTotal);
+        // Each shift's totalAmountDue was priced at close time, so this stays right after price changes.
+        BigDecimal totalExpectedRevenue = sumShiftAmounts(shifts, Shift::getTotalAmountDue).setScale(2, RoundingMode.HALF_UP);
 
-        // Group deliveries by fuel type
-        Map<FuelType, BigDecimal> deliveredLitresByFuel = new EnumMap<>(FuelType.class);
-        Map<FuelType, BigDecimal> deliveredCostByFuel   = new EnumMap<>(FuelType.class);
-        for (TankerDelivery d : deliveries) {
-            deliveredLitresByFuel.merge(d.getFuelType(), d.getQuantityDelivered(), BigDecimal::add);
-            BigDecimal cost = d.getQuantityDelivered().multiply(d.getCostPricePerUnit());
-            deliveredCostByFuel.merge(d.getFuelType(), cost, BigDecimal::add);
-        }
-
-        // ── 6. Credit sold per fuel type ──────────────────────────────────────
-        // Batch-fetch all credit entries for all shifts in one query.
-        // Voided entries are excluded — they represent cancelled transactions and must
-        // not inflate the credit-sold figures on the balance sheet.
-        Map<FuelType, BigDecimal> creditByFuel = new EnumMap<>(FuelType.class);
-        List<ShiftCreditEntry> allCreditEntries = shiftIds.isEmpty()
-                ? List.of()
-                : shiftCreditEntryRepository.findByShiftIdIn(shiftIds).stream()
-                        .filter(e -> !"VOIDED".equals(e.getVoidStatus()))
-                        .toList();
-        for (ShiftCreditEntry entry : allCreditEntries) {
-            try {
-                FuelType ft = FuelType.valueOf(entry.getFuelType());
-                BigDecimal amt = entry.getAmount() != null ? entry.getAmount() : BigDecimal.ZERO;
-                creditByFuel.merge(ft, amt, BigDecimal::add);
-            } catch (IllegalArgumentException ignored) {
-                // Unrecognised fuel type — skip
-            }
-        }
-
-        // ── 7. Credit recovered (DAY reports only) ────────────────────────────
-        BigDecimal creditRecovered = !isShift
-                ? creditPaymentRepository.sumAmountByPumpIdAndDate(pumpId, reportDate)
-                : BigDecimal.ZERO;
-
-        // ── 7b. Cash recoveries for SHORT discrepancies resolved today (DAY only) ─
-        BigDecimal totalCashRecovery = !isShift
-                ? shiftRepository.sumCashRecoveriesOnDate(pumpId, reportDate)
-                : BigDecimal.ZERO;
-        if (totalCashRecovery == null) totalCashRecovery = BigDecimal.ZERO;
-
-        // ── 8. Current tank stocks per fuel type ──────────────────────────────
-        List<UndergroundTank> tanks = tankRepository.findByPumpId(pumpId);
-        Map<FuelType, BigDecimal> currentStockByFuel = new EnumMap<>(FuelType.class);
-        for (UndergroundTank t : tanks) {
-            BigDecimal stock = t.getCurrentStock() != null ? t.getCurrentStock() : BigDecimal.ZERO;
-            currentStockByFuel.merge(t.getFuelType(), stock, BigDecimal::add);
-        }
-
-        // ── 9. Dip losses for the report period ──────────────────────────────
-        // Fetch FuelDipEntry records for this pump and date range.
-        // For SHIFT/historical reports use reportDate.
-        // For live DAY reports use the calendar dates covered by the 24-hour window
-        // (windowStart may be yesterday, so we span two dates).
-        LocalDate dipFrom = isLiveDay ? windowStart.atZoneSameInstant(ist).toLocalDate() : reportDate;
-        LocalDate dipTo   = isLiveDay ? windowEnd.atZoneSameInstant(ist).toLocalDate()   : reportDate;
-        List<FuelDipEntry> dipEntries = fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, dipFrom, dipTo);
-
-        // Group by fuel type: litres and monetary loss
-        Map<FuelType, BigDecimal> dipLitresByFuel = new EnumMap<>(FuelType.class);
-        Map<FuelType, BigDecimal> dipAmountByFuel = new EnumMap<>(FuelType.class);
-        for (FuelDipEntry d : dipEntries) {
-            try {
-                FuelType ft = FuelType.valueOf(d.getFuelType());
-                dipLitresByFuel.merge(ft, d.getLitresRemoved(), BigDecimal::add);
-                dipAmountByFuel.merge(ft, d.getMonetaryLoss(), BigDecimal::add);
-            } catch (IllegalArgumentException ignored) {
-                // Unknown fuel type in old dip record — skip
-            }
-        }
-
-        BigDecimal totalDipLossAmount = dipAmountByFuel.values().stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
-
-        // ── 10a. DIP check variances for the report period ───────────────────
-        // These are discrepancies from dipstick readings (measured vs system stock).
-        // Different from FuelDipEntry (physical removal for maintenance) — both are tracked.
-        // All checks (WITHIN_TOLERANCE, PENDING_REVIEW, REVIEWED) are included: the
-        // variance happened regardless of review status.
-        OffsetDateTime periodStart = isLiveDay ? windowStart : supportService.startOfBusinessDay(reportDate);
-        OffsetDateTime periodEnd   = isLiveDay ? windowEnd   : supportService.startOfBusinessDay(reportDate.plusDays(1));
-        List<DipCheck> dipChecks = dipCheckRepository.findByPumpIdAndCheckedAtBetween(pumpId, periodStart, periodEnd);
-
-        // Build tankId → fuelType map from already-loaded tanks
-        Map<Long, FuelType> tankFuelTypeMap = tanks.stream()
-                .collect(Collectors.toMap(UndergroundTank::getId, UndergroundTank::getFuelType,
-                        (a, b) -> a));
-
-        // Sum net DIP variance per fuel type (positive = surplus found, negative = shortage)
-        Map<FuelType, BigDecimal> dipVarianceByFuel = new EnumMap<>(FuelType.class);
-        for (DipCheck dc : dipChecks) {
-            FuelType ft = tankFuelTypeMap.get(dc.getTankId());
-            if (ft == null) continue;
-            BigDecimal variance = dc.getMeasuredQuantity().subtract(dc.getSystemStock());
-            dipVarianceByFuel.merge(ft, variance, BigDecimal::add);
-        }
-
-        // ── 10b. Meter reading amendments for the report period ───────────────
-        List<NozzleReadingAdjustment> amendments =
-                adjustmentRepository.findByPumpIdAndCreatedAtBetweenOrderByCreatedAtAsc(
-                        pumpId, periodStart, periodEnd);
-
-        // ── 10c. Build individual Dip P/L entries ─────────────────────────────
-        // One entry per FuelDipEntry (maintenance removal) and one per DipCheck (variance reading).
-        // These are returned in the response for per-entry drill-down.
-        List<DipPlLineResponse> dipPlEntries = supportService.buildDipPlEntries(dipEntries, dipChecks, priceMap, tankFuelTypeMap);
-
-        // ── 10. Build fuel lines ──────────────────────────────────────────────
-        // Union of all fuel types that appear in readings, deliveries, tanks, or dips
-        Set<FuelType> allFuelTypes = new LinkedHashSet<>();
-        allFuelTypes.addAll(litresByFuel.keySet());
-        allFuelTypes.addAll(deliveredLitresByFuel.keySet());
-        allFuelTypes.addAll(currentStockByFuel.keySet());
-        allFuelTypes.addAll(dipLitresByFuel.keySet());
-
-        // For COGS per fuel type: distribute proportionally by litres sold
-        BigDecimal totalLitresSold = litresByFuel.values().stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // ── 11. Totals for parent record ─────────────────────────────────────
-        BigDecimal totalCash      = shifts.stream().map(s -> supportService.orZero(s.getCashCollected())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalUpi       = shifts.stream().map(s -> supportService.orZero(s.getUpiCollected())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCard      = shifts.stream().map(s -> supportService.orZero(s.getCardCollected())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalFleetCard = shifts.stream().map(s -> supportService.orZero(s.getFleetCardCollected())).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCredit    = shifts.stream().map(s -> supportService.orZero(s.getCreditTotal())).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Expected revenue = sum of each shift's totalAmountDue (uses priceSnapshot at close time —
-        // historically accurate even when prices change between shift close and BS generation).
-        BigDecimal totalExpectedRevenue = shifts.stream()
-                .map(s -> supportService.orZero(s.getTotalAmountDue()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
-
-        BigDecimal totalDeliveredLitres = deliveredLitresByFuel.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // cashDiscrepancy = Collected − Expected.
-        // Positive (+) → OVER  (operator handed in MORE than expected)
-        // Negative (−) → SHORT (operator handed in LESS than expected)
-        // Fleet card is cash-equivalent — counts in collected total.
+        // Collected − Expected: positive is OVER, negative is SHORT. Fleet card counts as collected.
         BigDecimal totalCollected = totalCash.add(totalUpi).add(totalCard).add(totalFleetCard).add(totalCredit);
-        BigDecimal cashDiscrepancy = totalCollected.subtract(totalExpectedRevenue)
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal cashDiscrepancy = totalCollected.subtract(totalExpectedRevenue).setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal grossProfit = totalExpectedRevenue.subtract(totalCogs).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalLitresSold = fuelSales.litresByFuel().values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDeliveredLitres = deliveries.litresByFuel().values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // ── 11. Persist parent record ─────────────────────────────────────────
-        String periodLabel = buildPeriodLabel(req, pumpId, shiftDef, isLiveDay, windowStart, windowEnd);
-        BalanceSheet bs = BalanceSheet.builder()
+        return BalanceSheet.builder()
                 .pumpId(pumpId)
                 .reportType(req.getReportType())
-                .reportDate(reportDate)
+                .reportDate(req.getReportDate())
                 .shiftWindow(shiftDef != null ? shiftDef.getName() : null)
                 .shiftDefinitionId(shiftDef != null ? shiftDef.getId() : null)
                 .periodLabel(periodLabel)
@@ -364,119 +268,58 @@ public class BalanceSheetService {
                 .cashDiscrepancy(cashDiscrepancy)
                 .totalLitresSold(totalLitresSold.setScale(3, RoundingMode.HALF_UP))
                 .totalLitresDelivered(totalDeliveredLitres.setScale(3, RoundingMode.HALF_UP))
-                .totalCostOfGoods(totalCogs)
-                .totalGrossProfit(grossProfit)
-                .totalDipLossAmount(totalDipLossAmount)
+                .totalCostOfGoods(costOfGoods.total())
+                .totalGrossProfit(totalExpectedRevenue.subtract(costOfGoods.total()).setScale(2, RoundingMode.HALF_UP))
+                .totalDipLossAmount(dipLosses.totalAmount())
+                .totalDipNetAmount(dipNetAmount)
+                .productSalesGrossProfit(productSalesSummary != null
+                        ? supportService.orZero(productSalesSummary.getGrossProfit()) : BigDecimal.ZERO)
+                .totalExpensesAmount(expenseSummary != null
+                        ? supportService.orZero(expenseSummary.getTotalAmount()) : BigDecimal.ZERO)
                 .build();
+    }
 
-        bs = balanceSheetRepository.save(bs);
-        final Long bsId = bs.getId();
+    private BigDecimal sumShiftAmounts(List<Shift> shifts, Function<Shift, BigDecimal> amountOf) {
+        return shifts.stream().map(s -> supportService.orZero(amountOf.apply(s))).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
 
-        // ── 12. Persist fuel lines ────────────────────────────────────────────
-        List<BsFuelLine> fuelLines = new ArrayList<>();
-        for (FuelType ft : allFuelTypes) {
-            BigDecimal soldLitres    = litresByFuel.getOrDefault(ft, BigDecimal.ZERO);
-            // sellingPrice is retained for display/reference only (current price at generation time).
-            BigDecimal sellingPrice  = priceMap.getOrDefault(ft, BigDecimal.ZERO);
-            // expectedRev uses historical price snapshots from each reading so the per-fuel total
-            // matches totalExpectedRevenue (sum of shift.totalAmountDue) exactly.
-            BigDecimal expectedRev   = expectedRevByFuel.getOrDefault(ft, BigDecimal.ZERO)
-                                           .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal delivLitres   = deliveredLitresByFuel.getOrDefault(ft, BigDecimal.ZERO);
-            BigDecimal delivCost     = deliveredCostByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal creditSold    = creditByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-
-            // Exact COGS per fuel type from actual FIFO lot costs
-            BigDecimal cogsFuel = cogsByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-
-            BigDecimal grossProfitFuel = expectedRev.subtract(cogsFuel);
-
-            // Stock reconstruction:
-            //   closing_stock = current tank stock (captured at generation time)
-            //   opening_stock = closing + sold_in_period - delivered_in_period
-            BigDecimal closingStock   = currentStockByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(3, RoundingMode.HALF_UP);
-            BigDecimal openingStock   = closingStock.add(soldLitres).subtract(delivLitres).setScale(3, RoundingMode.HALF_UP);
-            BigDecimal dipLossLitres  = dipLitresByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(3, RoundingMode.HALF_UP);
-            BigDecimal dipLossAmount  = dipAmountByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-            // stockVariance = net DIP check variance from dipstick readings (measured − system_stock).
-            // Positive = surplus (more fuel than expected), negative = shortage.
-            // Distinct from dipLossLitres which tracks physically removed fuel (maintenance/testing).
-            BigDecimal stockVariance  = dipVarianceByFuel.getOrDefault(ft, BigDecimal.ZERO).setScale(3, RoundingMode.HALF_UP);
-
-            BsFuelLine line = BsFuelLine.builder()
-                    .balanceSheetId(bsId)
-                    .fuelType(ft.name())
-                    .openingStock(openingStock)
-                    .closingStock(closingStock)
-                    .deliveredLitres(delivLitres.setScale(3, RoundingMode.HALF_UP))
-                    .deliveredCost(delivCost)
-                    .soldLitres(soldLitres.setScale(3, RoundingMode.HALF_UP))
-                    .sellingPrice(sellingPrice)
-                    .expectedRevenue(expectedRev)
-                    .costOfGoods(cogsFuel)
-                    .grossProfit(grossProfitFuel)
-                    .creditSoldAmount(creditSold)
-                    .stockVariance(stockVariance)
-                    .dipLossLitres(dipLossLitres)
-                    .dipLossAmount(dipLossAmount)
-                    .build();
-
-            fuelLines.add(line);
-        }
-        bsFuelLineRepository.saveAll(fuelLines);
-
-        // ── 13. Persist shift lines ───────────────────────────────────────────
-        List<BsShiftLine> shiftLines = new ArrayList<>();
-
-        // Batch-fetch operator names and nozzle numbers in two queries to avoid N+1.
+    private List<BsShiftLine> buildShiftLines(Long balanceSheetId, List<Shift> shifts,
+                                              Map<Long, List<ShiftFuelReading>> readingsByShift) {
         Set<Long> operatorIds = shifts.stream().map(Shift::getOperatorId).collect(Collectors.toSet());
         Map<Long, String> operatorNames = userRepository.findAllById(operatorIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
-
         Set<Long> duIds = shifts.stream().map(Shift::getDuId).collect(Collectors.toSet());
-        List<com.ppms.pump.DispensaryUnit> fetchedDUs = dispensaryUnitRepository.findAllById(duIds);
-        Map<Long, Integer> duNumbers = fetchedDUs.stream()
-                .collect(Collectors.toMap(com.ppms.pump.DispensaryUnit::getId, com.ppms.pump.DispensaryUnit::getDuNumber));
-        Map<Long, String> duNames = fetchedDUs.stream()
-                .collect(Collectors.toMap(com.ppms.pump.DispensaryUnit::getId, com.ppms.pump.DispensaryUnit::getName));
+        Map<Long, DispensaryUnit> duById = dispensaryUnitRepository.findAllById(duIds).stream()
+                .collect(Collectors.toMap(DispensaryUnit::getId, Function.identity()));
 
+        List<BsShiftLine> shiftLines = new ArrayList<>();
         for (Shift s : shifts) {
             List<ShiftFuelReading> readings = readingsByShift.getOrDefault(s.getId(), List.of());
-
             BigDecimal shiftLitres = readings.stream()
                     .map(r -> r.getUnitsSold() != null ? r.getUnitsSold() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-
             String fuelTypesSummary = readings.stream()
                     .filter(r -> r.getUnitsSold() != null && r.getUnitsSold().compareTo(BigDecimal.ZERO) > 0)
                     .map(r -> r.getFuelType().name())
                     .distinct()
                     .sorted()
                     .collect(Collectors.joining(", "));
-            if (fuelTypesSummary.isEmpty()) fuelTypesSummary = "—";
 
-            // Expected revenue for this shift: use totalAmountDue (computed at close time using
-            // priceSnapshot — historically accurate for balance sheets generated after a price change).
             BigDecimal shiftExpected = supportService.orZero(s.getTotalAmountDue());
-
-            // Signed discrepancy: Collected − Expected.
-            // Positive (+) → OVER, Negative (−) → SHORT (matches cashDiscrepancy convention above).
-            // Fleet card counts as collected (cash-equivalent).
             BigDecimal shiftCollected = supportService.orZero(s.getCashCollected())
                     .add(supportService.orZero(s.getUpiCollected()))
                     .add(supportService.orZero(s.getCardCollected()))
                     .add(supportService.orZero(s.getFleetCardCollected()))
                     .add(supportService.orZero(s.getCreditTotal()));
-            BigDecimal shiftDiscrepancy = shiftCollected.subtract(shiftExpected)
-                    .setScale(2, RoundingMode.HALF_UP);
+            DispensaryUnit du = duById.get(s.getDuId());
 
-            BsShiftLine line = BsShiftLine.builder()
-                    .balanceSheetId(bsId)
+            shiftLines.add(BsShiftLine.builder()
+                    .balanceSheetId(balanceSheetId)
                     .shiftId(s.getId())
                     .operatorName(operatorNames.getOrDefault(s.getOperatorId(), "Unknown"))
-                    .duNumber(duNumbers.getOrDefault(s.getDuId(), 0))
-                    .duName(duNames.getOrDefault(s.getDuId(), ""))
-                    .fuelTypesSummary(fuelTypesSummary)
+                    .duNumber(du != null ? du.getDuNumber() : 0)
+                    .duName(du != null ? du.getName() : "")
+                    .fuelTypesSummary(fuelTypesSummary.isEmpty() ? "—" : fuelTypesSummary)
                     .litresSold(shiftLitres.setScale(3, RoundingMode.HALF_UP))
                     .expectedRevenue(shiftExpected)
                     .cashCollected(supportService.orZero(s.getCashCollected()))
@@ -484,22 +327,17 @@ public class BalanceSheetService {
                     .cardCollected(supportService.orZero(s.getCardCollected()))
                     .fleetCardCollected(supportService.orZero(s.getFleetCardCollected()))
                     .creditAmount(supportService.orZero(s.getCreditTotal()))
-                    .discrepancy(shiftDiscrepancy)
-                    .build();
-
-            shiftLines.add(line);
+                    .discrepancy(shiftCollected.subtract(shiftExpected).setScale(2, RoundingMode.HALF_UP))
+                    .build());
         }
-        bsShiftLineRepository.saveAll(shiftLines);
+        return shiftLines;
+    }
 
-        // ── 14. Build meter amendment lines ───────────────────────────────────
-        // Pre-load user names for amendments in one batch to avoid N+1
-        Set<Long> amendmentUserIds = amendments.stream()
-                .map(NozzleReadingAdjustment::getRecordedByUserId)
-                .collect(Collectors.toSet());
-        Map<Long, String> amendmentUserNames = userRepository.findAllById(amendmentUserIds).stream()
+    private List<MeterAmendmentLineResponse> buildAmendmentLines(List<NozzleReadingAdjustment> amendments) {
+        Set<Long> userIds = amendments.stream().map(NozzleReadingAdjustment::getRecordedByUserId).collect(Collectors.toSet());
+        Map<Long, String> userNames = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
-
-        List<MeterAmendmentLineResponse> amendmentLines = amendments.stream()
+        return amendments.stream()
                 .map(a -> MeterAmendmentLineResponse.builder()
                         .id(a.getId())
                         .fuelType(a.getFuelType())
@@ -508,33 +346,18 @@ public class BalanceSheetService {
                         .newReading(a.getNewReading())
                         .delta(a.getNewReading().subtract(a.getPreviousReading()))
                         .reason(a.getReason())
-                        .recordedByUserName(amendmentUserNames.getOrDefault(a.getRecordedByUserId(), "Unknown"))
+                        .recordedByUserName(userNames.getOrDefault(a.getRecordedByUserId(), "Unknown"))
                         .createdAt(a.getCreatedAt())
                         .build())
                 .toList();
+    }
 
-        log.info("Balance sheet generated: pump={}, type={}, date={}, window={}, shifts={}, dipChecks={}, dipEntries={}, amendments={}, by={}",
-                pumpId, req.getReportType(), reportDate, shiftDef != null ? shiftDef.getName() : "DAY",
-                shifts.size(), dipChecks.size(), dipEntries.size(), amendmentLines.size(), generatedBy.getId());
-
-        BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary =
-                isShift ? null : supportService.buildProductSalesSummary(pumpId, reportDate);
-        BalanceSheetDetailResponse.ExpenseSummary expenseSummary =
-                isShift ? null : supportService.buildExpenseSummary(pumpId, reportDate);
-
-        BalanceSheetDetailResponse response = detailAssembler.toDetailResponse(bs, fuelLines, shiftLines,
-                amendmentLines, dipPlEntries, generatedBy.getFullName(), productSalesSummary, expenseSummary);
-
-        if (!isShift) {
-            response.setSettlementSummary(buildSettlementSummary(pumpId, reportDate));
-            List<String> shiftNames = shifts.stream()
-                    .map(Shift::getShiftName)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
-            response.setIncludedShiftNames(shiftNames);
-        }
-        return response;
+    private static List<String> distinctShiftNames(List<Shift> shifts) {
+        return shifts.stream()
+                .map(Shift::getShiftName)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     // ── Queries ───────────────────────────────────────────────────────────────
@@ -589,95 +412,52 @@ public class BalanceSheetService {
     @Transactional(readOnly = true)
     public BalanceSheetDetailResponse getById(Long pumpId, Long id) {
         BalanceSheet bs = balanceSheetRepository.findById(id)
-                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException("Balance sheet not found"));
-        if (!bs.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Balance sheet does not belong to this pump");
-        }
+                .filter(found -> found.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException("Balance sheet not found"));
         List<BsFuelLine>  fuelLines  = bsFuelLineRepository.findByBalanceSheetIdOrderByFuelType(id);
         List<BsShiftLine> shiftLines = bsShiftLineRepository.findByBalanceSheetIdOrderByDuNumber(id);
         String userName = bs.getGeneratedByUserId() != null
                 ? userRepository.findById(bs.getGeneratedByUserId()).map(User::getFullName).orElse("Unknown")
                 : "System";
 
-        // Re-fetch live amendments, DIP checks, and DIP entries for the report's period so the
-        // detail view is always current (these are not stored on the balance sheet snapshot itself).
-        // Live DAY reports (reportDate == generatedAt date in IST) used a 24-hour rolling window
-        // anchored to generatedAt — re-derive the same window here for consistency.
-        ZoneId ist = ZoneId.of("Asia/Kolkata");
-        LocalDate generatedDate = bs.getGeneratedAt().atZoneSameInstant(ist).toLocalDate();
+        // Amendments, dip checks and line items are re-read for the report's period; the totals that
+        // feed net profit come from the values stored at generation. A live DAY report re-derives the
+        // same 24-hour window anchored to generatedAt.
+        LocalDate generatedDate = bs.getGeneratedAt().atZoneSameInstant(businessClock.zone()).toLocalDate();
         boolean isLiveDayReport = bs.getReportType() == BalanceSheetReportType.DAY
                 && bs.getReportDate().equals(generatedDate);
-
-        OffsetDateTime from = isLiveDayReport
-                ? bs.getGeneratedAt().minusHours(24)
-                : supportService.startOfBusinessDay(bs.getReportDate());
-        OffsetDateTime to   = isLiveDayReport
-                ? bs.getGeneratedAt()
-                : supportService.startOfBusinessDay(bs.getReportDate().plusDays(1));
+        ReportPeriod period = isLiveDayReport
+                ? livePeriod(bs.getReportDate(), bs.getGeneratedAt())
+                : businessDayPeriod(bs.getReportDate());
+        OffsetDateTime from = period.start();
+        OffsetDateTime to   = period.end();
 
         List<NozzleReadingAdjustment> amendments =
-                adjustmentRepository.findByPumpIdAndCreatedAtBetweenOrderByCreatedAtAsc(pumpId, from, to);
+                adjustmentRepository.findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(pumpId, from, to);
 
-        Set<Long> userIds = amendments.stream().map(NozzleReadingAdjustment::getRecordedByUserId).collect(Collectors.toSet());
-        Map<Long, String> userNames = userRepository.findAllById(userIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getFullName));
+        List<MeterAmendmentLineResponse> amendmentLines = buildAmendmentLines(amendments);
 
-        List<MeterAmendmentLineResponse> amendmentLines = amendments.stream()
-                .map(a -> MeterAmendmentLineResponse.builder()
-                        .id(a.getId())
-                        .fuelType(a.getFuelType())
-                        .adjustmentType(a.getAdjustmentType())
-                        .previousReading(a.getPreviousReading())
-                        .newReading(a.getNewReading())
-                        .delta(a.getNewReading().subtract(a.getPreviousReading()))
-                        .reason(a.getReason())
-                        .recordedByUserName(userNames.getOrDefault(a.getRecordedByUserId(), "Unknown"))
-                        .createdAt(a.getCreatedAt())
-                        .build())
-                .toList();
-
-        // Re-fetch dip entries and checks to build individual Dip P/L entries live.
-        // Live DAY reports span up to two calendar dates (e.g. window 21 Apr 15:05 → 22 Apr 15:05)
-        // so derive dipFrom/dipTo from the same 24-hour window used during generation.
-        LocalDate dipFrom = isLiveDayReport
-                ? bs.getGeneratedAt().minusHours(24).atZoneSameInstant(ist).toLocalDate()
-                : bs.getReportDate();
-        LocalDate dipTo   = isLiveDayReport
-                ? bs.getGeneratedAt().atZoneSameInstant(ist).toLocalDate()
-                : bs.getReportDate();
-        List<FuelDipEntry> dipEntries =
-                fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, dipFrom, dipTo);
+        List<FuelDipEntry> dipEntries = inputs.dipEntriesFor(pumpId, period);
         List<DipCheck> dipChecks =
-                dipCheckRepository.findByPumpIdAndCheckedAtBetween(pumpId, from, to);
+                dipCheckRepository.findByPumpIdAndCheckedAtGreaterThanEqualAndCheckedAtLessThan(pumpId, from, to);
 
-        // Current prices for DIP check monetary conversion
-        Map<FuelType, BigDecimal> priceMap = globalFuelPriceRepository.findCurrentPricesForPump(pumpId).stream()
-                .collect(Collectors.toMap(GlobalFuelPrice::getFuelType, GlobalFuelPrice::getPricePerUnit));
+        Map<Long, FuelType> tankFuelTypeMap = inputs.tankFuelTypesFor(pumpId);
 
-        // Tank → fuelType mapping for DIP check entries
-        Map<Long, FuelType> tankFuelTypeMap = tankRepository.findByPumpId(pumpId).stream()
-                .collect(Collectors.toMap(UndergroundTank::getId, UndergroundTank::getFuelType, (a, b) -> a));
-
-        List<DipPlLineResponse> dipPlEntries = supportService.buildDipPlEntries(dipEntries, dipChecks, priceMap, tankFuelTypeMap);
+        List<DipPlLineResponse> dipPlEntries = supportService.buildDipPlEntries(pumpId, dipEntries, dipChecks, tankFuelTypeMap);
 
         boolean isDayReport = bs.getReportType() == BalanceSheetReportType.DAY;
         BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary =
-                isDayReport ? supportService.buildProductSalesSummary(bs.getPumpId(), bs.getReportDate()) : null;
+                isDayReport ? supportService.buildProductSalesSummary(bs.getPumpId(), period) : null;
         BalanceSheetDetailResponse.ExpenseSummary expenseSummary =
-                isDayReport ? supportService.buildExpenseSummary(bs.getPumpId(), bs.getReportDate()) : null;
+                isDayReport ? supportService.buildExpenseSummary(bs.getPumpId(), period) : null;
 
         BalanceSheetDetailResponse response = detailAssembler.toDetailResponse(bs, fuelLines, shiftLines,
                 amendmentLines, dipPlEntries, userName, productSalesSummary, expenseSummary);
 
         if (isDayReport) {
-            response.setSettlementSummary(buildSettlementSummary(bs.getPumpId(), bs.getReportDate()));
+            response.setSettlementSummary(supportService.buildSettlementSummary(bs.getPumpId(), period));
             List<Long> shiftIds = shiftLines.stream().map(BsShiftLine::getShiftId).toList();
-            List<String> shiftNames = shiftRepository.findAllById(shiftIds).stream()
-                    .map(Shift::getShiftName)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
-            response.setIncludedShiftNames(shiftNames);
+            response.setIncludedShiftNames(distinctShiftNames(shiftRepository.findAllById(shiftIds)));
         }
         return response;
     }
@@ -685,85 +465,27 @@ public class BalanceSheetService {
     @Transactional
     public void delete(Long pumpId, Long id) {
         BalanceSheet bs = balanceSheetRepository.findById(id)
-                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException("Balance sheet not found"));
-        if (!bs.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Balance sheet does not belong to this pump");
-        }
+                .filter(found -> found.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException("Balance sheet not found"));
         balanceSheetRepository.delete(bs);
         log.info("Balance sheet deleted: id={}, pump={}", id, pumpId);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /**
-     * Builds the settlement summary for a DAY balance sheet.
-     *
-     * settlementsOnDate — entries recorded on this date (the date money arrived in bank).
-     * settled amounts   — totals per type for this date.
-     * wallet pending    — cumulative (all collections up to reportDate) − (all settlements up to reportDate).
-     *
-     * The "as-of" wallet snapshot uses reportDate as the cut-off so the figure is historically
-     * accurate even when viewed months later.
-     */
-    private BalanceSheetDetailResponse.SettlementSummary buildSettlementSummary(Long pumpId, LocalDate reportDate) {
-        // Individual settlements recorded for this date (drill-down list)
-        List<PaymentSettlement> onDate = settlementRepository
-                .findByPumpIdAndSettlementDateOrderByCreatedAtDesc(pumpId, reportDate);
 
-        // Batch-load recorder names
-        Set<Long> recorderIds = onDate.stream()
-                .map(PaymentSettlement::getRecordedByUserId)
-                .collect(Collectors.toSet());
-        Map<Long, String> recorderNames = recorderIds.isEmpty()
-                ? Map.of()
-                : userRepository.findAllById(recorderIds).stream()
-                        .collect(Collectors.toMap(User::getId, User::getFullName));
-
-        // Per-type settled amounts on this date
-        BigDecimal upiOnDate   = onDate.stream()
-                .filter(s -> s.getPaymentType() == SettlementPaymentType.UPI)
-                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal cardOnDate  = onDate.stream()
-                .filter(s -> s.getPaymentType() == SettlementPaymentType.CARD)
-                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal fleetOnDate = onDate.stream()
-                .filter(s -> s.getPaymentType() == SettlementPaymentType.FLEET_CARD)
-                .map(PaymentSettlement::getAmountReceived).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Cumulative wallet as-of reportDate
-        BigDecimal upiCollected   = shiftRepository.sumUpiCollectedByPumpIdAsOf(pumpId, reportDate);
-        BigDecimal cardCollected  = shiftRepository.sumCardCollectedByPumpIdAsOf(pumpId, reportDate);
-        BigDecimal fleetCollected = shiftRepository.sumFleetCardCollectedByPumpIdAsOf(pumpId, reportDate);
-
-        BigDecimal upiSettledTotal   = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.UPI, reportDate);
-        BigDecimal cardSettledTotal  = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.CARD, reportDate);
-        BigDecimal fleetSettledTotal = settlementRepository.sumAmountByPumpIdAndPaymentTypeAsOf(pumpId, SettlementPaymentType.FLEET_CARD, reportDate);
-
-        BigDecimal upiPending   = supportService.orZero(upiCollected).subtract(supportService.orZero(upiSettledTotal)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal cardPending  = supportService.orZero(cardCollected).subtract(supportService.orZero(cardSettledTotal)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal fleetPending = supportService.orZero(fleetCollected).subtract(supportService.orZero(fleetSettledTotal)).setScale(2, RoundingMode.HALF_UP);
-
-        List<BalanceSheetDetailResponse.SettlementLine> lines = onDate.stream()
-                .map(s -> BalanceSheetDetailResponse.SettlementLine.builder()
-                        .id(s.getId())
-                        .paymentType(s.getPaymentType().name())
-                        .amountReceived(s.getAmountReceived())
-                        .notes(s.getNotes())
-                        .recordedByUserName(recorderNames.getOrDefault(s.getRecordedByUserId(), "Unknown"))
-                        .createdAt(s.getCreatedAt())
-                        .build())
-                .toList();
-
-        return BalanceSheetDetailResponse.SettlementSummary.builder()
-                .upiSettledOnDate(upiOnDate.setScale(2, RoundingMode.HALF_UP))
-                .cardSettledOnDate(cardOnDate.setScale(2, RoundingMode.HALF_UP))
-                .fleetCardSettledOnDate(fleetOnDate.setScale(2, RoundingMode.HALF_UP))
-                .walletUpiPending(upiPending)
-                .walletCardPending(cardPending)
-                .walletFleetCardPending(fleetPending)
-                .settlementsOnDate(lines)
-                .build();
+    private ReportPeriod livePeriod(LocalDate reportDate, OffsetDateTime end) {
+        return new ReportPeriod(reportDate, end.minusHours(24), end, true);
     }
+
+    private ReportPeriod businessDayPeriod(LocalDate reportDate) {
+        return new ReportPeriod(reportDate, supportService.startOfBusinessDay(reportDate),
+                supportService.startOfBusinessDay(reportDate.plusDays(1)), false);
+    }
+
+
+
+
 
     private void validateRequest(GenerateBalanceSheetRequest req) {
         if (req.getReportType() == BalanceSheetReportType.SHIFT) {
@@ -781,9 +503,8 @@ public class BalanceSheetService {
             // Show the actual 24-hour window so the label is unambiguous.
             // Example: "Day End · 21 Apr 15:05 → 22 Apr 15:05"
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMM HH:mm");
-            ZoneId ist = ZoneId.of("Asia/Kolkata");
-            String from = windowStart.atZoneSameInstant(ist).format(fmt);
-            String to   = windowEnd.atZoneSameInstant(ist).format(fmt);
+            String from = windowStart.atZoneSameInstant(businessClock.zone()).format(fmt);
+            String to   = windowEnd.atZoneSameInstant(businessClock.zone()).format(fmt);
             base = "Day End · " + from + " → " + to;
         } else {
             base = req.getReportType() == BalanceSheetReportType.DAY
@@ -812,14 +533,10 @@ public class BalanceSheetService {
 
         OffsetDateTime periodStart = supportService.startOfBusinessDay(from);
         OffsetDateTime periodEnd   = supportService.startOfBusinessDay(to.plusDays(1));
-        List<DipCheck> dipChecks = dipCheckRepository.findByPumpIdAndCheckedAtBetween(pumpId, periodStart, periodEnd);
+        List<DipCheck> dipChecks = dipCheckRepository.findByPumpIdAndCheckedAtGreaterThanEqualAndCheckedAtLessThan(pumpId, periodStart, periodEnd);
 
-        Map<FuelType, BigDecimal> priceMap = globalFuelPriceRepository.findCurrentPricesForPump(pumpId).stream()
-                .collect(Collectors.toMap(GlobalFuelPrice::getFuelType, GlobalFuelPrice::getPricePerUnit));
+        Map<Long, FuelType> tankFuelTypeMap = inputs.tankFuelTypesFor(pumpId);
 
-        Map<Long, FuelType> tankFuelTypeMap = tankRepository.findByPumpId(pumpId).stream()
-                .collect(Collectors.toMap(UndergroundTank::getId, UndergroundTank::getFuelType, (a, b) -> a));
-
-        return supportService.buildDipPlEntries(dipEntries, dipChecks, priceMap, tankFuelTypeMap);
+        return supportService.buildDipPlEntries(pumpId, dipEntries, dipChecks, tankFuelTypeMap);
     }
 }

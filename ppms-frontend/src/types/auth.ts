@@ -3,7 +3,6 @@ export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATOR
 export interface AuthUser {
   userId: number
   fullName: string
-  phoneNumber: string
   role: UserRole
   assignedPumpId: number | null
 }

@@ -2,8 +2,12 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/ppms}
     username: ${DB_USER:ppms_user}
-    password: ${DB_PASS:ppms_pass}
+    password: ${DB_PASS:}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      # Bounds every row-lock wait (Hibernate ignores lock-timeout hints on PostgreSQL) and every query.
+      connection-init-sql: SET lock_timeout = '${DB_LOCK_TIMEOUT:10s}'; SET statement_timeout = '${DB_STATEMENT_TIMEOUT:30s}'
 
   jpa:
     open-in-view: false
@@ -22,6 +26,10 @@ spring:
 
   flyway:
     enabled: true
+    # Own connection, so migrations are not cut off by the pool's statement_timeout
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
     locations: classpath:db/migration
     baseline-on-migrate: true
     # V3 (seed super admin) was applied directly to the DB and its file is intentionally
@@ -36,16 +44,20 @@ spring:
       max-file-size: 10MB      # Bank statement CSVs are typically small; 10 MB is generous
       max-request-size: 10MB
 
+  data:
+    web:
+      pageable:
+        max-page-size: 200   # same cap as PageRequests.MAX_PAGE_SIZE for endpoints that take a Pageable
+
   # Email / SMTP — used for password reset link delivery.
   # Set MAIL_HOST, MAIL_PORT, MAIL_USER, MAIL_PASS as environment variables in production.
-  # For local dev, these default to a non-functional placeholder — password reset emails will not send
-  # but the application will still start. Configure a real SMTP server (e.g. Gmail SMTP, AWS SES)
+  # Without them, password reset emails will not send but the application will still start. Configure a real SMTP server (e.g. Gmail SMTP, AWS SES)
   # before enabling password reset in a live environment.
   mail:
     host: ${MAIL_HOST:smtp.example.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USER:noreply@example.com}
-    password: ${MAIL_PASS:changeme}
+    password: ${MAIL_PASS:}
     default-encoding: UTF-8
     properties:
       mail:
@@ -56,6 +68,9 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # Tomcat's RemoteIpValve trusts X-Forwarded-Proto/For only from internal (private-range) proxies such as nginx,
+  # so HTTPS is recognised behind nginx and HSTS is sent; ClientIpResolver still applies its own proxy list.
+  forward-headers-strategy: native
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
@@ -63,31 +78,30 @@ app:
 ppms:
   time-zone: ${PPMS_TIME_ZONE:Asia/Kolkata}
   jwt:
-    secret: ${JWT_SECRET:ppms-local-dev-secret-key-change-in-production-must-be-at-least-256-bits}
+    # No default on purpose — JwtService refuses to start without JWT_SECRET (min 32 bytes).
+    secret: ${JWT_SECRET:}
     expiration-ms: ${JWT_EXPIRY_MS:86400000}   # 24 hours
 
   cookie:
-    secure: ${COOKIE_SECURE:false}   # Set to true in production (HTTPS required)
+    secure: ${COOKIE_SECURE:true}    # Requires HTTPS; override with COOKIE_SECURE=false for local HTTP dev
 
   security:
-    # IPs that are allowed to set X-Forwarded-For headers.
+    # Proxies (IPs or CIDR ranges) allowed to set X-Forwarded-For. Requests from any other
+    # address have the header ignored, so clients cannot spoof their IP in the login rate-limiter
+    # and audit trail. In Docker, set TRUSTED_PROXY_IPS to the network range nginx runs in.
+    trusted-proxy-ips: "${TRUSTED_PROXY_IPS:127.0.0.1,::1}"
 
 cors:
   # Comma-separated list of origins allowed to call the API.
   # Override with the CORS_ALLOWED_ORIGINS environment variable in production.
   # Example: CORS_ALLOWED_ORIGINS=https://app.yourpump.com
   allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:8080}"
-  # Only reverse proxies (nginx, load balancer) should appear here.
-  # Requests from any other IP have their X-Forwarded-For header ignored
-  # to prevent IP spoofing in the login rate-limiter.
-  # In production, set TRUSTED_PROXY_IPS env var to your load balancer's IP(s).
-  trusted-proxy-ips: "${TRUSTED_PROXY_IPS:127.0.0.1,::1}"
 
 management:
   endpoints:
     web:
       exposure:
-        # Expose health (for K8s probes) and prometheus (for Grafana scraping).
+        # health/info are public; prometheus is SUPER_ADMIN-only (SecurityConfig). Prod exposes health,info only.
         # Never expose env, beans, mappings, or heapdump in production without auth.
         include: health,prometheus,info
   endpoint:
@@ -99,13 +113,14 @@ management:
       probes:
         enabled: true
   health:
+    mail:
+      # Email is optional; an unreachable SMTP host must not fail the container health check.
+      enabled: false
     livenessstate:
       enabled: true
     readinessstate:
       enabled: true
-    mail:
-      enabled: false
-      
+
 logging:
   level:
     com.ppms: INFO

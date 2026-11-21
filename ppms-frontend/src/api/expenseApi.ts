@@ -34,7 +34,16 @@ export interface ApproveExpenseRequest {
   notes?: string
 }
 
+export interface ExpenseSummary {
+  approvedTotal: number
+  pendingCount: number
+  pendingTotal: number
+}
+
 export const expenseApi = {
+  getSummary: (pumpId: number): Promise<ExpenseSummary> =>
+    client.get(`/pumps/${pumpId}/expenses/summary`).then(r => r.data),
+
   getExpenses: (
     pumpId: number,
     page = 0,

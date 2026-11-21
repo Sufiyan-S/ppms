@@ -128,7 +128,7 @@ public class PumpClosureController {
                 .orElseThrow(() -> new ResourceNotFoundException("Closure record not found"));
 
         if (!closure.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Closure does not belong to this pump");
+            throw new ResourceNotFoundException("Closure not found");
         }
 
         closureRepository.delete(closure);

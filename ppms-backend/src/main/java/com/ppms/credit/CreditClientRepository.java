@@ -13,6 +13,8 @@ import java.util.Optional;
 @Repository
 public interface CreditClientRepository extends JpaRepository<CreditClient, Long> {
 
+    boolean existsByIdAndPumpId(Long id, Long pumpId);
+
     List<CreditClient> findByPumpIdOrderByNameAsc(Long pumpId);
 
     boolean existsByPumpIdAndName(Long pumpId, String name);
@@ -54,8 +56,8 @@ public interface CreditClientRepository extends JpaRepository<CreditClient, Long
     // Returns only root (parent/standalone) accounts for a pump — excludes sub-accounts
     List<CreditClient> findByPumpIdAndParentClientIdIsNullOrderByNameAsc(Long pumpId);
 
-    // Used by the public credit balance portal — lookup by phone number
-    Optional<CreditClient> findByPumpIdAndPhone(Long pumpId, String phone);
+
+    List<CreditClient> findAllByPumpIdAndPhoneAndIsActiveTrue(Long pumpId, String phone);
 
     // Pump-wide phone lookup — used for root client creation (no group yet, any match is a conflict)
     boolean existsByPumpIdAndPhone(Long pumpId, String phone);
@@ -71,4 +73,6 @@ public interface CreditClientRepository extends JpaRepository<CreditClient, Long
     // (group = the root client itself + all its direct sub-accounts).
     @Query("SELECT COUNT(c) > 0 FROM CreditClient c WHERE c.pumpId = :pumpId AND c.phone = :phone AND c.id <> :clientId AND (c.parentClientId IS NULL OR c.parentClientId <> :clientId)")
     boolean existsPhoneConflictForRootClientUpdate(@Param("pumpId") Long pumpId, @Param("phone") String phone, @Param("clientId") Long clientId);
+
+    boolean existsByPumpId(Long pumpId);
 }

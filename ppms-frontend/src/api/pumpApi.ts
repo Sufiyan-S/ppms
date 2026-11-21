@@ -76,6 +76,8 @@ export interface CreditClient {
   isParent: boolean
   /** False when the client has been soft-disabled. */
   isActive: boolean
+  /** True when the client can check their balance on the public portal. The PIN itself is never returned. */
+  hasPortalPin: boolean
 }
 
 export interface CreateCreditClientRequest {
@@ -116,7 +118,7 @@ export interface FuelPrice {
   setByUserId: number
 }
 
-/** Response wrapper for POST /api/fuel-prices — includes price + optional open-shifts warning. */
+/** Response wrapper for POST /api/pumps/{pumpId}/fuel-prices — includes price + optional open-shifts warning. */
 export interface SetFuelPriceResponse {
   price: FuelPrice
   openShiftsCount: number
@@ -185,11 +187,11 @@ export const pumpApi = {
   // ── Fuel prices ────────────────────────────────────────────────────────────
 
   getCurrentPrices: (pumpId: number) =>
-    client.get<FuelPrice[]>('/fuel-prices/current', { params: { pumpId } }).then((r) => r.data),
+    client.get<FuelPrice[]>(`/pumps/${pumpId}/fuel-prices/current`).then((r) => r.data),
 
   // Returns SetFuelPriceResponse on success (HTTP 201), or throws with response.data = PriceDeviationWarning on HTTP 409
-  setFuelPrice: (req: SetFuelPriceRequest) =>
-    client.post<SetFuelPriceResponse>('/fuel-prices', req).then((r) => r.data),
+  setFuelPrice: ({ pumpId, ...body }: SetFuelPriceRequest) =>
+    client.post<SetFuelPriceResponse>(`/pumps/${pumpId}/fuel-prices`, body).then((r) => r.data),
 
   // ── Credit clients ─────────────────────────────────────────────────────────
 
@@ -207,6 +209,12 @@ export const pumpApi = {
 
   toggleCreditClientStatus: (pumpId: number, clientId: number, isActive: boolean) =>
     client.patch<CreditClient>(`/pumps/${pumpId}/credit-clients/${clientId}/status`, { isActive }).then((r) => r.data),
+
+  setCreditClientPortalPin: (pumpId: number, clientId: number, pin: string) =>
+    client.put<void>(`/pumps/${pumpId}/credit-clients/${clientId}/portal-pin`, { pin }).then((r) => r.data),
+
+  removeCreditClientPortalPin: (pumpId: number, clientId: number) =>
+    client.delete<void>(`/pumps/${pumpId}/credit-clients/${clientId}/portal-pin`).then((r) => r.data),
 
   reassignCreditEntry: (pumpId: number, entryId: number, toClientId: number, reason: string) =>
     client.post(`/pumps/${pumpId}/credit-ledger/entries/${entryId}/reassign`, { toClientId, reason }).then((r) => r.data),

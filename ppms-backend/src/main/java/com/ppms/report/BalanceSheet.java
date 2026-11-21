@@ -119,6 +119,18 @@ public class BalanceSheet {
     @Builder.Default
     private BigDecimal totalDipLossAmount = BigDecimal.ZERO;
 
+    /** Net dip P/L stored at generation. Null on sheets generated before it was stored. */
+    @Column(name = "total_dip_net_amount")
+    private BigDecimal totalDipNetAmount;
+
+    /** Product sales gross profit stored at generation. Null on sheets generated before it was stored. */
+    @Column(name = "product_sales_gross_profit")
+    private BigDecimal productSalesGrossProfit;
+
+    /** Approved expenses total stored at generation. Null on sheets generated before it was stored. */
+    @Column(name = "total_expenses_amount")
+    private BigDecimal totalExpensesAmount;
+
     /** Sum of cash physically returned by operators for SHORT discrepancies resolved via CASH_RECOVERY on the report date. DAY reports only; always 0 for SHIFT reports. */
     @Column(name = "total_cash_recovery", nullable = false)
     @Builder.Default

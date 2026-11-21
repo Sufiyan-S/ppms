@@ -28,7 +28,7 @@ export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
         <thead>
           <tr>
             {Array.from({ length: cols }).map((_, i) => (
-              <th key={i} style={{ padding: '0.8rem 1rem', textAlign: 'left' }}>
+              <th scope="col" key={i} style={{ padding: '0.8rem 1rem', textAlign: 'left' }}>
                 <span className="ui-skeleton" style={{ height: 10, width: '52%' }} />
               </th>
             ))}

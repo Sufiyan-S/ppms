@@ -1,5 +1,6 @@
 import { useToastStore } from '../store/toastStore'
-import type { ToastVariant } from '../store/toastStore'
+import type { Toast, ToastVariant } from '../store/toastStore'
+import { IconButton } from './IconButton'
 
 const VARIANT_STYLES: Record<ToastVariant, { border: string; icon: string }> = {
   success: { border: 'border-l-emerald-500', icon: '✓' },
@@ -17,27 +18,25 @@ const ICON_COLOR: Record<ToastVariant, string> = {
 
 export function ToastContainer() {
   const { toasts, removeToast } = useToastStore()
+  const errors = toasts.filter((t) => t.variant === 'error')
+  const updates = toasts.filter((t) => t.variant !== 'error')
 
-  if (toasts.length === 0) return null
+  const renderToast = (t: Toast) => {
+    const { border, icon } = VARIANT_STYLES[t.variant]
+    return (
+      <div key={t.id} className={`ui-toast ${border}`}>
+        <span aria-hidden="true" className={`ui-toast-icon ${ICON_COLOR[t.variant]}`}>{icon}</span>
+        <span className="ui-toast-msg">{t.message}</span>
+        <IconButton label="Dismiss" icon="×" onClick={() => removeToast(t.id)} className="ui-toast-close" />
+      </div>
+    )
+  }
 
+  // Both live regions stay mounted so screen readers announce the first message too.
   return (
-    <div className="ui-toast-stack" role="status" aria-live="polite" aria-atomic="false">
-      {toasts.map(t => {
-        const { border, icon } = VARIANT_STYLES[t.variant]
-        return (
-          <div key={t.id} className={`ui-toast ${border}`}>
-            <span className={`ui-toast-icon ${ICON_COLOR[t.variant]}`}>{icon}</span>
-            <span className="ui-toast-msg">{t.message}</span>
-            <button
-              onClick={() => removeToast(t.id)}
-              className="ui-toast-close"
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )
-      })}
+    <div className="ui-toast-stack">
+      <div role="alert" aria-atomic="false" className="flex flex-col gap-2">{errors.map(renderToast)}</div>
+      <div role="status" aria-live="polite" aria-atomic="false" className="flex flex-col gap-2">{updates.map(renderToast)}</div>
     </div>
   )
 }

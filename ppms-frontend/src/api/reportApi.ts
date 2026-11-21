@@ -245,8 +245,9 @@ export const reportApi = {
   getInventoryLots: (pumpId: number, tankId: number) =>
     client.get<InventoryLotsReport>(`/pumps/${pumpId}/reports/inventory-lots`, { params: { tankId } }).then(r => r.data),
 
-  getAllTanksInventoryLots: (pumpId: number) =>
-    client.get<AllTanksInventoryReport>(`/pumps/${pumpId}/reports/inventory-lots/all`).then(r => r.data),
+  // Every active lot plus the lots delivered between from and to
+  getAllTanksInventoryLots: (pumpId: number, from: string, to: string) =>
+    client.get<AllTanksInventoryReport>(`/pumps/${pumpId}/reports/inventory-lots/all`, { params: { from, to } }).then(r => r.data),
 
   getDipPl: (pumpId: number, from: string, to: string) =>
     client.get<DipPlEntry[]>(`/pumps/${pumpId}/reports/dip-pl`, { params: { from, to } }).then(r => r.data),

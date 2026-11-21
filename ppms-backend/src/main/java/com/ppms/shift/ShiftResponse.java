@@ -1,5 +1,6 @@
 package com.ppms.shift;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ppms.fuel.FuelType;
 import lombok.Builder;
 import lombok.Data;
@@ -65,6 +66,7 @@ public class ShiftResponse {
     private String status;
 
     /** True if this shift was entered retroactively via the Admin backfill flow. */
+    @JsonProperty("isBackfilled")
     private boolean isBackfilled;
 
     private List<CreditEntryResponse> creditEntries;
@@ -83,11 +85,13 @@ public class ShiftResponse {
             BigDecimal startReading,
             BigDecimal endReading,
             BigDecimal priceSnapshot,
-            BigDecimal unitsSold
+            BigDecimal unitsSold,
+            BigDecimal maxMeterValue
     ) {}
 
     public record CreditEntryResponse(
             Long id,
+            Long clientId,
             String clientName,
             String billNo,
             BigDecimal amount,

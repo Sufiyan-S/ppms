@@ -1,5 +1,6 @@
 package com.ppms.credit;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -95,6 +96,10 @@ public class CreditClient {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean isActive = true;
+
+    @JsonIgnore
+    @Column(name = "portal_pin_hash")
+    private String portalPinHash;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

@@ -13,8 +13,13 @@ import type { InputHTMLAttributes } from 'react'
  * Usage (react-hook-form):
  *   <PasswordInput {...register('password')} />
  */
-export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => {
+interface PasswordInputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /** Accessible name of the show/hide toggle; override when the field holds something other than a password. */
+  toggleLabel?: string
+}
+
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
+  ({ className, toggleLabel = 'Show password', ...props }, ref) => {
     const [visible, setVisible] = useState(false)
 
     return (
@@ -28,10 +33,10 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HT
         />
         <button
           type="button"
-          tabIndex={-1}
           onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? 'Hide password' : 'Show password'}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
+          aria-label={toggleLabel}
+          aria-pressed={visible}
+          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:text-slate-700 transition-colors"
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}
         </button>

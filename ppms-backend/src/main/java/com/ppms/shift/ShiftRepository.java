@@ -2,7 +2,9 @@ package com.ppms.shift;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,6 +17,19 @@ import java.util.Optional;
 
 @Repository
 public interface ShiftRepository extends JpaRepository<Shift, Long> {
+
+    Optional<Shift> findByIdAndPumpId(Long id, Long pumpId);
+
+    boolean existsByIdAndPumpId(Long id, Long pumpId);
+
+    // Lock order for state changes: shift, then tanks (by id), then inventory lots.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shift s WHERE s.id = :id AND s.pumpId = :pumpId")
+    Optional<Shift> findByIdAndPumpIdForUpdate(@Param("id") Long id, @Param("pumpId") Long pumpId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shift s WHERE s.id = :id")
+    Optional<Shift> findByIdForUpdate(@Param("id") Long id);
 
     // Active shifts for a pump (OPEN or OPEN_OVERDUE)
     @Query("""
@@ -49,6 +64,12 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     // Paginated version for the API — prevents unbounded result sets on busy pumps
     Page<Shift> findByPumpIdOrderByActualStartTimeDesc(Long pumpId, Pageable pageable);
 
+    Page<Shift> findByPumpIdAndShiftDateBetweenOrderByActualStartTimeDesc(
+            Long pumpId, LocalDate from, LocalDate to, Pageable pageable);
+
+    Page<Shift> findByPumpIdAndShiftDateBetweenAndDiscrepancyTypeInOrderByActualStartTimeDesc(
+            Long pumpId, LocalDate from, LocalDate to, List<DiscrepancyType> discrepancyTypes, Pageable pageable);
+
     // ── Operator deactivation guards (Business Rules 30, 45) ─────────────────
 
     /** True if operator has any open shift — blocks deactivation (Rule 45). */
@@ -69,13 +90,13 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
 
     // ── Overdue shift auto-close job ──────────────────────────────────────────
 
-    /** All OPEN or OPEN_OVERDUE shifts across all pumps. Used by the auto-close scheduler. */
+    /** Ids of all OPEN or OPEN_OVERDUE shifts across all pumps. Used by the auto-close scheduler. */
     @Query("""
-            SELECT s FROM Shift s
+            SELECT s.id FROM Shift s
             WHERE s.status IN ('OPEN', 'OPEN_OVERDUE')
             ORDER BY s.actualStartTime ASC
             """)
-    List<Shift> findAllOpenShifts();
+    List<Long> findAllOpenShiftIds();
 
     // ── Report queries ────────────────────────────────────────────────────────
 
@@ -113,7 +134,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
 
     /**
      * Returns closed shifts for an operator in a date range where the discrepancy was resolved
-     * via SALARY_DEDUCTION. Used by PayrollController to compute payroll deductions:
+     * via SALARY_DEDUCTION and no payroll has already taken the deduction (payroll_resolved_shifts).
      * deductions = SUM(discrepancy_amount) for these shifts.
      *
      * Native query required: Hibernate maps the JPQL enum literal to
@@ -127,6 +148,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
               AND shift_date BETWEEN :from AND :to
               AND discrepancy_resolution = 'SALARY_DEDUCTION'::discrepancy_resolution
               AND discrepancy_amount IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM payroll_resolved_shifts prs WHERE prs.shift_id = shifts.id)
             ORDER BY shift_date ASC
             """, nativeQuery = true)
     List<Shift> findSalaryDeductionShifts(
@@ -164,6 +186,22 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             ORDER BY s.actualEndTime ASC
             """)
     List<Shift> findClosedShiftsByDate(Long pumpId, LocalDate shiftDate);
+
+    /**
+     * Shifts that ended (closed by an operator or auto-closed by the overdue job) within (from, to].
+     * Used by alert generation, which must see night shifts whose shift date is the previous day.
+     */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.actualEndTime > :from
+              AND s.actualEndTime <= :to
+              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE')
+            ORDER BY s.actualEndTime ASC
+            """)
+    List<Shift> findShiftsEndedBetween(@Param("pumpId") Long pumpId,
+                                       @Param("from") OffsetDateTime from,
+                                       @Param("to") OffsetDateTime to);
 
     /**
      * All closed shifts whose actualEndTime falls in (windowStart, windowEnd].
@@ -309,6 +347,20 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             """, nativeQuery = true)
     BigDecimal sumCashRecoveriesOnDate(@Param("pumpId") Long pumpId, @Param("date") LocalDate date);
 
+    /** Cash recoveries resolved within [from, to) — used by live DAY balance sheets. */
+    @Query(value = """
+            SELECT COALESCE(SUM(cash_recovery_amount), 0)
+            FROM shifts
+            WHERE pump_id = :pumpId
+              AND discrepancy_resolution = 'CASH_RECOVERY'::discrepancy_resolution
+              AND cash_recovery_amount IS NOT NULL
+              AND cash_recovery_amount > 0
+              AND discrepancy_resolved_at >= :from AND discrepancy_resolved_at < :to
+            """, nativeQuery = true)
+    BigDecimal sumCashRecoveriesBetween(@Param("pumpId") Long pumpId,
+                                        @Param("from") OffsetDateTime from,
+                                        @Param("to") OffsetDateTime to);
+
     /**
      * Counts shifts for the given nozzle, business date, and shift definition.
      * Used during backfill to enforce the one-shift-per-nozzle-per-window-per-day constraint.
@@ -328,4 +380,6 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             @Param("nozzleId") Long nozzleId,
             @Param("shiftDate") LocalDate shiftDate,
             @Param("shiftDefinitionId") Long shiftDefinitionId);
+
+    boolean existsByPumpId(Long pumpId);
 }

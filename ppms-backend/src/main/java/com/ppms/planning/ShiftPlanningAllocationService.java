@@ -6,9 +6,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +33,7 @@ public class ShiftPlanningAllocationService {
                                                 Map<Long, StaffPreference> preferenceByUser,
                                                 Map<Long, Set<LocalDate>> leavesByUser,
                                                 List<PumpShiftDefinition> definitions) {
-        Map<Long, Set<Integer>> assignedSlots = new java.util.HashMap<>();
+        Map<Long, Set<Integer>> assignedSlots = new HashMap<>();
         for (User user : staff) {
             assignedSlots.put(user.getId(), new HashSet<>());
         }
@@ -45,42 +45,14 @@ public class ShiftPlanningAllocationService {
                 continue;
             }
 
-            DayOfWeek dayOfWeek = date.getDayOfWeek();
             for (PumpShiftDefinition definition : definitions) {
                 int slotIndex = dayOffset * ShiftPlanningSlotService.MAX_SHIFTS_PER_PUMP + (definition.getSortOrder() - 1);
                 int target = definition.isNightShift()
                         ? request.operatorsPerNightShift()
                         : request.operatorsPerDayShift();
 
-                List<long[]> scoredCandidates = new ArrayList<>();
-                for (User user : staff) {
-                    long userId = user.getId();
-                    if (leavesByUser.getOrDefault(userId, Set.of()).contains(date)) {
-                        continue;
-                    }
-                    if (definition.isNightShift() && ruleService.isNightShiftRestricted(user)) {
-                        continue;
-                    }
-                    if (slotService.wouldCreateThreeConsecutive(assignedSlots.get(userId), slotIndex)) {
-                        continue;
-                    }
-
-                    long score = 0;
-                    StaffPreference preference = preferenceByUser.get(userId);
-                    if (preference != null) {
-                        if (definition.getId().equals(preference.getPreferredShiftDefinitionId())) {
-                            score += 2;
-                        }
-                        if (preference.getPreferredDayOff() == null
-                                || !preference.getPreferredDayOff().name().equals(dayOfWeek.name())) {
-                            score += 1;
-                        }
-                    }
-                    score -= assignedSlots.get(userId).size();
-                    scoredCandidates.add(new long[]{userId, score});
-                }
-
-                scoredCandidates.sort((a, b) -> Long.compare(b[1], a[1]));
+                List<long[]> scoredCandidates = scoreCandidates(staff, date, definition, slotIndex,
+                        preferenceByUser, leavesByUser, assignedSlots);
 
                 int assigned = 0;
                 for (long[] candidate : scoredCandidates) {
@@ -106,5 +78,42 @@ public class ShiftPlanningAllocationService {
             }
         }
         return entries;
+    }
+
+    // Each candidate is {userId, score}, best first: +2 for the preferred shift, +1 when it is not the
+    // preferred day off, minus one per slot already assigned this week so work is spread evenly.
+    private List<long[]> scoreCandidates(List<User> staff, LocalDate date, PumpShiftDefinition definition, int slotIndex,
+                                         Map<Long, StaffPreference> preferenceByUser,
+                                         Map<Long, Set<LocalDate>> leavesByUser,
+                                         Map<Long, Set<Integer>> assignedSlots) {
+        List<long[]> scoredCandidates = new ArrayList<>();
+        for (User user : staff) {
+            long userId = user.getId();
+            if (leavesByUser.getOrDefault(userId, Set.of()).contains(date)) {
+                continue;
+            }
+            if (definition.isNightShift() && ruleService.isNightShiftRestricted(user)) {
+                continue;
+            }
+            if (slotService.wouldCreateThreeConsecutive(assignedSlots.get(userId), slotIndex)) {
+                continue;
+            }
+
+            long score = 0;
+            StaffPreference preference = preferenceByUser.get(userId);
+            if (preference != null) {
+                if (definition.getId().equals(preference.getPreferredShiftDefinitionId())) {
+                    score += 2;
+                }
+                if (preference.getPreferredDayOff() == null
+                        || !preference.getPreferredDayOff().name().equals(date.getDayOfWeek().name())) {
+                    score += 1;
+                }
+            }
+            score -= assignedSlots.get(userId).size();
+            scoredCandidates.add(new long[]{userId, score});
+        }
+        scoredCandidates.sort((a, b) -> Long.compare(b[1], a[1]));
+        return scoredCandidates;
     }
 }

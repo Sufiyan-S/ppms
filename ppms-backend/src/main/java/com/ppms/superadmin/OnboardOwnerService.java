@@ -1,5 +1,6 @@
 package com.ppms.superadmin;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.PumpLocation;
@@ -14,7 +15,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -33,6 +33,7 @@ public class OnboardOwnerService {
     private final PumpLocationRepository pumpLocationRepository;
     private final PasswordEncoder passwordEncoder;
     private final OwnerSummaryAssembler ownerSummaryAssembler;
+    private final BusinessClock businessClock;
 
     @Transactional
     public OnboardOwnerResponse onboard(OnboardOwnerRequest request) {
@@ -53,7 +54,7 @@ public class OnboardOwnerService {
                 .role(UserRole.OWNER)
                 .status(UserStatus.ACTIVE)
                 .assignedPumpId(null)   // OWNER is not assigned to a pump; they own pumps
-                .dateOfJoining(LocalDate.now())
+                .dateOfJoining(businessClock.today())
                 .build();
 
         owner = userRepository.save(owner);

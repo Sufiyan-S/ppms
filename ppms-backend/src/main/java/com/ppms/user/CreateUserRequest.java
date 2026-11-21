@@ -1,5 +1,6 @@
 package com.ppms.user;
 
+import com.ppms.auth.PasswordPolicy;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -20,9 +21,7 @@ public class CreateUserRequest {
     private String phoneNumber;
 
     @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters")
-    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$",
-             message = "Password must contain at least one uppercase letter, one lowercase letter, and one digit")
+    @Pattern(regexp = PasswordPolicy.REGEX, message = PasswordPolicy.MESSAGE)
     private String password;
 
     @NotNull(message = "Role is required")

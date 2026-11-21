@@ -47,6 +47,9 @@ public class CloseShiftRequest {
     @Valid
     private List<CreditEntryRequest> creditEntries = new ArrayList<>();
 
+    // Pre-recorded credit entries the operator corrected; they are voided in the same transaction as the close.
+    private List<Long> replacedCreditEntryIds = new ArrayList<>();
+
     private String discrepancyReason;
 
     // ── Inner records ────────────────────────────────────────────────────────

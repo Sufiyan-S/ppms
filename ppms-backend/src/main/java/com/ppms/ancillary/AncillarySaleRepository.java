@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Repository
@@ -20,4 +21,11 @@ public interface AncillarySaleRepository extends JpaRepository<AncillarySale, Lo
 
     @Query("SELECT s FROM AncillarySale s WHERE s.pumpId = :pumpId AND s.saleDate BETWEEN :from AND :to ORDER BY s.saleDate ASC")
     List<AncillarySale> findByPumpIdAndDateRange(Long pumpId, LocalDate from, LocalDate to);
+
+    List<AncillarySale> findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(
+            Long pumpId, OffsetDateTime from, OffsetDateTime to);
+
+    boolean existsByClientId(Long clientId);
+
+    boolean existsByIdAndPumpId(Long id, Long pumpId);
 }

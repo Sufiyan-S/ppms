@@ -23,6 +23,8 @@ import java.util.List;
 public class ReportController {
 
     private final ReportService         reportService;
+    private final ProfitLossReportService profitLossReportService;
+    private final InventoryReportService inventoryReportService;
     private final BalanceSheetService   balanceSheetService;
 
     /**
@@ -32,11 +34,11 @@ public class ReportController {
      * Revenue is derived from shift fuel readings; COGS from FIFO lot consumptions.
      */
     @GetMapping("/profit-loss")
-    public ResponseEntity<ReportService.ProfitLossReport> getProfitLoss(
+    public ResponseEntity<ProfitLossReport> getProfitLoss(
             @PathVariable Long pumpId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return ResponseEntity.ok(reportService.buildProfitLossReport(pumpId, from, to));
+        return ResponseEntity.ok(profitLossReportService.buildProfitLossReport(pumpId, from, to));
     }
 
     /**
@@ -45,7 +47,7 @@ public class ReportController {
      * Lists all shifts for a specific operator within the date range, with totals summary.
      */
     @GetMapping("/operator-duty")
-    public ResponseEntity<ReportService.OperatorDutyReport> getOperatorDuty(
+    public ResponseEntity<OperatorDutyReport> getOperatorDuty(
             @PathVariable Long pumpId,
             @RequestParam Long operatorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -60,7 +62,7 @@ public class ReportController {
      * Grouped by operator with totals. Useful for weekly management review.
      */
     @GetMapping("/operator-discrepancy")
-    public ResponseEntity<ReportService.OperatorDiscrepancyReport> getOperatorDiscrepancy(
+    public ResponseEntity<OperatorDiscrepancyReport> getOperatorDiscrepancy(
             @PathVariable Long pumpId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
@@ -74,23 +76,26 @@ public class ReportController {
      * Used to audit cost accounting and verify that deductions match physical deliveries.
      */
     @GetMapping("/inventory-lots")
-    public ResponseEntity<ReportService.InventoryLotsReport> getInventoryLots(
+    public ResponseEntity<InventoryLotsReport> getInventoryLots(
             @PathVariable Long pumpId,
             @RequestParam Long tankId) {
-        return ResponseEntity.ok(reportService.buildInventoryLotsReport(tankId));
+        return ResponseEntity.ok(inventoryReportService.buildInventoryLotsReport(pumpId, tankId));
     }
 
     /**
-     * GET /api/pumps/{pumpId}/reports/inventory-lots/all
+     * GET /api/pumps/{pumpId}/reports/inventory-lots/all?from=&to=
      *
-     * Returns all inventory lots for every tank at this pump, grouped by tank.
+     * Returns every ACTIVE lot plus the lots delivered between from and to (default: the last 90 days),
+     * grouped by tank.
      * Includes per-tank summaries (remaining qty, weighted avg cost, stock value)
      * and a cross-tank summary aggregated by fuel type.
      */
     @GetMapping("/inventory-lots/all")
-    public ResponseEntity<ReportService.AllTanksInventoryReport> getAllTanksInventoryLots(
-            @PathVariable Long pumpId) {
-        return ResponseEntity.ok(reportService.buildAllTanksInventoryReport(pumpId));
+    public ResponseEntity<AllTanksInventoryReport> getAllTanksInventoryLots(
+            @PathVariable Long pumpId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(inventoryReportService.buildAllTanksInventoryReport(pumpId, from, to));
     }
 
     /**
@@ -147,7 +152,7 @@ public class ReportController {
      */
     @GetMapping("/interest-accrual")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
-    public ResponseEntity<ReportService.InterestAccrualReport> getInterestAccrual(
+    public ResponseEntity<InterestAccrualReport> getInterestAccrual(
             @PathVariable Long pumpId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {

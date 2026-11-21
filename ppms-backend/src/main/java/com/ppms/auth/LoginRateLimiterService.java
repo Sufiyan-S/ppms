@@ -1,60 +1,88 @@
 package com.ppms.auth;
 
-import lombok.RequiredArgsConstructor;
+import com.ppms.common.time.BusinessClock;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.ppms.common.exception.TooManyRequestsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Brute-force protection for the login endpoint.
+ * Brute-force protection for the login and forgot-password endpoints.
  *
- * Policy: if a phone number has 5 or more failed login attempts in the last
- * 15 minutes, further attempts are blocked and a 429 (Too Many Requests) error
- * is returned to the caller.
+ * Login: sliding 15-minute window over the login_attempts table, per phone number
+ * (stops guessing one account) and per IP (stops spraying one password across many accounts).
  *
- * This is a simple sliding-window counter backed by the login_attempts table.
- * It is intentionally simple — no exponential backoff, no CAPTCHA, no account lock.
- * The 15-minute window means a brute-force attacker can attempt at most 20
- * passwords per hour, which is far too slow to succeed against a bcrypt hash.
- *
- * Future improvement: make the threshold and window configurable via application.yml.
+ * Forgot-password: fixed 15-minute in-memory window per IP and per phone number
+ * (stops flooding a user's inbox with reset emails).
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LoginRateLimiterService {
 
-    static final int MAX_FAILURES = 5;
+    static final int MAX_FAILURES_PER_PHONE = 5;
+    static final int MAX_FAILURES_PER_IP = 20;
+    static final int MAX_RESET_REQUESTS_PER_PHONE = 3;
+    static final int MAX_RESET_REQUESTS_PER_IP = 10;
     static final int WINDOW_MINUTES = 15;
 
     private final LoginAttemptRepository attemptRepository;
+    private final BusinessClock businessClock;
+    private final Cache<String, AtomicInteger> resetRequestCounts = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(WINDOW_MINUTES))
+            .maximumSize(100_000)
+            .build();
 
-    /**
-     * Returns true if this phone number should be blocked from logging in.
-     * Called BEFORE the password is verified — this avoids burning bcrypt CPU
-     * on requests that are already going to be rejected.
-     */
-    public boolean isBlocked(String phoneNumber) {
-        OffsetDateTime windowStart = OffsetDateTime.now().minusMinutes(WINDOW_MINUTES);
-        long recentFailures = attemptRepository.countRecentFailures(phoneNumber, windowStart);
-        if (recentFailures >= MAX_FAILURES) {
-            log.warn("Login blocked due to rate limit: phone={} failures={} in last {}m",
-                    phoneNumber, recentFailures, WINDOW_MINUTES);
-            return true;
-        }
-        return false;
+    public LoginRateLimiterService(LoginAttemptRepository attemptRepository, BusinessClock businessClock) {
+        this.attemptRepository = attemptRepository;
+        this.businessClock = businessClock;
     }
 
     /**
-     * Records the outcome of a login attempt.
-     * Called AFTER the authentication decision is made so we always have an accurate record.
-     *
-     * @param phoneNumber The phone number used in the attempt.
-     * @param ipAddress   The request IP address (may be null if not available).
-     * @param success     True if authentication succeeded.
+     * Called before the password is verified so blocked callers do not burn bcrypt CPU.
      */
+    public void checkLoginAllowed(String phoneNumber, String ipAddress) {
+        OffsetDateTime windowStart = businessClock.now().minusMinutes(WINDOW_MINUTES);
+
+        long phoneFailures = attemptRepository.countRecentFailures(phoneNumber, windowStart);
+        if (phoneFailures >= MAX_FAILURES_PER_PHONE) {
+            log.warn("Login blocked by phone limit: phone={} failures={} in last {}m",
+                    PhoneNumberMasking.mask(phoneNumber), phoneFailures, WINDOW_MINUTES);
+            throw tooManyRequests();
+        }
+
+        if (ipAddress != null) {
+            long ipFailures = attemptRepository.countRecentFailuresByIp(ipAddress, windowStart);
+            if (ipFailures >= MAX_FAILURES_PER_IP) {
+                log.warn("Login blocked by IP limit: ip={} failures={} in last {}m",
+                        ipAddress, ipFailures, WINDOW_MINUTES);
+                throw tooManyRequests();
+            }
+        }
+    }
+
+    /**
+     * Throws 429 when the IP is over its limit. Returns false (no email, same generic response)
+     * when only the phone is over its limit, so strangers cannot lock a user out of resets.
+     */
+    public boolean isResetEmailAllowed(String phoneNumber, String ipAddress) {
+        if (ipAddress != null && incrementAndCheck("ip:" + ipAddress, MAX_RESET_REQUESTS_PER_IP)) {
+            log.warn("Password reset request blocked by IP limit: ip={}", ipAddress);
+            throw new TooManyRequestsException(
+                    "Too many password reset requests. Please wait " + WINDOW_MINUTES + " minutes before trying again.");
+        }
+        if (incrementAndCheck("phone:" + phoneNumber, MAX_RESET_REQUESTS_PER_PHONE)) {
+            log.warn("Password reset email suppressed by phone limit: phone={}", PhoneNumberMasking.mask(phoneNumber));
+            return false;
+        }
+        return true;
+    }
+
     @Transactional
     public void recordAttempt(String phoneNumber, String ipAddress, boolean success) {
         attemptRepository.save(LoginAttempt.builder()
@@ -62,5 +90,14 @@ public class LoginRateLimiterService {
                 .ipAddress(ipAddress)
                 .success(success)
                 .build());
+    }
+
+    private boolean incrementAndCheck(String key, int limit) {
+        return resetRequestCounts.get(key, k -> new AtomicInteger()).incrementAndGet() > limit;
+    }
+
+    private TooManyRequestsException tooManyRequests() {
+        return new TooManyRequestsException(
+                "Too many failed login attempts. Please wait " + WINDOW_MINUTES + " minutes before trying again.");
     }
 }

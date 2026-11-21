@@ -1,0 +1,20 @@
+ppms:
+  scheduling:
+    enabled: false
+  jwt:
+    secret: test-only-jwt-secret-that-is-at-least-thirty-two-bytes-long
+  cookie:
+    secure: false
+
+SUPER_ADMIN_PASSWORD: Test@Admin123
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        # Lets tests assert how many SQL statements a request runs
+        generate_statistics: true
+
+logging:
+  level:
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN

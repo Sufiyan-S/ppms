@@ -1,10 +1,10 @@
 package com.ppms.pump;
 
+import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,7 +37,7 @@ public class PumpCalibrationController {
             @RequestParam(defaultValue = "10") int size) {
 
         var logsPage = calibrationRepository.findByPumpIdOrderByCreatedAtDescCalibrationDateDesc(
-                pumpId, PageRequest.of(page, size));
+                pumpId, PageRequests.of(page, size));
 
         Set<Long> userIds = logsPage.getContent().stream()
                 .map(NozzleCalibrationLog::getLoggedByUserId)

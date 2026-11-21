@@ -1,6 +1,8 @@
 package com.ppms.pump;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.time.BusinessClock;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -8,12 +10,15 @@ import java.time.LocalTime;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class PumpShiftDefinitionSupportService {
 
     private static final int MAX_SHIFTS_PER_PUMP = 4;
     private static final int MAX_TOTAL_MINUTES = 24 * 60;
     private static final LocalTime NIGHT_WINDOW_START = LocalTime.MIDNIGHT;
     private static final LocalTime NIGHT_WINDOW_END = LocalTime.of(6, 0);
+
+    private final BusinessClock businessClock;
 
     public void validateBatch(List<CreateShiftDefinitionRequest> requests) {
         long nightCount = requests.stream().filter(CreateShiftDefinitionRequest::isNightShift).count();
@@ -80,7 +85,7 @@ public class PumpShiftDefinitionSupportService {
                 }
             }
         }
-        return found != null ? found : LocalDate.now();
+        return found != null ? found : businessClock.today();
     }
 
     public LocalDate resolveEffectiveTo(List<CreateShiftDefinitionRequest> requests) {

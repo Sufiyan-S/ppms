@@ -1,62 +1,42 @@
 package com.ppms.auth;
 
 import com.ppms.user.User;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    private static final String COOKIE_NAME = "ppms_jwt";
-    private static final String PASSWORD_POLICY_REGEX =
-            "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,}$";
-    private static final String PASSWORD_POLICY_MESSAGE =
-            "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 digit, and 1 symbol.";
-
     private final AuthService authService;
     private final JwtService jwtService;
     private final TokenRevocationService tokenRevocationService;
-
-    @Value("${ppms.security.trusted-proxy-ips:127.0.0.1,::1}")
-    private String trustedProxyIpsRaw;
-
-    @Value("${ppms.cookie.secure:false}")
-    private boolean cookieSecure;
-
-    @Value("${JWT_EXPIRY_MS:86400000}")
-    private long jwtExpiryMs;
+    private final JwtCookieSupport jwtCookieSupport;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * POST /api/auth/login
-     * Authenticates credentials. The JWT is returned as an httpOnly cookie, NOT in the
-     * response body — this prevents JavaScript from reading the token, eliminating the
-     * XSS token-theft vector. The response body carries only the user profile fields.
+     * The JWT is returned only as an httpOnly cookie, never in the body, so JavaScript cannot read it.
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
-        String ipAddress = extractClientIp(httpRequest);
-        LoginResult result = authService.login(request, ipAddress);
-        setJwtCookie(httpResponse, result.token());
+        LoginResult result = authService.login(request, clientIpResolver.resolve(httpRequest));
+        jwtCookieSupport.writeToken(httpResponse, result.token());
         return ResponseEntity.ok(result.loginResponse());
     }
 
@@ -69,11 +49,8 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse,
             @AuthenticationPrincipal User currentUser) {
-        String jwt = extractJwtFromCookie(httpRequest);
-        if (jwt != null) {
-            tokenRevocationService.revoke(jwt, currentUser.getId(), jwtService.extractExpiration(jwt));
-        }
-        clearJwtCookie(httpResponse);
+        revokeCurrentToken(httpRequest, currentUser);
+        jwtCookieSupport.clearToken(httpResponse);
         return ResponseEntity.noContent().build();
     }
 
@@ -86,67 +63,26 @@ public class AuthController {
 
         authService.changePassword(currentUser, request.getCurrentPassword(), request.getNewPassword());
 
-        String jwt = extractJwtFromCookie(httpRequest);
-        if (jwt != null) {
-            tokenRevocationService.revoke(jwt, currentUser.getId(), jwtService.extractExpiration(jwt));
-        }
-        clearJwtCookie(httpResponse);
+        revokeCurrentToken(httpRequest, currentUser);
+        jwtCookieSupport.clearToken(httpResponse);
         return ResponseEntity.ok(Map.of("message", "Password updated successfully. Please sign in again."));
     }
 
-    // ── Cookie helpers ────────────────────────────────────────────────────────
-
-    private void setJwtCookie(HttpServletResponse response, String token) {
-        // Use Set-Cookie header directly to set SameSite=Strict, which Jakarta Cookie API does not support.
-        // SameSite=Strict prevents the cookie from being sent on cross-site requests (CSRF protection).
-        response.setHeader("Set-Cookie",
-                String.format("%s=%s; HttpOnly; %sPath=/api; Max-Age=%d; SameSite=Strict",
-                        COOKIE_NAME, token,
-                        cookieSecure ? "Secure; " : "",
-                        (int) (jwtExpiryMs / 1000)));
-    }
-
-    private void clearJwtCookie(HttpServletResponse response) {
-        response.setHeader("Set-Cookie",
-                String.format("%s=; HttpOnly; %sPath=/api; Max-Age=0; SameSite=Strict",
-                        COOKIE_NAME,
-                        cookieSecure ? "Secure; " : ""));
-    }
-
-    private String extractJwtFromCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
-        for (Cookie cookie : request.getCookies()) {
-            if (COOKIE_NAME.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
+    private void revokeCurrentToken(HttpServletRequest httpRequest, User currentUser) {
+        String jwt = jwtCookieSupport.readToken(httpRequest);
+        if (jwt != null) {
+            tokenRevocationService.revoke(jwt, currentUser.getId(), jwtService.extractExpiration(jwt));
         }
-        return null;
-    }
-
-    // ── IP extraction ─────────────────────────────────────────────────────────
-
-    private String extractClientIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        Set<String> trustedIps = Arrays.stream(trustedProxyIpsRaw.split(","))
-                .map(String::trim)
-                .collect(Collectors.toSet());
-
-        if (trustedIps.contains(remoteAddr)) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                return forwarded.split(",")[0].trim();
-            }
-        }
-        return remoteAddr;
     }
 
     @Data
     public static class ChangePasswordRequest {
         @NotBlank(message = "Current password is required")
+        @Size(max = PasswordPolicy.MAX_LENGTH, message = "Password must be at most 72 characters")
         private String currentPassword;
 
         @NotBlank(message = "New password is required")
-        @Pattern(regexp = PASSWORD_POLICY_REGEX, message = PASSWORD_POLICY_MESSAGE)
+        @Pattern(regexp = PasswordPolicy.REGEX, message = PasswordPolicy.MESSAGE)
         private String newPassword;
     }
 }

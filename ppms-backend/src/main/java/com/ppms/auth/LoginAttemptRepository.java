@@ -21,4 +21,12 @@ public interface LoginAttemptRepository extends JpaRepository<LoginAttempt, Long
               AND a.attemptedAt > :since
             """)
     long countRecentFailures(String phoneNumber, OffsetDateTime since);
+
+    @Query("""
+            SELECT COUNT(a) FROM LoginAttempt a
+            WHERE a.ipAddress = :ipAddress
+              AND a.success = false
+              AND a.attemptedAt > :since
+            """)
+    long countRecentFailuresByIp(String ipAddress, OffsetDateTime since);
 }

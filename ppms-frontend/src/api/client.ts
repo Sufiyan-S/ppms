@@ -1,5 +1,7 @@
-import axios from 'axios'
+import axios, { isAxiosError } from 'axios'
 import { useAuthStore } from '../store/authStore'
+import { usePumpStore } from '../store/usePumpStore'
+import type { ApiErrorBody } from '../utils/apiError'
 
 // All requests go to /api/* — Vite proxy forwards them to Spring Boot in dev.
 // In production, both frontend and backend run on the same server, same origin.
@@ -27,12 +29,25 @@ const DANGEROUS_MESSAGE_PATTERNS = [
 ]
 
 function sanitizeErrorMessage(error: unknown): void {
-  const data = (error as any)?.response?.data
+  if (!isAxiosError<ApiErrorBody>(error)) return
+  const data = error.response?.data
   if (!data || typeof data.message !== 'string') return
-  const isLeaking = DANGEROUS_MESSAGE_PATTERNS.some((p) => p.test(data.message))
+  const message = data.message
+  const isLeaking = DANGEROUS_MESSAGE_PATTERNS.some((p) => p.test(message))
   if (isLeaking) {
     data.message = 'Something went wrong. Please try again.'
   }
+}
+
+const PUMP_SUSPENDED_MESSAGE = 'Pump is suspended'
+const PUMP_ID_IN_URL = /\/(?:pumps|inventory)\/(\d+)(?:\/|$|\?)/
+
+function recordSuspendedPump(error: unknown): void {
+  if (!isAxiosError<ApiErrorBody>(error)) return
+  if (error.response?.status !== 403 || error.response.data?.message !== PUMP_SUSPENDED_MESSAGE) return
+  const pumpIdInUrl = PUMP_ID_IN_URL.exec(error.config?.url ?? '')?.[1]
+  const pumpId = pumpIdInUrl ? Number(pumpIdInUrl) : usePumpStore.getState().selectedPumpId
+  if (pumpId !== null) usePumpStore.getState().markPumpSuspended(pumpId)
 }
 
 // If the server returns 401 and we are still authenticated, the session has expired.
@@ -41,6 +56,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     sanitizeErrorMessage(error)
+    recordSuspendedPump(error)
     if (error.response?.status === 401 && useAuthStore.getState().isAuthenticated) {
       useAuthStore.getState().clearAuth()
       window.location.href = '/login?reason=session_expired'

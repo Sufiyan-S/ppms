@@ -1,5 +1,6 @@
 package com.ppms.planning;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.PumpShiftDefinition;
@@ -30,11 +31,17 @@ public class ShiftPlanningService {
     private final ShiftPlanningRuleService ruleService;
     private final ShiftPlanningSlotService slotService;
     private final ShiftPlanningAllocationService allocationService;
+    private final BusinessClock businessClock;
 
     // ── Preferences ────────────────────────────────────────────────────────────
 
     @Transactional
     public StaffPreference setPreference(Long pumpId, Long userId, SetPreferenceRequest req) {
+        ruleService.validateOperatorForPump(userId, pumpId);
+        if (req.preferredShiftDefinitionId() != null
+                && shiftDefinitionRepository.findByIdAndPumpId(req.preferredShiftDefinitionId(), pumpId).isEmpty()) {
+            throw new ResourceNotFoundException("Shift definition not found");
+        }
         StaffPreference pref = preferenceRepository.findByUserId(userId)
                 .orElseGet(() -> StaffPreference.builder().userId(userId).pumpId(pumpId).build());
         pref.setPreferredShiftDefinitionId(req.preferredShiftDefinitionId());
@@ -42,7 +49,8 @@ public class ShiftPlanningService {
         return preferenceRepository.save(pref);
     }
 
-    public Optional<StaffPreference> getPreference(Long userId) {
+    public Optional<StaffPreference> getPreference(Long pumpId, Long userId) {
+        ruleService.validateOperatorForPump(userId, pumpId);
         return preferenceRepository.findByUserId(userId);
     }
 
@@ -50,6 +58,7 @@ public class ShiftPlanningService {
 
     @Transactional
     public StaffLeave addLeave(Long pumpId, Long userId, AddLeaveRequest req) {
+        ruleService.validateOperatorForPump(userId, pumpId);
         if (leaveRepository.existsByUserIdAndLeaveDate(userId, req.leaveDate())) {
             throw new BusinessException("Leave already recorded for " + req.leaveDate());
         }
@@ -65,14 +74,13 @@ public class ShiftPlanningService {
     @Transactional
     public void removeLeave(Long leaveId, Long pumpId) {
         StaffLeave leave = leaveRepository.findById(leaveId)
+                .filter(found -> found.getPumpId().equals(pumpId))
                 .orElseThrow(() -> new ResourceNotFoundException("Leave record not found"));
-        if (!leave.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Leave does not belong to this pump");
-        }
         leaveRepository.delete(leave);
     }
 
-    public List<StaffLeave> getLeaves(Long userId) {
+    public List<StaffLeave> getLeaves(Long pumpId, Long userId) {
+        ruleService.validateOperatorForPump(userId, pumpId);
         return leaveRepository.findByUserIdOrderByLeaveDateDesc(userId);
     }
 
@@ -95,7 +103,7 @@ public class ShiftPlanningService {
     @Transactional
     public ShiftPlan generatePlan(Long pumpId, GeneratePlanRequest req, Long createdByUserId) {
         LocalDate weekStart = slotService.normaliseToMonday(req.weekStart());
-        LocalDate today     = LocalDate.now();
+        LocalDate today     = businessClock.today();
         LocalDate weekEnd   = weekStart.plusDays(6);
 
         // Reject if the entire week is already in the past — nothing to plan
@@ -172,13 +180,14 @@ public class ShiftPlanningService {
         return planRepository.findByPumpIdAndWeekStart(pumpId, slotService.normaliseToMonday(weekStart));
     }
 
-    public List<ShiftPlanEntry> getEntries(Long planId) {
+    public List<ShiftPlanEntry> getEntries(Long pumpId, Long planId) {
+        loadPlan(planId, pumpId);
         return entryRepository.findByShiftPlanId(planId);
     }
 
     /** Upcoming published shifts for a staff member (from today onward). */
     public List<ShiftPlanEntry> getUpcomingForOperator(Long userId) {
-        return entryRepository.findUpcomingForOperator(userId, LocalDate.now());
+        return entryRepository.findUpcomingForOperator(userId, businessClock.today());
     }
 
     /** Planned operators for a specific date + shift definition (used to pre-fill shift opening). */
@@ -187,13 +196,13 @@ public class ShiftPlanningService {
     }
 
     // ── Plan editing ───────────────────────────────────────────────────────────
+    // Published plans stay editable on purpose (emergency overrides); the UI shows a warning instead.
 
     @Transactional
-    public ShiftPlanEntry addEntry(Long planId, AddEntryRequest req) {
-        ShiftPlan plan = loadPlan(planId);
-        validateNotPublishedLocked(plan);
-        ruleService.validateOperatorForPump(req.operatorUserId(), plan.getPumpId());
-        ruleService.validateNightShiftEligibility(req.operatorUserId(), req.shiftDefinitionId());
+    public ShiftPlanEntry addEntry(Long pumpId, Long planId, AddEntryRequest req) {
+        ShiftPlan plan = loadPlan(planId, pumpId);
+        ruleService.validateOperatorForPump(req.operatorUserId(), pumpId);
+        ruleService.validateNightShiftEligibility(req.operatorUserId(), req.shiftDefinitionId(), pumpId);
 
         // Duplicate check
         entryRepository.findByShiftPlanIdAndShiftDateAndShiftDefinitionIdAndOperatorUserId(
@@ -221,12 +230,11 @@ public class ShiftPlanningService {
     }
 
     @Transactional
-    public ShiftPlanEntry updateEntry(Long planId, Long entryId, UpdateEntryRequest req) {
-        ShiftPlan plan = loadPlan(planId);
-        validateNotPublishedLocked(plan);
+    public ShiftPlanEntry updateEntry(Long pumpId, Long planId, Long entryId, UpdateEntryRequest req) {
+        ShiftPlan plan = loadPlan(planId, pumpId);
         ShiftPlanEntry entry = loadEntry(entryId, planId);
-        ruleService.validateOperatorForPump(req.operatorUserId(), plan.getPumpId());
-        ruleService.validateNightShiftEligibility(req.operatorUserId(), entry.getShiftDefinitionId());
+        ruleService.validateOperatorForPump(req.operatorUserId(), pumpId);
+        ruleService.validateNightShiftEligibility(req.operatorUserId(), entry.getShiftDefinitionId(), pumpId);
 
         if (!req.operatorUserId().equals(entry.getOperatorUserId())) {
             // Changing operator — re-validate consecutive constraint for new operator
@@ -244,9 +252,8 @@ public class ShiftPlanningService {
     }
 
     @Transactional
-    public void removeEntry(Long planId, Long entryId) {
-        ShiftPlan plan = loadPlan(planId);
-        validateNotPublishedLocked(plan);
+    public void removeEntry(Long pumpId, Long planId, Long entryId) {
+        ShiftPlan plan = loadPlan(planId, pumpId);
         ShiftPlanEntry entry = loadEntry(entryId, planId);
         entryRepository.delete(entry);
     }
@@ -254,8 +261,8 @@ public class ShiftPlanningService {
     // ── Publish ────────────────────────────────────────────────────────────────
 
     @Transactional
-    public ShiftPlan publishPlan(Long planId) {
-        ShiftPlan plan = loadPlan(planId);
+    public ShiftPlan publishPlan(Long pumpId, Long planId) {
+        ShiftPlan plan = loadPlan(planId, pumpId);
         if (plan.getStatus() == ShiftPlanStatus.PUBLISHED) {
             throw new BusinessException("Plan is already published.");
         }
@@ -288,23 +295,15 @@ public class ShiftPlanningService {
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private ShiftPlan loadPlan(Long planId) {
-        return planRepository.findById(planId)
+    private ShiftPlan loadPlan(Long planId, Long pumpId) {
+        return planRepository.findByIdAndPumpId(planId, pumpId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift plan not found"));
     }
 
     private ShiftPlanEntry loadEntry(Long entryId, Long planId) {
-        ShiftPlanEntry entry = entryRepository.findById(entryId)
+        return entryRepository.findById(entryId)
+                .filter(found -> found.getShiftPlanId().equals(planId))
                 .orElseThrow(() -> new ResourceNotFoundException("Plan entry not found"));
-        if (!entry.getShiftPlanId().equals(planId)) {
-            throw new BusinessException("Entry does not belong to this plan");
-        }
-        return entry;
-    }
-
-    private void validateNotPublishedLocked(ShiftPlan plan) {
-        // Published plans can still be manually edited (emergency override allowed)
-        // No restriction here — the UI can show a warning instead
     }
 
 }

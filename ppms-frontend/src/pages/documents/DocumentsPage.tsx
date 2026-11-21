@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { documentApi } from '../../api/documentApi'
 import type { PumpDocument, UpsertDocumentRequest, DocumentStatus } from '../../api/documentApi'
 import { SkeletonRows } from '../../components/Skeleton'
 import { Spinner } from '../../components/Spinner'
+import { ConfirmButton } from '../../components/ConfirmButton'
 import { Reveal } from '../../components/Reveal'
 import { formatIstDate } from '../../utils/date'
 import { parseApiError } from '../../utils/apiError'
 import { useToastStore } from '../../store/toastStore'
+import { codeLabel } from '../../constants/labels'
 
 const STATUS_STYLES: Record<DocumentStatus, string> = {
   VALID:          'bg-emerald-100 text-emerald-700',
@@ -42,7 +43,6 @@ export default function DocumentsPage() {
   const [editId, setEditId] = useState<number | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
   const saveMutation = useMutation({
     mutationFn: (data: UpsertDocumentRequest) =>
@@ -57,7 +57,7 @@ export default function DocumentsPage() {
       setShowForm(false)
       setFormError(null)
     },
-    onError: (err: any) => setFormError(parseApiError(err, 'Failed to save document')),
+    onError: (err) => setFormError(parseApiError(err, 'Failed to save document')),
   })
 
   const deleteMutation = useMutation({
@@ -65,11 +65,9 @@ export default function DocumentsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['documents', pumpId] })
       addToast('Document deleted.', 'success')
-      setDeleteConfirmId(null)
     },
-    onError: (err: any) => {
+    onError: (err) => {
       addToast(parseApiError(err, 'Failed to delete document'), 'error')
-      setDeleteConfirmId(null)
     },
   })
 
@@ -135,52 +133,60 @@ export default function DocumentsPage() {
 
           <div className="ui-form-shell__grid">
             <div>
-              <label className="ui-label">Document Name</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="text-sm"
-                placeholder="e.g. Petrol Pump Licence"
-                required
-              />
+              <label className="block">
+                <span className="ui-label">Document Name</span>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  className="text-sm"
+                  placeholder="e.g. Petrol Pump Licence"
+                  required
+                />
+              </label>
             </div>
 
             <div>
-              <label className="ui-label">Document Type</label>
-              <input
-                type="text"
-                value={form.docType}
-                onChange={e => setForm(f => ({ ...f, docType: e.target.value }))}
-                className="text-sm"
-                placeholder="e.g. Licence, Certificate, Permit"
-                required
-              />
+              <label className="block">
+                <span className="ui-label">Document Type</span>
+                <input
+                  type="text"
+                  value={form.docType}
+                  onChange={e => setForm(f => ({ ...f, docType: e.target.value }))}
+                  className="text-sm"
+                  placeholder="e.g. Licence, Certificate, Permit"
+                  required
+                />
+              </label>
             </div>
 
             <div>
-              <label className="ui-label">Expiry Date (optional)</label>
-              <input
-                type="date"
-                value={form.expiryDate ?? ''}
-                onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value || null }))}
-                className="text-sm"
-              />
+              <label className="block">
+                <span className="ui-label">Expiry Date (optional)</span>
+                <input
+                  type="date"
+                  value={form.expiryDate ?? ''}
+                  onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value || null }))}
+                  className="text-sm"
+                />
+              </label>
             </div>
 
             <div>
-              <label className="ui-label">Notes (optional)</label>
-              <input
-                type="text"
-                value={form.notes ?? ''}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value || null }))}
-                className="text-sm"
-                placeholder="Any additional notes"
-              />
+              <label className="block">
+                <span className="ui-label">Notes (optional)</span>
+                <input
+                  type="text"
+                  value={form.notes ?? ''}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value || null }))}
+                  className="text-sm"
+                  placeholder="Any additional notes"
+                />
+              </label>
             </div>
           </div>
 
-          {formError && <p className="ui-error-text">{formError}</p>}
+          {formError && <p role="alert" className="ui-error-text">{formError}</p>}
 
           <button
             type="submit"
@@ -213,14 +219,14 @@ export default function DocumentsPage() {
                   <div className="ui-record-row__title">
                     <p className="text-sm font-medium text-slate-800">{doc.name}</p>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[doc.status]}`}>
-                      {doc.status.replace('_', ' ')}
+                      {codeLabel(doc.status)}
                     </span>
                   </div>
                   <div className="ui-record-row__meta">
-                    <p className="text-xs text-slate-400">{doc.docType}</p>
-                    <span className="text-xs text-slate-300">·</span>
-                    <p className="text-xs text-slate-400">Expires: {fmtDate(doc.expiryDate)}</p>
-                    {doc.notes && <><span className="text-xs text-slate-300">·</span><p className="text-xs text-slate-400 truncate">{doc.notes}</p></>}
+                    <p className="text-xs text-slate-500">{doc.docType}</p>
+                    <span className="text-xs text-slate-500">·</span>
+                    <p className="text-xs text-slate-500">Expires: {fmtDate(doc.expiryDate)}</p>
+                    {doc.notes && <><span className="text-xs text-slate-500">·</span><p className="text-xs text-slate-500 truncate">{doc.notes}</p></>}
                   </div>
                 </div>
                 <div className="ui-record-row__actions">
@@ -231,32 +237,11 @@ export default function DocumentsPage() {
                     Edit
                   </button>
                   {isOwner && (
-                    deleteConfirmId === doc.id ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-red-600 font-medium">Delete?</span>
-                        <button
-                          onClick={() => deleteMutation.mutate(doc.id)}
-                          disabled={deleteMutation.isPending}
-                          className="text-xs font-semibold text-red-600 hover:text-red-800 disabled:opacity-50"
-                        >
-                          {deleteMutation.isPending ? <Spinner className="w-3 h-3" /> : 'Yes'}
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(null)}
-                          disabled={deleteMutation.isPending}
-                          className="text-xs text-slate-400 hover:text-slate-600"
-                        >
-                          No
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteConfirmId(doc.id)}
-                        className="ui-btn ui-btn-ghost min-h-0 p-1 text-red-400 hover:text-red-600"
-                      >
-                        <X size={13} strokeWidth={2} />
-                      </button>
-                    )
+                    <ConfirmButton
+                      onConfirm={() => deleteMutation.mutate(doc.id)}
+                      disabled={deleteMutation.isPending}
+                      triggerAriaLabel={`Delete ${doc.name}`}
+                    />
                   )}
                 </div>
               </div>

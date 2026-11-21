@@ -8,10 +8,12 @@ export interface FuelPriceForDate {
 
 export const fuelPriceApi = {
   /**
-   * Returns the effective price for every fuel type at this pump on the given historical date.
-   * pricePerUnit is null when no price record exists on or before that date.
-   * Used by the backfill shift modal to resolve historical rates and flag which ones need manual entry.
+   * Returns the effective price for every fuel type at this pump on the given historical date,
+   * as of the start of the given shift window when one is passed.
+   * pricePerUnit is null when no price record exists by then.
    */
-  getForDate: (pumpId: number, date: string): Promise<FuelPriceForDate[]> =>
-    client.get('/fuel-prices/for-date', { params: { pumpId, date } }).then(r => r.data),
+  getForDate: (pumpId: number, date: string, shiftDefinitionId?: number | null): Promise<FuelPriceForDate[]> =>
+    client.get(`/pumps/${pumpId}/fuel-prices/for-date`, {
+      params: { date, shiftDefinitionId: shiftDefinitionId ?? undefined },
+    }).then(r => r.data),
 }

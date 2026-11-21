@@ -6,84 +6,96 @@ import com.ppms.user.UserRole;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.io.IOException;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Intercepts all /api/pumps/{pumpId}/** and /api/inventory/{pumpId}/** requests
- * and enforces pump-level access control:
+ * Enforces pump-level access on every /api/pumps/** and /api/inventory/** request:
  *
  * - SUPER_ADMIN  → always allowed (platform-wide access)
  * - OWNER        → allowed only if they own the pump (pump.ownerId == user.id)
  * - ADMIN / MANAGER / OPERATOR → allowed only if assigned to that pump
  *
- * This interceptor runs AFTER JWT authentication, so SecurityContextHolder
- * already contains the authenticated User.
+ * The pump id is read from the {pumpId} path variable Spring bound for the handler,
+ * not from the raw URI, so encoded paths such as /api/pumps/%37/... cannot skip the check.
+ * Handlers on these paths without a {pumpId} variable are rejected, except the pump list/create endpoint.
  */
 @Component
 @RequiredArgsConstructor
 public class PumpAccessInterceptor implements HandlerInterceptor {
 
-    // Matches /api/pumps/{id}/... and /api/inventory/{id}/...
-    private static final Pattern PUMP_ID_PATTERN =
-            Pattern.compile("^/api/(?:pumps|inventory)/([0-9]+)(?:/.*)?$");
+    private static final String PUMP_ID_VARIABLE = "pumpId";
+    private static final Set<String> PATHS_WITHOUT_PUMP_ID = Set.of("/api/pumps", "/api/pumps/");
 
     private final PumpLocationRepository pumpLocationRepository;
 
     @Override
     public boolean preHandle(HttpServletRequest request,
                              HttpServletResponse response,
-                             Object handler) throws Exception {
+                             Object handler) throws IOException {
 
-        String path = request.getRequestURI();
-        Matcher matcher = PUMP_ID_PATTERN.matcher(path);
-        if (!matcher.matches()) {
-            // URL does not contain a pump ID — nothing to guard here
+        if (!(handler instanceof HandlerMethod)) {
             return true;
         }
 
-        long pumpId = Long.parseLong(matcher.group(1));
-
-        Object principal = SecurityContextHolder.getContext()
-                .getAuthentication()
-                .getPrincipal();
-
-        // Guard: only authenticated User instances are expected here
-        if (!(principal instanceof User user)) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"message\":\"Unauthorized\"}");
-            return false;
+        String pumpIdText = readPumpIdVariable(request);
+        if (pumpIdText == null) {
+            if (PATHS_WITHOUT_PUMP_ID.contains(request.getRequestURI())) {
+                return true;
+            }
+            return reject(response, HttpServletResponse.SC_FORBIDDEN, "Pump could not be determined for this request");
         }
 
-        // SUPER_ADMIN bypasses all pump-level access guards
+        long pumpId;
+        try {
+            pumpId = Long.parseLong(pumpIdText);
+        } catch (NumberFormatException e) {
+            return reject(response, HttpServletResponse.SC_FORBIDDEN, "Invalid pump id");
+        }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof User user)) {
+            return reject(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+        }
+
         if (user.getRole() == UserRole.SUPER_ADMIN) {
             return true;
         }
 
-        // OWNER: verify they own the pump
         if (user.getRole() == UserRole.OWNER) {
             if (!pumpLocationRepository.existsByIdAndOwnerId(pumpId, user.getId())) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                response.setContentType("application/json");
-                response.getWriter().write("{\"message\":\"You do not have access to pump " + pumpId + "\"}");
-                return false;
+                return reject(response, HttpServletResponse.SC_FORBIDDEN, "You do not have access to pump " + pumpId);
             }
-            return true;
+        } else if (!Long.valueOf(pumpId).equals(user.getAssignedPumpId())) {
+            return reject(response, HttpServletResponse.SC_FORBIDDEN, "You are not assigned to pump " + pumpId);
         }
 
-        // ADMIN / MANAGER / OPERATOR: must be assigned to this exact pump
-        if (!Long.valueOf(pumpId).equals(user.getAssignedPumpId())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"message\":\"You are not assigned to pump " + pumpId + "\"}");
-            return false;
+        if (!pumpLocationRepository.existsByIdAndEnabledTrue(pumpId)) {
+            return reject(response, HttpServletResponse.SC_FORBIDDEN, "Pump is suspended");
         }
-
         return true;
+    }
+
+    private String readPumpIdVariable(HttpServletRequest request) {
+        Object variables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+        if (variables instanceof Map<?, ?> map && map.get(PUMP_ID_VARIABLE) instanceof String pumpId) {
+            return pumpId;
+        }
+        return null;
+    }
+
+    private boolean reject(HttpServletResponse response, int status, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"message\":\"" + message + "\"}");
+        return false;
     }
 }

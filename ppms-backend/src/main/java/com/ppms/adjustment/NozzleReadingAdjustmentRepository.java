@@ -11,7 +11,7 @@ public interface NozzleReadingAdjustmentRepository extends JpaRepository<NozzleR
 
     List<NozzleReadingAdjustment> findByNozzleIdOrderByCreatedAtDesc(Long nozzleId);
 
-    /** Used by balance sheet generation to surface amendments within a report period. */
-    List<NozzleReadingAdjustment> findByPumpIdAndCreatedAtBetweenOrderByCreatedAtAsc(
+    /** Amendments recorded within [from, to) — used by balance sheet generation. */
+    List<NozzleReadingAdjustment> findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(
             Long pumpId, OffsetDateTime from, OffsetDateTime to);
 }

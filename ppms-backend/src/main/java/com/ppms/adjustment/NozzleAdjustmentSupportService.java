@@ -28,7 +28,7 @@ public class NozzleAdjustmentSupportService {
                 .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
         dispensaryUnitRepository.findById(nozzle.getDuId()).ifPresent(du -> {
             if (!du.getPumpId().equals(pumpId)) {
-                throw new BusinessException("Nozzle does not belong to pump " + pumpId);
+                throw new ResourceNotFoundException("Nozzle not found");
             }
         });
         shiftRepository.findOpenShiftByNozzle(nozzleId).ifPresent(shift -> {
@@ -44,7 +44,7 @@ public class NozzleAdjustmentSupportService {
                 .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
         dispensaryUnitRepository.findById(nozzle.getDuId()).ifPresent(du -> {
             if (!du.getPumpId().equals(pumpId)) {
-                throw new BusinessException("Nozzle does not belong to pump " + pumpId);
+                throw new ResourceNotFoundException("Nozzle not found");
             }
         });
         return nozzle;

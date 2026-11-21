@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.OffsetDateTime;
-import java.util.UUID;
 
 /**
  * One-time password reset token.
@@ -13,6 +12,8 @@ import java.util.UUID;
  *  1. User submits phone number → system looks up their email → emails a UUID token link.
  *  2. User clicks link → frontend sends token + new password to /api/auth/reset-password.
  *  3. System validates token (not expired, not used), updates password, marks used_at.
+ *
+ * Only the SHA-256 hash of the token is stored, so a database leak does not expose live reset links.
  *
  * Tokens expire after 1 hour (validated in service code).
  * Once used (used_at is set), subsequent use of the same token is rejected.
@@ -34,8 +35,8 @@ public class PasswordResetToken {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "token", nullable = false, unique = true)
-    private UUID token;
+    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
+    private String tokenHash;
 
     @Column(name = "expires_at", nullable = false)
     private OffsetDateTime expiresAt;
@@ -49,9 +50,6 @@ public class PasswordResetToken {
 
     @PrePersist
     protected void onCreate() {
-        if (token == null) {
-            token = UUID.randomUUID();
-        }
         createdAt = OffsetDateTime.now();
     }
 }

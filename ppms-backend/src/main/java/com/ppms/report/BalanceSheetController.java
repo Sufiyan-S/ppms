@@ -1,11 +1,11 @@
 package com.ppms.report;
 
+import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -77,7 +77,7 @@ public class BalanceSheetController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        return ResponseEntity.ok(balanceSheetService.list(pumpId, from, to, PageRequest.of(page, size)));
+        return ResponseEntity.ok(balanceSheetService.list(pumpId, from, to, PageRequests.of(page, size)));
     }
 
     /**

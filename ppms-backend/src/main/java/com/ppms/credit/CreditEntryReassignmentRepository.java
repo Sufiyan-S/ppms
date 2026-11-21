@@ -9,4 +9,6 @@ import java.util.List;
 public interface CreditEntryReassignmentRepository extends JpaRepository<CreditEntryReassignment, Long> {
 
     List<CreditEntryReassignment> findByCreditEntryIdOrderByReassignedAtDesc(Long creditEntryId);
+
+    boolean existsByFromClientIdOrToClientId(Long fromClientId, Long toClientId);
 }

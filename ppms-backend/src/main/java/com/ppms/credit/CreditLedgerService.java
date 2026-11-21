@@ -1,17 +1,16 @@
 package com.ppms.credit;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.expense.ApprovalPolicy;
 import com.ppms.expense.ExpenseApprovalStatus;
-import com.ppms.pump.PumpLocation;
-import com.ppms.pump.PumpLocationRepository;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftCreditEntry;
 import com.ppms.shift.ShiftCreditEntryRepository;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.UserRepository;
 import com.ppms.user.User;
-import com.ppms.user.UserRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Service layer for credit ledger business operations.
@@ -38,15 +39,14 @@ public class CreditLedgerService {
     private final ShiftRepository shiftRepository;
     private final CreditEntryReassignmentRepository reassignmentRepository;
     private final CreditInterestService interestService;
-    private final PumpLocationRepository pumpLocationRepository;
+    private final ApprovalPolicy approvalPolicy;
+    private final CreditAccountPolicyService creditAccountPolicyService;
     private final UserRepository userRepository;
+    private final BusinessClock businessClock;
 
     /**
      * Records a payment settlement against a client's outstanding balance.
-     *
-     * Bug 1 fix: for parent accounts the overpayment guard now checks the combined
-     * outstanding (parent + all sub-accounts), not just the parent's own balance.
-     * Previously a parent with ₹0 own but ₹200k in children would block any payment.
+     * A payment can never exceed what the whole client group still owes.
      */
     @Transactional
     public CreditPayment recordPayment(Long pumpId, Long clientId,
@@ -56,38 +56,23 @@ public class CreditLedgerService {
                 .orElseThrow(() -> new ResourceNotFoundException("Credit client not found"));
 
         if (!client.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Client does not belong to this pump");
+            throw new ResourceNotFoundException("Client not found");
         }
 
-        // For parent accounts: outstanding includes all children — payments against the parent
-        // can settle up to the full group balance, not just the parent's own portion.
-        boolean isParent = !clientRepository.findByParentClientId(clientId).isEmpty();
-        BigDecimal outstanding = isParent
-                ? interestService.computeOutstandingWithChildren(clientId)
-                : interestService.computeOutstanding(clientId);
+        creditAccountPolicyService.lockLimitHolder(client);
 
+        BigDecimal payable = payableAmount(client);
         BigDecimal paymentAmount = request.getAmount().setScale(2, RoundingMode.HALF_UP);
-        if (paymentAmount.compareTo(outstanding) > 0) {
+        if (paymentAmount.compareTo(payable) > 0) {
             throw new BusinessException(
-                    "Payment amount (" + paymentAmount + ") exceeds the outstanding balance (" + outstanding + "). " +
-                    "You cannot over-pay a credit account.");
+                    "Payment amount (" + paymentAmount + ") exceeds the amount still payable (" + payable + "), "
+                            + "which is the outstanding balance less payments awaiting approval. "
+                            + "You cannot over-pay a credit account.");
         }
 
-        // Determine approval status:
-        // - OWNER and ADMIN payments are auto-approved regardless of amount.
-        // - For MANAGER and below: if an expense_approval_threshold is set on the pump AND
-        //   the payment exceeds it, the payment requires Owner/Admin approval before it
-        //   reduces the outstanding balance.
-        ExpenseApprovalStatus approvalStatus = ExpenseApprovalStatus.APPROVED;
-        if (currentUser.getRole() != UserRole.OWNER && currentUser.getRole() != UserRole.ADMIN
-                && currentUser.getRole() != UserRole.SUPER_ADMIN) {
-            PumpLocation pump = pumpLocationRepository.findById(pumpId).orElse(null);
-            if (pump != null && pump.getExpenseApprovalThreshold() != null
-                    && paymentAmount.compareTo(pump.getExpenseApprovalThreshold()) > 0) {
-                approvalStatus = ExpenseApprovalStatus.PENDING_APPROVAL;
-                log.info("Credit payment set to PENDING_APPROVAL: pumpId={} amount={} threshold={}",
-                        pumpId, paymentAmount, pump.getExpenseApprovalThreshold());
-            }
+        ExpenseApprovalStatus approvalStatus = approvalPolicy.resolveCreditPaymentStatus(pumpId, currentUser, paymentAmount);
+        if (approvalStatus == ExpenseApprovalStatus.PENDING_APPROVAL) {
+            log.info("Credit payment set to PENDING_APPROVAL: pumpId={} amount={}", pumpId, paymentAmount);
         }
 
         CreditPayment payment = CreditPayment.builder()
@@ -131,8 +116,10 @@ public class CreditLedgerService {
         }
 
         if (!charge.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Interest charge does not belong to this pump");
+            throw new ResourceNotFoundException("Interest charge not found");
         }
+
+        creditAccountPolicyService.lockLimitHolderOfClient(clientId);
 
         interestChargeRepository.deleteById(chargeId);
 
@@ -143,10 +130,6 @@ public class CreditLedgerService {
 
     /**
      * Moves a credit entry from its current account to a different account within the same group.
-     *
-     * Bug 6 fix: when the entry has no prior clientId (was never linked), the audit record
-     * previously stored fromClientId = toClientId, making it look like a no-op. Now it stores
-     * null explicitly so the audit trail accurately reflects "previously unlinked → toClient".
      */
     @Transactional
     public void reassignCreditEntry(Long pumpId, Long entryId,
@@ -158,13 +141,13 @@ public class CreditLedgerService {
         Shift shift = shiftRepository.findById(entry.getShiftId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
         if (!shift.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Credit entry does not belong to this pump");
+            throw new ResourceNotFoundException("Credit entry not found");
         }
 
         CreditClient toClient = clientRepository.findById(request.getToClientId())
                 .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
         if (!toClient.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Target client does not belong to this pump");
+            throw new ResourceNotFoundException("Target client not found");
         }
 
         if (entry.getClientId() != null && entry.getClientId().equals(request.getToClientId())) {
@@ -173,14 +156,9 @@ public class CreditLedgerService {
 
         Long fromClientId = entry.getClientId(); // null when entry was never linked to a client
         validateGroupMove(pumpId, fromClientId, request.getToClientId());
+        creditAccountPolicyService.lockLimitHolder(toClient);
 
-        // Bug 6 fix: only save an audit record when the entry had a previous client.
-        // When fromClientId is null the entry was never assigned — this is an initial assignment,
-        // not a re-assignment. The old code stored fromClientId = toClientId in this case,
-        // which made the audit log look like a no-op (moved from X to X).
-        // from_client_id is NOT NULL in the schema, so we cannot store null;
-        // skipping the audit record entirely is more accurate than a misleading from==to entry.
-        // The action is still fully captured by the log statement below.
+        // A first assignment has no previous client, and from_client_id cannot be null, so only moves are recorded.
         if (fromClientId != null) {
             reassignmentRepository.save(CreditEntryReassignment.builder()
                     .creditEntryId(entryId)
@@ -210,7 +188,7 @@ public class CreditLedgerService {
                 .orElseThrow(() -> new ResourceNotFoundException("Credit payment not found"));
 
         if (!payment.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Credit payment does not belong to this pump");
+            throw new ResourceNotFoundException("Credit payment not found");
         }
 
         if (payment.getClientId().equals(request.getToClientId())) {
@@ -218,6 +196,9 @@ public class CreditLedgerService {
         }
 
         validateGroupMove(pumpId, payment.getClientId(), request.getToClientId());
+        CreditClient toClient = clientRepository.findById(request.getToClientId())
+                .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
+        creditAccountPolicyService.lockLimitHolder(toClient);
 
         Long fromClientId = payment.getClientId();
         payment.setClientId(request.getToClientId());
@@ -230,22 +211,56 @@ public class CreditLedgerService {
     @Transactional
     public CreditPayment approvePayment(Long pumpId, Long paymentId,
                                         ExpenseApprovalStatus newStatus, User currentUser) {
+        Long clientId = paymentRepository.findClientIdByIdAndPumpId(paymentId, pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+        CreditClient client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found"));
+        creditAccountPolicyService.lockLimitHolder(client);
+
         CreditPayment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
-
-        if (!payment.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Payment does not belong to this pump");
-        }
 
         if (payment.getPaymentApprovalStatus() != ExpenseApprovalStatus.PENDING_APPROVAL) {
             throw new BusinessException(
                     "Payment is already " + payment.getPaymentApprovalStatus() + " — only PENDING_APPROVAL payments can be acted on");
         }
+        if (payment.getRecordedById().equals(currentUser.getId())) {
+            throw new BusinessException("You recorded this payment, so another Owner or Admin must approve or reject it.");
+        }
+
+        if (newStatus == ExpenseApprovalStatus.APPROVED) {
+            BigDecimal payableIncludingThisPayment = payableAmount(client).add(payment.getAmount());
+            if (payment.getAmount().compareTo(payableIncludingThisPayment) > 0) {
+                throw new BusinessException(
+                        "Approving this payment (" + payment.getAmount() + ") would exceed the amount still payable ("
+                                + payableIncludingThisPayment + "). Reject it or record a smaller payment.");
+            }
+        }
 
         payment.setPaymentApprovalStatus(newStatus);
         payment.setApprovedByUserId(currentUser.getId());
-        payment.setApprovedAt(java.time.OffsetDateTime.now());
+        payment.setApprovedAt(businessClock.now());
         return paymentRepository.save(payment);
+    }
+
+    /**
+     * Outstanding less payments awaiting approval, for the whole parent / sub-account group.
+     * A sub-account payment is also capped at that sub-account's own payable balance.
+     */
+    private BigDecimal payableAmount(CreditClient client) {
+        Long holderId = creditAccountPolicyService.limitHolderId(client);
+        List<Long> groupClientIds = new ArrayList<>();
+        groupClientIds.add(holderId);
+        clientRepository.findByParentClientId(holderId).forEach(child -> groupClientIds.add(child.getId()));
+
+        BigDecimal groupPayable = interestService.computeOutstandingWithChildren(holderId)
+                .subtract(paymentRepository.sumPendingAmountByClientIds(groupClientIds));
+        if (client.getId().equals(holderId)) {
+            return groupPayable.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal ownPayable = interestService.computeOutstanding(client.getId())
+                .subtract(paymentRepository.sumPendingAmountByClientIds(List.of(client.getId())));
+        return groupPayable.min(ownPayable).setScale(2, RoundingMode.HALF_UP);
     }
 
     public String resolveRecordedByName(Long userId) {
@@ -265,7 +280,7 @@ public class CreditLedgerService {
                 .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
 
         if (!fromClient.getPumpId().equals(pumpId) || !toClient.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Credit accounts do not belong to this pump");
+            throw new ResourceNotFoundException("Credit client not found");
         }
 
         Long fromGroupRoot = fromClient.getParentClientId() != null ? fromClient.getParentClientId() : fromClient.getId();

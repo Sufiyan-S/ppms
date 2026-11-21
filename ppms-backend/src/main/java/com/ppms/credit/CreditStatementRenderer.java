@@ -1,6 +1,8 @@
 package com.ppms.credit;
 
+import com.ppms.common.time.BusinessClock;
 import com.ppms.pump.PumpLocation;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -9,7 +11,10 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class CreditStatementRenderer {
+
+    private final BusinessClock businessClock;
 
     public String render(PumpLocation pump,
                          CreditClient client,
@@ -22,6 +27,34 @@ public class CreditStatementRenderer {
                 ? "Period: " + (fromDate != null ? fromDate : "inception") + " to " + (toDate != null ? toDate : "today")
                 : "All transactions";
 
+        appendDocumentHead(sb, client);
+        sb.append("<div class='header'>")
+                .append("<h1>").append(escapeHtml(pump.getName())).append("</h1>")
+                .append("<h2>").append(escapeHtml(pump.getAddress())).append("</h2>")
+                .append("<h2 style='margin-top:8px;color:#333;'>CREDIT ACCOUNT STATEMENT</h2>")
+                .append("</div>");
+
+        appendAccountDetails(sb, client, periodLabel);
+
+        if (transactions.isEmpty()) {
+            sb.append("<p><em>No transactions found for the selected period.</em></p>");
+        } else {
+            appendTransactionTable(sb, transactions);
+        }
+
+        sb.append("<div class='summary'>")
+                .append("<p class='outstanding'>Outstanding Balance: ₹")
+                .append(outstanding.setScale(2, RoundingMode.HALF_UP).toPlainString())
+                .append("</p></div>");
+
+        sb.append("<div class='no-print'><button onclick='window.print()' ")
+                .append("style='padding:8px 20px;font-size:13px;cursor:pointer;'>Print Statement</button></div>");
+
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    private void appendDocumentHead(StringBuilder sb, CreditClient client) {
         sb.append("""
                 <!DOCTYPE html>
                 <html lang="en">
@@ -50,14 +83,10 @@ public class CreditStatementRenderer {
                 </style>
                 </head>
                 <body>
-                """.formatted(client.getName()));
+                """.formatted(escapeHtml(client.getName())));
+    }
 
-        sb.append("<div class='header'>")
-                .append("<h1>").append(escapeHtml(pump.getName())).append("</h1>")
-                .append("<h2>").append(escapeHtml(pump.getAddress())).append("</h2>")
-                .append("<h2 style='margin-top:8px;color:#333;'>CREDIT ACCOUNT STATEMENT</h2>")
-                .append("</div>");
-
+    private void appendAccountDetails(StringBuilder sb, CreditClient client, String periodLabel) {
         sb.append("<div class='meta-row'>")
                 .append("<div class='meta-block'>")
                 .append("<p><strong>Account:</strong> ").append(escapeHtml(client.getName())).append("</p>");
@@ -70,50 +99,40 @@ public class CreditStatementRenderer {
         sb.append("</div>")
                 .append("<div class='meta-block' style='text-align:right;'>")
                 .append("<p>").append(periodLabel).append("</p>")
-                .append("<p>Printed: ").append(LocalDate.now()).append("</p>")
+                .append("<p>Printed: ").append(businessClock.today()).append("</p>")
                 .append("</div></div>");
+    }
 
-        if (transactions.isEmpty()) {
-            sb.append("<p><em>No transactions found for the selected period.</em></p>");
-        } else {
-            sb.append("<table><thead><tr>")
-                    .append("<th>Date</th><th>Type</th><th>Description</th>")
-                    .append("<th class='amount'>Debit (₹)</th><th class='amount'>Credit (₹)</th>")
-                    .append("<th class='balance'>Balance (₹)</th>")
-                    .append("</tr></thead><tbody>");
+    private void appendTransactionTable(StringBuilder sb, List<CreditTransactionResponse> transactions) {
+        sb.append("<table><thead><tr>")
+                .append("<th>Date</th><th>Type</th><th>Description</th>")
+                .append("<th class='amount'>Debit (₹)</th><th class='amount'>Credit (₹)</th>")
+                .append("<th class='balance'>Balance (₹)</th>")
+                .append("</tr></thead><tbody>");
 
-            for (CreditTransactionResponse tx : transactions) {
-                String typeClass = "type-" + tx.getType();
-                String debit = "SALE".equals(tx.getType()) || "INTEREST".equals(tx.getType())
-                        ? tx.getAmount().toPlainString() : "";
-                String credit = "PAYMENT".equals(tx.getType()) ? tx.getAmount().toPlainString() : "";
-                String desc = tx.getReference() != null ? escapeHtml(tx.getReference()) : "";
-                if (tx.getDetail() != null) {
-                    desc += " <span style='color:#888;'>(" + escapeHtml(tx.getDetail()) + ")</span>";
-                }
-
-                sb.append("<tr class='").append(typeClass).append("'>")
-                        .append("<td>").append(tx.getOccurredAt().toLocalDate()).append("</td>")
-                        .append("<td>").append(tx.getType()).append("</td>")
-                        .append("<td>").append(desc).append("</td>")
-                        .append("<td class='amount'>").append(debit).append("</td>")
-                        .append("<td class='amount'>").append(credit).append("</td>")
-                        .append("<td class='balance'>").append(tx.getRunningBalance().toPlainString()).append("</td>")
-                        .append("</tr>");
+        for (CreditTransactionResponse tx : transactions) {
+            String typeClass = "type-" + tx.getType();
+            String debit = "SALE".equals(tx.getType()) || "INTEREST".equals(tx.getType())
+                    ? tx.getAmount().toPlainString() : "";
+            String credit = "PAYMENT".equals(tx.getType()) ? tx.getAmount().toPlainString() : "";
+            String desc = tx.getReference() != null ? escapeHtml(tx.getReference()) : "";
+            if (tx.getDetail() != null) {
+                desc += " <span style='color:#888;'>(" + escapeHtml(tx.getDetail()) + ")</span>";
             }
-            sb.append("</tbody></table>");
+            if (!tx.isCountedInBalance()) {
+                desc += " <strong>[" + escapeHtml(tx.getStatus()) + " – not in balance]</strong>";
+            }
+
+            sb.append("<tr class='").append(typeClass).append("'>")
+                    .append("<td>").append(tx.getBusinessDate()).append("</td>")
+                    .append("<td>").append(tx.getType()).append("</td>")
+                    .append("<td>").append(desc).append("</td>")
+                    .append("<td class='amount'>").append(debit).append("</td>")
+                    .append("<td class='amount'>").append(credit).append("</td>")
+                    .append("<td class='balance'>").append(tx.getRunningBalance().toPlainString()).append("</td>")
+                    .append("</tr>");
         }
-
-        sb.append("<div class='summary'>")
-                .append("<p class='outstanding'>Outstanding Balance: ₹")
-                .append(outstanding.setScale(2, RoundingMode.HALF_UP).toPlainString())
-                .append("</p></div>");
-
-        sb.append("<div class='no-print'><button onclick='window.print()' ")
-                .append("style='padding:8px 20px;font-size:13px;cursor:pointer;'>Print Statement</button></div>");
-
-        sb.append("</body></html>");
-        return sb.toString();
+        sb.append("</tbody></table>");
     }
 
     private String escapeHtml(String value) {

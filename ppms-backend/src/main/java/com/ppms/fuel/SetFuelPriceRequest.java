@@ -7,9 +7,6 @@ import lombok.Data;
 @Data
 public class SetFuelPriceRequest {
 
-    @NotNull(message = "Pump ID is required")
-    private Long pumpId;
-
     @NotNull(message = "Fuel type is required")
     private FuelType fuelType;
 

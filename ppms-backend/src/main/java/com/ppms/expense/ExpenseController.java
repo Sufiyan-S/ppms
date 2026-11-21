@@ -1,16 +1,16 @@
 package com.ppms.expense;
 
+import com.ppms.common.time.BusinessClock;
+import com.ppms.common.dto.PageRequests;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
-import com.ppms.pump.PumpLocationRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,8 +26,9 @@ import java.time.OffsetDateTime;
 public class ExpenseController {
 
     private final PumpExpenseRepository  expenseRepository;
-    private final PumpLocationRepository pumpLocationRepository;
+    private final ApprovalPolicy         approvalPolicy;
     private final AuditService           auditService;
+    private final BusinessClock businessClock;
 
     /**
      * GET /api/pumps/{pumpId}/expenses?page=0&size=50&category=MAINTENANCE&approvalStatus=APPROVED
@@ -47,7 +48,7 @@ public class ExpenseController {
             @RequestParam(required = false) ExpenseCategory category,
             @RequestParam(required = false) ExpenseApprovalStatus approvalStatus,
             @AuthenticationPrincipal User currentUser) {
-        var pageReq = PageRequest.of(page, size);
+        var pageReq = PageRequests.of(page, size);
         var result = (category != null && approvalStatus != null)
                 ? expenseRepository.findByPumpIdAndCategoryAndApprovalStatusOrderByExpenseDateDescCreatedAtDesc(pumpId, category, approvalStatus, pageReq)
                 : (category != null)
@@ -56,6 +57,21 @@ public class ExpenseController {
                 ? expenseRepository.findByPumpIdAndApprovalStatusOrderByExpenseDateDescCreatedAtDesc(pumpId, approvalStatus, pageReq)
                 : expenseRepository.findByPumpIdOrderByExpenseDateDescCreatedAtDesc(pumpId, pageReq);
         return PagedResponse.of(result);
+    }
+
+    /**
+     * GET /api/pumps/{pumpId}/expenses/summary
+     * Approved total and pending-approval count/total across every expense of the pump (not one page).
+     */
+    @GetMapping("/{pumpId}/expenses/summary")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT')")
+    public ExpenseSummaryResponse getExpenseSummary(@PathVariable Long pumpId) {
+        return new ExpenseSummaryResponse(
+                expenseRepository.sumAmountByPumpIdAndApprovalStatus(pumpId, ExpenseApprovalStatus.APPROVED)
+                        .setScale(2, RoundingMode.HALF_UP),
+                expenseRepository.countByPumpIdAndApprovalStatus(pumpId, ExpenseApprovalStatus.PENDING_APPROVAL),
+                expenseRepository.sumAmountByPumpIdAndApprovalStatus(pumpId, ExpenseApprovalStatus.PENDING_APPROVAL)
+                        .setScale(2, RoundingMode.HALF_UP));
     }
 
     /**
@@ -88,9 +104,9 @@ public class ExpenseController {
             approvalStatus = ExpenseApprovalStatus.DRAFT;
         } else {
             // Immediate submission — auto-approve or queue for review
-            approvalStatus = resolveApprovalStatus(pumpId, currentUser, amount);
+            approvalStatus = approvalPolicy.resolveExpenseStatus(pumpId, currentUser, amount);
             submittedByUserId = currentUser.getId();
-            submittedAt = OffsetDateTime.now();
+            submittedAt = businessClock.now();
         }
 
         PumpExpense expense = PumpExpense.builder()
@@ -133,7 +149,7 @@ public class ExpenseController {
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
 
         if (!expense.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Expense does not belong to this pump");
+            throw new ResourceNotFoundException("Expense not found");
         }
 
         if (expense.getApprovalStatus() != ExpenseApprovalStatus.DRAFT) {
@@ -149,10 +165,10 @@ public class ExpenseController {
             throw new BusinessException("Only the expense creator or an Owner/Admin can submit this draft.");
         }
 
-        ExpenseApprovalStatus newStatus = resolveApprovalStatus(pumpId, currentUser, expense.getAmount());
+        ExpenseApprovalStatus newStatus = approvalPolicy.resolveExpenseStatus(pumpId, currentUser, expense.getAmount());
         expense.setApprovalStatus(newStatus);
         expense.setSubmittedByUserId(currentUser.getId());
-        expense.setSubmittedAt(OffsetDateTime.now());
+        expense.setSubmittedAt(businessClock.now());
 
         return expenseRepository.save(expense);
     }
@@ -174,7 +190,7 @@ public class ExpenseController {
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
 
         if (!expense.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Expense does not belong to this pump");
+            throw new ResourceNotFoundException("Expense not found");
         }
 
         if (expense.getApprovalStatus() != ExpenseApprovalStatus.PENDING_APPROVAL) {
@@ -188,7 +204,7 @@ public class ExpenseController {
 
         expense.setApprovalStatus(req.getAction());
         expense.setApprovedByUserId(currentUser.getId());
-        expense.setApprovedAt(OffsetDateTime.now());
+        expense.setApprovedAt(businessClock.now());
         expense.setApprovalNotes(req.getNotes() != null ? req.getNotes().trim() : null);
 
         return expenseRepository.save(expense);
@@ -208,39 +224,13 @@ public class ExpenseController {
         PumpExpense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
         if (!expense.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Expense does not belong to this pump");
+            throw new ResourceNotFoundException("Expense not found");
         }
         if (expense.getApprovalStatus() != ExpenseApprovalStatus.DRAFT) {
             throw new BusinessException(
                     "Only DRAFT expenses can be deleted. Submitted or reviewed expenses are permanent records.");
         }
         expenseRepository.delete(expense);
-    }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    /**
-     * Determines the approval status for a new expense based on:
-     * - The submitter's role (OWNER/ADMIN → always APPROVED)
-     * - The pump's configured expense_approval_threshold
-     * - The expense amount relative to the threshold
-     */
-    private ExpenseApprovalStatus resolveApprovalStatus(Long pumpId, User currentUser, BigDecimal amount) {
-        if (currentUser.getRole() == UserRole.OWNER || currentUser.getRole() == UserRole.ADMIN
-                || currentUser.getRole() == UserRole.SUPER_ADMIN) {
-            return ExpenseApprovalStatus.APPROVED;
-        }
-
-        // MANAGER/OPERATOR — check threshold
-        var pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
-        BigDecimal threshold = pump.getExpenseApprovalThreshold();
-        if (threshold == null || threshold.compareTo(BigDecimal.ZERO) <= 0) {
-            return ExpenseApprovalStatus.PENDING_APPROVAL;
-        }
-        return amount.compareTo(threshold) <= 0
-                ? ExpenseApprovalStatus.APPROVED
-                : ExpenseApprovalStatus.PENDING_APPROVAL;
     }
 
 }

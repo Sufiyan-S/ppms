@@ -82,8 +82,12 @@ export const shiftPlanApi = {
   generatePlan: (pumpId: number, weekStart: string, operatorsPerDayShift: number, operatorsPerNightShift: number) =>
     client.post<ShiftPlan>(`/pumps/${pumpId}/shift-plans/generate`, { weekStart, operatorsPerDayShift, operatorsPerNightShift }).then(r => r.data),
 
-  getPlan: (pumpId: number, weekStart: string) =>
-    client.get<ShiftPlan>(`/pumps/${pumpId}/shift-plans`, { params: { weekStart } }).then(r => r.data),
+  // Null when no plan exists for the week (the backend answers 404)
+  getPlan: (pumpId: number, weekStart: string): Promise<ShiftPlan | null> =>
+    client.get<ShiftPlan>(`/pumps/${pumpId}/shift-plans`, {
+      params: { weekStart },
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+    }).then(r => (r.status === 404 ? null : r.data)),
 
   getEntries: (pumpId: number, planId: number) =>
     client.get<ShiftPlanEntry[]>(`/pumps/${pumpId}/shift-plans/${planId}/entries`).then(r => r.data),

@@ -1,6 +1,5 @@
 package com.ppms.inventory;
 
-import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
@@ -72,7 +71,7 @@ public class TankerController {
                 .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Tanker does not belong to this pump");
+            throw new ResourceNotFoundException("Tanker not found");
         }
 
         if (request.isDefaultTanker()) {
@@ -100,7 +99,7 @@ public class TankerController {
                 .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Tanker does not belong to this pump");
+            throw new ResourceNotFoundException("Tanker not found");
         }
 
         tanker.setActive(false);
@@ -120,7 +119,7 @@ public class TankerController {
                 .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Tanker does not belong to this pump");
+            throw new ResourceNotFoundException("Tanker not found");
         }
 
         tankerRepository.clearAllDefaultsForPump(pumpId);

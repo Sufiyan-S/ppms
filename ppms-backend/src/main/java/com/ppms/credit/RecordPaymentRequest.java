@@ -2,6 +2,7 @@ package com.ppms.credit;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ public class RecordPaymentRequest {
     private PaymentMode paymentMode;
 
     @NotNull(message = "Payment date is required")
+    @PastOrPresent(message = "Payment date cannot be in the future")
     private LocalDate paidAt;
 
     /** Optional reference number, e.g. cheque number, NEFT/IMPS ref, UPI transaction ID. */

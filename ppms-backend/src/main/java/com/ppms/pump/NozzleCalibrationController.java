@@ -1,5 +1,6 @@
 package com.ppms.pump;
 
+import com.ppms.common.dto.PageRequests;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
@@ -10,7 +11,6 @@ import com.ppms.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -60,7 +60,7 @@ public class NozzleCalibrationController {
         Nozzle nozzle = findNozzleForPump(nozzleId, pumpId);
 
         var logsPage = calibrationRepository.findByNozzleIdOrderByCreatedAtDescCalibrationDateDesc(
-                nozzle.getId(), PageRequest.of(page, size));
+                nozzle.getId(), PageRequests.of(page, size));
 
         // Batch-load user names for this page only — avoids N+1
         Set<Long> userIds = logsPage.getContent().stream()
@@ -131,7 +131,7 @@ public class NozzleCalibrationController {
         DispensaryUnit du = dispensaryUnitRepository.findById(nozzle.getDuId())
                 .orElseThrow(() -> new ResourceNotFoundException("Dispensary unit not found"));
         if (!du.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Nozzle does not belong to this pump");
+            throw new ResourceNotFoundException("Nozzle not found");
         }
         return nozzle;
     }

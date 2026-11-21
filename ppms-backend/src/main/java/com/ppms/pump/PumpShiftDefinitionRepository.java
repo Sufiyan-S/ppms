@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PumpShiftDefinitionRepository extends JpaRepository<PumpShiftDefinition, Long> {
@@ -16,6 +17,8 @@ public interface PumpShiftDefinitionRepository extends JpaRepository<PumpShiftDe
      * Used by the admin UI to list all active and historical configurations.
      */
     List<PumpShiftDefinition> findByPumpIdOrderByEffectiveFromDescSortOrderAsc(Long pumpId);
+
+    Optional<PumpShiftDefinition> findByIdAndPumpId(Long id, Long pumpId);
 
     /**
      * Active definitions for a pump on a specific date.

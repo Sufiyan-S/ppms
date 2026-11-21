@@ -32,9 +32,11 @@ export const cashApi = {
     page = 0,
     size = 10,
     eventType?: CashEventType,
+    from?: string,
+    to?: string,
   ): Promise<CashDrawerResponse> =>
     client.get(`/pumps/${pumpId}/cash-events`, {
-      params: { page, size, ...(eventType && { eventType }) },
+      params: { page, size, ...(eventType && { eventType }), ...(from && { from }), ...(to && { to }) },
     }).then(r => r.data),
 
   recordCashEvent: (pumpId: number, data: RecordCashEventRequest): Promise<CashEvent> =>

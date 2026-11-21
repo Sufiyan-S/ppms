@@ -1,16 +1,18 @@
 package com.ppms.credit;
 
+import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.time.BusinessClock;
 import com.ppms.shift.ShiftCreditEntryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -25,7 +27,10 @@ import java.util.stream.Collectors;
  * Handles all interest calculation and application logic for credit clients.
  *
  * Interest model:
- *   - Simple interest: amount = outstanding × (rate / 100) × (days / 30)
+ *   - Simple interest on principal only: earlier interest charges are never charged interest.
+ *   - Principal on a day = ACTIVE credit sales up to that day − APPROVED payments up to that day.
+ *   - Each day of the period is charged on that day's principal:
+ *     amount = Σ principal(day) × (monthly rate / 100) / 30
  *   - Rate is configured on the parent account and inherited by all sub-accounts.
  *   - Interest is applied per entity: each sub-account and the parent itself each get
  *     their own interest charge row based on their own transactions only.
@@ -40,11 +45,14 @@ import java.util.stream.Collectors;
 public class CreditInterestService {
 
     private static final BigDecimal DAYS_IN_MONTH = new BigDecimal("30");
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final BigDecimal MINIMUM_CHARGE = new BigDecimal("0.01");
 
     private final CreditClientRepository clientRepository;
     private final CreditInterestChargeRepository interestChargeRepository;
     private final CreditPaymentRepository paymentRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
+    private final BusinessClock businessClock;
 
     // ── Outstanding balance ───────────────────────────────────────────────────
 
@@ -113,8 +121,6 @@ public class CreditInterestService {
         }
     }
 
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-
     /**
      * Batch version — resolves interest breakdown for all clients in 2 DB queries total.
      * Uses chronological simulation: processes interest charges and payments in date order
@@ -125,10 +131,11 @@ public class CreditInterestService {
         if (clientIds.isEmpty()) return Map.of();
 
         List<CreditInterestCharge> allCharges = interestChargeRepository.findByClientIdIn(clientIds);
-        List<CreditPayment> allPayments = paymentRepository.findApprovedByClientIdIn(clientIds);
-
         Map<Long, List<CreditInterestCharge>> chargesByClient = allCharges.stream()
                 .collect(Collectors.groupingBy(CreditInterestCharge::getClientId));
+        List<CreditPayment> allPayments = chargesByClient.isEmpty()
+                ? List.of()
+                : paymentRepository.findApprovedByClientIdIn(chargesByClient.keySet());
         Map<Long, List<CreditPayment>> paymentsByClient = allPayments.stream()
                 .collect(Collectors.groupingBy(CreditPayment::getClientId));
 
@@ -156,7 +163,7 @@ public class CreditInterestService {
 
         List<Event> events = new ArrayList<>();
         charges.forEach(c -> events.add(new Event(
-                c.getCreatedAt().atZoneSameInstant(IST).toLocalDate(), c.getAmount(), true)));
+                c.getCreatedAt().atZoneSameInstant(businessClock.zone()).toLocalDate(), c.getAmount(), true)));
         payments.forEach(p -> events.add(new Event(p.getPaidAt(), p.getAmount(), false)));
 
         // Same-date: interest charges before payments so they can be immediately drained
@@ -182,19 +189,16 @@ public class CreditInterestService {
     }
 
     /**
-     * Computes the total interest ever charged to a client (and all its sub-accounts if parent).
-     * Used for the "Interest Recovered" stat on the client detail page.
+     * Interest actually paid off by the client and its sub-accounts, using interest-first allocation.
      */
     public BigDecimal computeTotalInterestRecovered(Long clientId) {
-        BigDecimal own = interestChargeRepository.sumAmountByClientId(clientId);
-        List<CreditClient> children = clientRepository.findByParentClientId(clientId);
-        if (children.isEmpty()) {
-            return own;
-        }
-        List<Long> childIds = children.stream().map(CreditClient::getId).toList();
-        Map<Long, BigDecimal> childInterest = toAmountMap(interestChargeRepository.sumAmountsByClientIds(childIds));
-        BigDecimal childrenSum = childInterest.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        return own.add(childrenSum).setScale(2, RoundingMode.HALF_UP);
+        List<Long> groupIds = new ArrayList<>();
+        groupIds.add(clientId);
+        clientRepository.findByParentClientId(clientId).forEach(child -> groupIds.add(child.getId()));
+        return computeInterestBreakdownBatch(groupIds).values().stream()
+                .map(InterestBreakdown::totalInterestRecovered)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Converts JPQL GROUP BY result rows [clientId, sumAmount] into a clientId → amount map. */
@@ -214,121 +218,51 @@ public class CreditInterestService {
      * Applies pro-rata simple interest for a single client up to today.
      * If the client is a parent account, interest is also cascaded to all sub-accounts —
      * each sub-account receives its own interest charge based on its own transactions.
+     * The whole group succeeds or fails together.
      *
      * Returns the charge applied to the specified client itself (not sub-accounts).
      */
     @Transactional
     public Optional<CreditInterestCharge> applyProRata(Long pumpId, Long clientId, Long appliedByUserId) {
         CreditClient client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException("Client not found: " + clientId));
-
-        Optional<CreditInterestCharge> result = applyInterest(client, LocalDate.now(), "MANUAL", appliedByUserId);
-
-        // Cascade to all sub-accounts: each gets its own interest row based on own transactions
-        List<CreditClient> children = clientRepository.findByParentClientId(clientId);
-        for (CreditClient child : children) {
-            try {
-                applyInterest(child, LocalDate.now(), "MANUAL", appliedByUserId);
-            } catch (Exception e) {
-                log.error("Interest application failed for sub-account={} under parent={}: {}",
-                        child.getId(), clientId, e.getMessage(), e);
-            }
-        }
-
-        return result;
+                .filter(found -> found.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException("Client not found: " + clientId));
+        lockGroupRoot(client.getParentClientId() != null ? client.getParentClientId() : client.getId());
+        return applyToClientGroup(client, businessClock.today(), "MANUAL", appliedByUserId).rootCharge();
     }
 
     /**
-     * Result of a bulk interest application run.
+     * Applies interest to one root client and its sub-accounts in a transaction of its own,
+     * so a failure here cannot roll back charges already made for other client groups.
      *
-     * @param charged     number of root clients that received an interest charge
-     * @param skipped     number of root clients skipped (zero balance, within grace period, etc.)
-     * @param failed      number of root clients where the application threw an exception
-     * @param failedClientIds  IDs of clients that failed — operator can retry or investigate
+     * @return number of charges created (root plus sub-accounts)
      */
-    public record InterestApplicationResult(int charged, int skipped, int failed, List<Long> failedClientIds) {}
-
-    /**
-     * Applies pro-rata interest to ALL eligible root clients for a pump up to today.
-     * Sub-accounts are processed automatically during their parent's cascade.
-     *
-     * Each client runs in its own transaction (via {@link #applyProRata}).
-     * Failures are caught, logged, and included in the returned result so the caller
-     * can surface them to the operator — a partial run is no longer silently hidden.
-     */
-    public InterestApplicationResult applyProRataForAllClients(Long pumpId, Long appliedByUserId) {
-        List<CreditClient> clients = clientRepository.findByPumpIdOrderByNameAsc(pumpId);
-        int charged = 0;
-        int skipped = 0;
-        List<Long> failedClientIds = new ArrayList<>();
-
-        for (CreditClient client : clients) {
-            // Sub-accounts are processed when their parent is processed — skip them here
-            if (client.getParentClientId() != null) continue;
-            try {
-                Optional<CreditInterestCharge> charge = applyProRata(pumpId, client.getId(), appliedByUserId);
-                if (charge.isPresent()) {
-                    charged++;
-                } else {
-                    skipped++;
-                }
-            } catch (Exception e) {
-                log.error("Interest application failed for client={} on pump={}: {}",
-                        client.getId(), pumpId, e.getMessage(), e);
-                failedClientIds.add(client.getId());
-            }
-        }
-
-        int failed = failedClientIds.size();
-        long rootCount = clients.stream().filter(c -> c.getParentClientId() == null).count();
-        log.info("Pro-rata interest applied for pump={}: charged={}, skipped={}, failed={}/{}",
-                pumpId, charged, skipped, failed, rootCount);
-        return new InterestApplicationResult(charged, skipped, failed, failedClientIds);
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int applyToClientGroupInNewTransaction(Long rootClientId, LocalDate periodTo, String source, Long appliedByUserId) {
+        CreditClient root = lockGroupRoot(rootClientId);
+        return applyToClientGroup(root, periodTo, source, appliedByUserId).chargeCount();
     }
 
-    // ── Scheduled job entry points (called by InterestStagingJob) ────────────
-
     /**
-     * Applies interest for all root clients with the given interestPeriod, up to periodTo.
-     * Sub-accounts are cascaded from the parent — they inherit the parent's rate.
+     * Serialises interest runs for one client group, so a manual run and the scheduled job cannot
+     * both read the same last charge and charge the same days twice.
      */
-    @Transactional
-    public int applyInterestForPeriod(InterestPeriod period, LocalDate periodTo, String source) {
-        List<CreditClient> clients = clientRepository.findByInterestPeriod(period);
+    private CreditClient lockGroupRoot(Long rootClientId) {
+        return clientRepository.findByIdForUpdate(rootClientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Client not found: " + rootClientId));
+    }
 
-        List<Long> parentIds = clients.stream()
-                .filter(c -> c.getParentClientId() == null)
-                .map(CreditClient::getId)
-                .toList();
+    private record GroupCharges(Optional<CreditInterestCharge> rootCharge, int chargeCount) {}
 
-        // Batch-fetch all children in one query instead of one query per parent
-        Map<Long, List<CreditClient>> childrenByParentId = clientRepository
-                .findByParentClientIdIn(parentIds)
-                .stream()
-                .collect(Collectors.groupingBy(CreditClient::getParentClientId));
-
-        int charged = 0;
-        for (CreditClient client : clients) {
-            // Sub-accounts are cascaded from their parent — skip them in the main loop
-            if (client.getParentClientId() != null) continue;
-
-            Optional<CreditInterestCharge> charge = applyInterest(client, periodTo, source, null);
-            if (charge.isPresent()) charged++;
-
-            // Cascade to sub-accounts using the pre-fetched map
-            for (CreditClient child : childrenByParentId.getOrDefault(client.getId(), List.of())) {
-                try {
-                    Optional<CreditInterestCharge> childCharge = applyInterest(child, periodTo, source, null);
-                    if (childCharge.isPresent()) charged++;
-                } catch (Exception e) {
-                    log.error("Scheduled interest failed for sub-account={} under parent={}: {}",
-                            child.getId(), client.getId(), e.getMessage(), e);
-                }
+    private GroupCharges applyToClientGroup(CreditClient root, LocalDate periodTo, String source, Long appliedByUserId) {
+        Optional<CreditInterestCharge> rootCharge = applyInterest(root, periodTo, source, appliedByUserId);
+        int count = rootCharge.isPresent() ? 1 : 0;
+        for (CreditClient child : clientRepository.findByParentClientId(root.getId())) {
+            if (applyInterest(child, periodTo, source, appliedByUserId).isPresent()) {
+                count++;
             }
         }
-
-        log.info("Interest staged: period={}, source={}, charged={}/{}", period, source, charged, clients.size());
-        return charged;
+        return new GroupCharges(rootCharge, count);
     }
 
     // ── Core calculation ──────────────────────────────────────────────────────
@@ -354,41 +288,26 @@ public class CreditInterestService {
             return Optional.empty();
         }
 
-        // Interest is based on this client's own outstanding balance only (not children)
-        BigDecimal outstanding = computeOutstanding(client.getId());
-
-        // No interest if nothing is owed
-        if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-            return Optional.empty();
-        }
-
-        // Determine period_from
         LocalDate periodFrom = determinePeriodFrom(client);
-        if (periodFrom == null) {
-            // No credit entries yet — nothing to charge
+        if (periodFrom == null || periodFrom.isAfter(periodTo)) {
             return Optional.empty();
         }
 
-        // Nothing to charge if the window has not opened yet
-        if (!periodFrom.isBefore(periodTo) && !periodFrom.isEqual(periodTo)) {
-            log.debug("Client {} interest skipped: period_from {} >= period_to {}", client.getId(), periodFrom, periodTo);
-            return Optional.empty();
+        DailyPrincipal principal = loadDailyPrincipal(client.getId());
+        BigDecimal dailyRate = rate.divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP)
+                .divide(DAYS_IN_MONTH, 10, RoundingMode.HALF_UP);
+        BigDecimal interest = BigDecimal.ZERO;
+        for (LocalDate day = periodFrom; !day.isAfter(periodTo); day = day.plusDays(1)) {
+            BigDecimal owed = principal.on(day);
+            if (owed.signum() > 0) {
+                interest = interest.add(owed.multiply(dailyRate));
+            }
         }
-
+        interest = interest.setScale(2, RoundingMode.HALF_UP);
         long days = ChronoUnit.DAYS.between(periodFrom, periodTo) + 1;
-        if (days <= 0) {
-            return Optional.empty();
-        }
+        BigDecimal outstanding = principal.on(periodTo).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
 
-        // Simple interest: amount = outstanding × (rate / 100) × (days / 30)
-        BigDecimal interest = outstanding
-                .multiply(rate)
-                .divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(days))
-                .divide(DAYS_IN_MONTH, 2, RoundingMode.HALF_UP);
-
-        // Skip negligible amounts (< ₹0.01)
-        if (interest.compareTo(new BigDecimal("0.01")) < 0) {
+        if (interest.compareTo(MINIMUM_CHARGE) < 0) {
             log.debug("Client {} interest skipped: calculated amount {} is negligible", client.getId(), interest);
             return Optional.empty();
         }
@@ -433,6 +352,27 @@ public class CreditInterestService {
         return BigDecimal.ZERO;
     }
 
+    private record DailyPrincipal(Map<LocalDate, BigDecimal> changesByDay) {
+        BigDecimal on(LocalDate day) {
+            return changesByDay.entrySet().stream()
+                    .filter(change -> !change.getKey().isAfter(day))
+                    .map(Map.Entry::getValue)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+    }
+
+    private DailyPrincipal loadDailyPrincipal(Long clientId) {
+        Map<LocalDate, BigDecimal> changes = new HashMap<>();
+        for (var entry : creditEntryRepository.findActiveByClientId(clientId)) {
+            LocalDate day = entry.getCreatedAt().atZoneSameInstant(businessClock.zone()).toLocalDate();
+            changes.merge(day, entry.getAmount(), BigDecimal::add);
+        }
+        for (CreditPayment payment : paymentRepository.findApprovedByClientIdIn(List.of(clientId))) {
+            changes.merge(payment.getPaidAt(), payment.getAmount().negate(), BigDecimal::add);
+        }
+        return new DailyPrincipal(changes);
+    }
+
     /**
      * Calculates the start date of the next chargeable period for a client.
      *
@@ -453,8 +393,7 @@ public class CreditInterestService {
             return null;
         }
 
-        // Bug 8 fix: convert to IST so the calendar date matches the business day
         int graceDays = client.getInterestGraceDays() != null ? client.getInterestGraceDays() : 1;
-        return oldestEntry.get().atZoneSameInstant(ZoneId.of("Asia/Kolkata")).toLocalDate().plusDays(graceDays);
+        return oldestEntry.get().atZoneSameInstant(businessClock.zone()).toLocalDate().plusDays(graceDays);
     }
 }

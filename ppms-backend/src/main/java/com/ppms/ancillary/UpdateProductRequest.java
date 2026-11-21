@@ -1,7 +1,9 @@
 package com.ppms.ancillary;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -15,12 +17,17 @@ public class UpdateProductRequest {
     /** Optional — if null, the existing value is unchanged. */
     private String variant;
 
-    /**
-     * Optional. Pass null to clear the threshold (disable the alert).
-     * The controller uses a separate null-check to distinguish "not provided" from "explicitly cleared".
-     * A dedicated PATCH body means the field being present with null value clears it.
-     */
+    /** Omitted leaves the threshold unchanged; an explicit null clears it (disables the alert). */
+    @Min(value = 0, message = "Low stock threshold cannot be negative")
     private Integer lowStockThreshold;
+
+    @JsonIgnore
+    private boolean lowStockThresholdProvided;
+
+    public void setLowStockThreshold(Integer lowStockThreshold) {
+        this.lowStockThreshold = lowStockThreshold;
+        this.lowStockThresholdProvided = true;
+    }
 
     /**
      * Optional. If provided, updates the GST rate for this product.

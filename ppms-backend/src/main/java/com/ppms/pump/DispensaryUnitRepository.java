@@ -12,6 +12,8 @@ public interface DispensaryUnitRepository extends JpaRepository<DispensaryUnit, 
 
     List<DispensaryUnit> findByPumpIdOrderByDuNumberAsc(Long pumpId);
 
+    Optional<DispensaryUnit> findByIdAndPumpId(Long id, Long pumpId);
+
     List<DispensaryUnit> findByPumpIdAndStatus(Long pumpId, NozzleStatus status);
 
     boolean existsByPumpIdAndName(Long pumpId, String name);

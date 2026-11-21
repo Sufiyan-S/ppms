@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.time.LocalDate;
 
 public interface CashEventRepository extends JpaRepository<CashEvent, Long> {
 
@@ -16,6 +16,12 @@ public interface CashEventRepository extends JpaRepository<CashEvent, Long> {
     /** Filter by event type — used when the event-type filter is active. */
     Page<CashEvent> findByPumpIdAndEventTypeOrderByEventDateDescCreatedAtDesc(
             Long pumpId, CashEventType eventType, Pageable pageable);
+
+    Page<CashEvent> findByPumpIdAndEventDateBetweenOrderByEventDateDescCreatedAtDesc(
+            Long pumpId, LocalDate from, LocalDate to, Pageable pageable);
+
+    Page<CashEvent> findByPumpIdAndEventTypeAndEventDateBetweenOrderByEventDateDescCreatedAtDesc(
+            Long pumpId, CashEventType eventType, LocalDate from, LocalDate to, Pageable pageable);
 
     /**
      * Computes the current cash drawer balance in a single DB aggregate query.

@@ -60,6 +60,8 @@ public class SecurityConfig {
                 // Actuator health probes for Kubernetes liveness/readiness checks.
                 // Only health and info are exposed (see application.yml management config).
                 .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                // Metrics reveal business volumes; nothing scrapes them in prod (exposure is health,info there).
+                .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex

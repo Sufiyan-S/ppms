@@ -49,4 +49,6 @@ public interface CreditInterestChargeRepository extends JpaRepository<CreditInte
             @Param("pumpId") Long pumpId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    boolean existsByClientId(Long clientId);
 }

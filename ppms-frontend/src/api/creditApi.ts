@@ -33,7 +33,17 @@ export interface CreditTransaction {
   detail: string | null
   amount: number
   runningBalance: number
+  /** When the row was recorded; the ledger is ordered by this. */
   occurredAt: string
+  /** IST date (YYYY-MM-DD) the row belongs to; for a payment, the date the client paid. */
+  businessDate: string
+  /** ACTIVE / VOIDED for sales; APPROVED / PENDING_APPROVAL / REJECTED for payments. */
+  status: string
+  /** False for voided sales and non-approved payments; they leave the running balance unchanged. */
+  countedInBalance: boolean
+  /** Account the row belongs to; set by the full-ledger endpoint. */
+  clientId?: number
+  clientName?: string
 }
 
 export interface UpdateInterestSettingsRequest {
@@ -57,7 +67,9 @@ export interface CreditPayment {
   paymentMode: string
   notes: string | null
   paidAt: string
+  recordedById: number
   recordedByUserName: string
+  paymentApprovalStatus: 'APPROVED' | 'PENDING_APPROVAL' | 'REJECTED'
   createdAt: string
 }
 
@@ -104,6 +116,16 @@ export const creditApi = {
   // Returns paginated transaction history (sales + payments + interest) for a client
   getTransactions: (pumpId: number, clientId: number, page = 0, size = 10) =>
     client.get<PagedResponse<CreditTransaction>>(`/pumps/${pumpId}/credit-ledger/${clientId}/transactions`, { params: { page, size } }).then(r => r.data),
+
+  // The client's whole ledger in one response; for a parent, includeChildren adds its sub-accounts' rows
+  getAllTransactions: (pumpId: number, clientId: number, includeChildren = false) =>
+    client.get<CreditTransaction[]>(`/pumps/${pumpId}/credit-ledger/${clientId}/transactions/all`, { params: { includeChildren } }).then(r => r.data),
+
+  getPendingPayments: (pumpId: number) =>
+    client.get<CreditPayment[]>(`/pumps/${pumpId}/credit-ledger/payments/pending`).then(r => r.data),
+
+  approvePayment: (pumpId: number, paymentId: number, status: 'APPROVED' | 'REJECTED') =>
+    client.patch<CreditPayment>(`/pumps/${pumpId}/credit-ledger/payments/${paymentId}/approve`, { status }).then(r => r.data),
 
   // Records a payment against a client's balance
   recordPayment: (pumpId: number, clientId: number, req: RecordPaymentRequest) =>

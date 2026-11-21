@@ -2,19 +2,20 @@ package com.ppms.shift;
 
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
-import com.ppms.common.exception.BusinessException;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -28,6 +29,7 @@ import java.util.List;
 public class ShiftController {
 
     private final ShiftService shiftService;
+    private final ShiftBackfillService shiftBackfillService;
     private final AuditService auditService;
 
     /**
@@ -40,14 +42,20 @@ public class ShiftController {
     }
 
     /**
-     * GET /api/pumps/{pumpId}/shifts/history?page=0&size=50
+     * GET /api/pumps/{pumpId}/shifts/history?page=0&size=50[&from=&to=][&discrepanciesOnly=true[&discrepancyType=SHORT]]
      * Returns paginated shift history for a pump, newest first. Default page size 50.
+     * from/to filter on the shift's business date (inclusive).
      */
     @GetMapping("/history")
     public ResponseEntity<Page<ShiftResponse>> getShiftHistory(
             @PathVariable Long pumpId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "false") boolean discrepanciesOnly,
+            @RequestParam(required = false) DiscrepancyType discrepancyType,
             @PageableDefault(size = 50) Pageable pageable) {
-        return ResponseEntity.ok(shiftService.getShiftHistory(pumpId, pageable));
+        ShiftHistoryFilter filter = new ShiftHistoryFilter(from, to, discrepanciesOnly, discrepancyType);
+        return ResponseEntity.ok(shiftService.getShiftHistory(pumpId, filter, pageable));
     }
 
     /**
@@ -58,11 +66,7 @@ public class ShiftController {
     public ResponseEntity<ShiftResponse> getShift(
             @PathVariable Long pumpId,
             @PathVariable Long id) {
-        ShiftResponse response = shiftService.getShiftById(id);
-        if (!response.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Shift does not belong to this pump");
-        }
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(shiftService.getShiftById(pumpId, id));
     }
 
     /**
@@ -82,7 +86,7 @@ public class ShiftController {
             @PathVariable Long pumpId,
             @Valid @RequestBody BackfillShiftRequest request,
             @AuthenticationPrincipal User currentUser) {
-        ShiftResponse response = shiftService.backfillShift(pumpId, request, currentUser);
+        ShiftResponse response = shiftBackfillService.backfillShift(pumpId, request, currentUser);
         auditService.log(response.getPumpId(), AuditAction.SHIFT_BACKFILLED,
                 "Shift", response.getId().toString(),
                 "Historical shift backfilled for " + response.getShiftDate() + " (" + response.getShiftWindow() +

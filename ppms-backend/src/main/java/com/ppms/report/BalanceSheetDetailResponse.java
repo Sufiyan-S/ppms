@@ -57,6 +57,11 @@ public class BalanceSheetDetailResponse {
      * totalDipNetAmount is signed: negative reduces profit (losses), positive increases it (gains).
      */
     private BigDecimal totalNetProfit;
+    /**
+     * True when the dip, product-sales or expense line items listed below no longer add up to the totals
+     * stored at generation (e.g. an expense approved later). Net profit always uses the stored totals.
+     */
+    private boolean linesChangedSinceGenerated;
 
     // ── Detail lines ──────────────────────────────────────────────────────────
     private List<BsFuelLineResponse>        fuelLines;

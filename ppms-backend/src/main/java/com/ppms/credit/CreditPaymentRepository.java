@@ -5,10 +5,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import com.ppms.expense.ExpenseApprovalStatus;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,6 +29,16 @@ public interface CreditPaymentRepository extends JpaRepository<CreditPayment, Lo
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM CreditPayment p WHERE p.pumpId = :pumpId AND p.paidAt = :date AND p.paymentApprovalStatus = 'APPROVED'")
     BigDecimal sumAmountByPumpIdAndDate(@Param("pumpId") Long pumpId, @Param("date") LocalDate date);
 
+    // Total APPROVED credit recovered for a pump, recorded within [from, to) — used by live DAY balance sheets
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0) FROM CreditPayment p
+            WHERE p.pumpId = :pumpId AND p.paymentApprovalStatus = 'APPROVED'
+              AND p.createdAt >= :from AND p.createdAt < :to
+            """)
+    BigDecimal sumApprovedAmountByPumpIdRecordedBetween(@Param("pumpId") Long pumpId,
+                                                        @Param("from") OffsetDateTime from,
+                                                        @Param("to") OffsetDateTime to);
+
     // Most recent APPROVED payment date for a client — used for billing cycle overdue detection
     @Query("SELECT MAX(p.paidAt) FROM CreditPayment p WHERE p.clientId = :clientId AND p.paymentApprovalStatus = 'APPROVED'")
     Optional<LocalDate> findLastPaymentDateByClientId(@Param("clientId") Long clientId);
@@ -46,7 +55,18 @@ public interface CreditPaymentRepository extends JpaRepository<CreditPayment, Lo
     @Query("SELECT p FROM CreditPayment p WHERE p.clientId IN :clientIds AND p.paymentApprovalStatus = 'APPROVED'")
     List<CreditPayment> findApprovedByClientIdIn(@Param("clientIds") java.util.Collection<Long> clientIds);
 
+    /** Total PENDING_APPROVAL payments across the given clients — reserved against outstanding so pending payments cannot over-pay. */
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM CreditPayment p WHERE p.clientId IN :clientIds AND p.paymentApprovalStatus = 'PENDING_APPROVAL'")
+    BigDecimal sumPendingAmountByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
+
+    @Query("SELECT p.clientId FROM CreditPayment p WHERE p.id = :id AND p.pumpId = :pumpId")
+    Optional<Long> findClientIdByIdAndPumpId(@Param("id") Long id, @Param("pumpId") Long pumpId);
+
     /** Returns all payments pending approval for a pump — for Owner/Admin approval queue. */
     @Query("SELECT p FROM CreditPayment p WHERE p.pumpId = :pumpId AND p.paymentApprovalStatus = 'PENDING_APPROVAL' ORDER BY p.createdAt ASC")
     List<CreditPayment> findPendingApprovalByPumpId(@Param("pumpId") Long pumpId);
+
+    boolean existsByClientId(Long clientId);
+
+    boolean existsByIdAndPumpId(Long id, Long pumpId);
 }

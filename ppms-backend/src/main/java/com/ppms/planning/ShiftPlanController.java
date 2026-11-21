@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -42,7 +41,7 @@ public class ShiftPlanController {
     public StaffPreference getPreference(
             @PathVariable Long pumpId,
             @PathVariable Long userId) {
-        return planningService.getPreference(userId)
+        return planningService.getPreference(pumpId, userId)
                 .orElseGet(() -> StaffPreference.builder()
                         .userId(userId)
                         .pumpId(pumpId)
@@ -76,7 +75,7 @@ public class ShiftPlanController {
     public List<StaffLeave> getLeaves(
             @PathVariable Long pumpId,
             @PathVariable Long userId) {
-        return planningService.getLeaves(userId);
+        return planningService.getLeaves(pumpId, userId);
     }
 
     // ── Shift plans ────────────────────────────────────────────────────────────
@@ -106,7 +105,7 @@ public class ShiftPlanController {
     public List<ShiftPlanEntry> getEntries(
             @PathVariable Long pumpId,
             @PathVariable Long planId) {
-        return planningService.getEntries(planId);
+        return planningService.getEntries(pumpId, planId);
     }
 
     @PostMapping("/{pumpId}/shift-plans/{planId}/entries")
@@ -116,7 +115,7 @@ public class ShiftPlanController {
             @PathVariable Long pumpId,
             @PathVariable Long planId,
             @Valid @RequestBody AddEntryRequest req) {
-        return planningService.addEntry(planId, req);
+        return planningService.addEntry(pumpId, planId, req);
     }
 
     @PatchMapping("/{pumpId}/shift-plans/{planId}/entries/{entryId}")
@@ -126,7 +125,7 @@ public class ShiftPlanController {
             @PathVariable Long planId,
             @PathVariable Long entryId,
             @Valid @RequestBody UpdateEntryRequest req) {
-        return planningService.updateEntry(planId, entryId, req);
+        return planningService.updateEntry(pumpId, planId, entryId, req);
     }
 
     @DeleteMapping("/{pumpId}/shift-plans/{planId}/entries/{entryId}")
@@ -136,7 +135,7 @@ public class ShiftPlanController {
             @PathVariable Long pumpId,
             @PathVariable Long planId,
             @PathVariable Long entryId) {
-        planningService.removeEntry(planId, entryId);
+        planningService.removeEntry(pumpId, planId, entryId);
     }
 
     @PostMapping("/{pumpId}/shift-plans/{planId}/publish")
@@ -144,7 +143,7 @@ public class ShiftPlanController {
     public ShiftPlan publishPlan(
             @PathVariable Long pumpId,
             @PathVariable Long planId) {
-        return planningService.publishPlan(planId);
+        return planningService.publishPlan(pumpId, planId);
     }
 
     /** Staff member's own upcoming shifts (read-only). Accessible by all pump staff. */

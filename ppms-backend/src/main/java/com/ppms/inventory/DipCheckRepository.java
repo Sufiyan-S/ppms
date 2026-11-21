@@ -17,6 +17,6 @@ public interface DipCheckRepository extends JpaRepository<DipCheck, Long> {
 
     Page<DipCheck> findByPumpIdOrderByCheckedAtDesc(Long pumpId, Pageable pageable);
 
-    /** Used by balance sheet generation to pull DIP variances within a report period. */
-    List<DipCheck> findByPumpIdAndCheckedAtBetween(Long pumpId, OffsetDateTime from, OffsetDateTime to);
+    /** DIP variances checked within [from, to) — used by balance sheet generation. */
+    List<DipCheck> findByPumpIdAndCheckedAtGreaterThanEqualAndCheckedAtLessThan(Long pumpId, OffsetDateTime from, OffsetDateTime to);
 }

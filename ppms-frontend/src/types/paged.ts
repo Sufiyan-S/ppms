@@ -11,3 +11,14 @@ export interface PagedResponse<T> {
   hasNext: boolean
   hasPrevious: boolean
 }
+
+/** Spring Data `Page` as serialised by the backend (PageSerializationMode.VIA_DTO). */
+export interface SpringPage<T> {
+  content: T[]
+  page: {
+    size: number
+    number: number
+    totalElements: number
+    totalPages: number
+  }
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 
-function formatAgo(updatedAt: number): string {
-  const secs = Math.floor((Date.now() - updatedAt) / 1000)
+function formatAgo(updatedAt: number, now: number): string {
+  const secs = Math.floor((now - updatedAt) / 1000)
   if (secs < 10) return 'just now'
   if (secs < 60) return `${secs}s ago`
   const mins = Math.floor(secs / 60)
@@ -14,14 +14,13 @@ function formatAgo(updatedAt: number): string {
  * human-readable "X ago" label that refreshes every 30 seconds.
  */
 export function useLastUpdated(dataUpdatedAt: number): string {
-  const [label, setLabel] = useState(() => dataUpdatedAt ? formatAgo(dataUpdatedAt) : '')
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (!dataUpdatedAt) return
-    setLabel(formatAgo(dataUpdatedAt))
-    const id = setInterval(() => setLabel(formatAgo(dataUpdatedAt)), 30_000)
+    const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [dataUpdatedAt])
 
-  return label
+  return dataUpdatedAt ? formatAgo(dataUpdatedAt, Math.max(now, dataUpdatedAt)) : ''
 }

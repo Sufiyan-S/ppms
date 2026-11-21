@@ -55,7 +55,7 @@ export function EmptyState({ icon = 'generic', title, subtitle }: EmptyStateProp
       </div>
       <div className="text-center">
         <p className="text-sm font-medium text-slate-500">{title}</p>
-        {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
       </div>
     </div>
   )

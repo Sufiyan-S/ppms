@@ -1,16 +1,46 @@
-export function localDateInputValue(offsetDays = 0): string {
-  const date = new Date()
-  date.setHours(12, 0, 0, 0)
-  date.setDate(date.getDate() + offsetDays)
+const IST_TIME_ZONE = 'Asia/Kolkata'
 
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+const IST_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: IST_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
 
-  return `${year}-${month}-${day}`
+/** The IST calendar date (YYYY-MM-DD) of the given instant, whatever the device's time zone is. */
+export function istDateString(value: Date = new Date()): string {
+  return IST_DATE_FORMAT.format(value)
 }
 
-const IST_TIME_ZONE = 'Asia/Kolkata'
+/** Shifts a YYYY-MM-DD date by whole days. */
+export function addDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+/** Today's IST date (offset by whole days) in the YYYY-MM-DD form date inputs expect. */
+export function localDateInputValue(offsetDays = 0): string {
+  return addDays(istDateString(), offsetDays)
+}
+
+/** Monday (YYYY-MM-DD) of the week that contains the given YYYY-MM-DD date. */
+export function mondayOf(isoDate: string): string {
+  const weekday = new Date(`${isoDate}T00:00:00Z`).getUTCDay()
+  return addDays(isoDate, weekday === 0 ? -6 : 1 - weekday)
+}
+
+const istFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function istFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(options)
+  let formatter = istFormatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TIME_ZONE, ...options })
+    istFormatters.set(key, formatter)
+  }
+  return formatter
+}
 
 export function formatIstDate(
   value: string | Date,
@@ -22,7 +52,7 @@ export function formatIstDate(
       ? new Date(`${value}T00:00:00+05:30`)
       : new Date(value)
 
-  return new Intl.DateTimeFormat('en-IN', { timeZone: IST_TIME_ZONE, ...options }).format(date)
+  return istFormatter(options).format(date)
 }
 
 export function formatIstDateTime(
@@ -36,5 +66,10 @@ export function formatIstDateTime(
   },
 ): string {
   const date = value instanceof Date ? value : new Date(value)
-  return new Intl.DateTimeFormat('en-IN', { timeZone: IST_TIME_ZONE, ...options }).format(date)
+  return istFormatter(options).format(date)
+}
+
+/** Rewrites machine dates (YYYY-MM-DD) inside server-written text as readable dates, e.g. "30 Nov 2026". */
+export function withReadableDates(text: string): string {
+  return text.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (isoDate) => formatIstDate(isoDate))
 }

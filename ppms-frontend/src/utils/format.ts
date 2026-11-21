@@ -19,3 +19,7 @@ export function formatLitres(n: number): string {
 export function formatDecimal(n: number, decimals = 2): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
+
+export function formatCurrencyOrDash(n: number | null | undefined): string {
+  return n != null ? formatCurrency(Number(n)) : '—'
+}

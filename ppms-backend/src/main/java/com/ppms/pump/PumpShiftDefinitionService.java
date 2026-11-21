@@ -2,6 +2,7 @@ package com.ppms.pump;
 
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.time.BusinessClock;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import lombok.RequiredArgsConstructor;
@@ -12,16 +13,22 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.lang.Nullable;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PumpShiftDefinitionService {
 
+    private static final LocalDate OPEN_ENDED_RANGE_END = LocalDate.of(9999, 12, 31);
+
     private final PumpShiftDefinitionRepository repository;
     private final ShiftRepository               shiftRepository;
     private final PumpShiftDefinitionSupportService supportService;
+    private final BusinessClock businessClock;
 
     // ── Query ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +44,7 @@ public class PumpShiftDefinitionService {
      * Used by the balance sheet generate modal to populate the shift selector.
      */
     public List<ShiftDefinitionResponse> getActiveForPump(Long pumpId) {
-        return repository.findActiveForPumpOnDate(pumpId, LocalDate.now())
+        return repository.findActiveForPumpOnDate(pumpId, businessClock.today())
                 .stream()
                 .map(ShiftDefinitionResponse::from)
                 .toList();
@@ -69,7 +76,7 @@ public class PumpShiftDefinitionService {
 
         if (definitions.isEmpty()) {
             // Step 3: current active definitions — new pump whose config starts after the backfill date
-            definitions = repository.findActiveForPumpOnDate(pumpId, LocalDate.now());
+            definitions = repository.findActiveForPumpOnDate(pumpId, businessClock.today());
         }
 
         return definitions.stream()
@@ -80,30 +87,41 @@ public class PumpShiftDefinitionService {
     // ── Detect current shift at shift-open time ───────────────────────────────
 
     /**
-     * Determines which shift definition matches the current time for the given pump.
-     * Called when an operator opens a shift.
+     * Determines which shift definition matches the current time for the given pump, and the
+     * business date of that shift. A night shift opened after midnight belongs to the previous day,
+     * so only the definitions in force on that previous day can match its after-midnight part; a
+     * definition that starts today has not begun its own night yet.
      *
-     * @throws BusinessException if no active definition covers the current time —
-     *         this means the admin has not configured shifts for this pump yet,
-     *         or the pump operates outside all defined windows.
+     * @throws BusinessException if no active definition covers the current time
      */
-    public PumpShiftDefinition detectCurrentShift(Long pumpId) {
-        LocalDate today = LocalDate.now();
-        LocalTime now   = LocalTime.now();
+    public CurrentShiftWindow detectCurrentShift(Long pumpId) {
+        OffsetDateTime now = businessClock.now();
+        LocalDate today = now.toLocalDate();
+        LocalTime time = now.toLocalTime();
+        LocalDate yesterday = today.minusDays(1);
 
-        List<PumpShiftDefinition> active = repository.findActiveForPumpOnDate(pumpId, today);
-        if (active.isEmpty()) {
+        List<PumpShiftDefinition> todaysDefinitions = repository.findActiveForPumpOnDate(pumpId, today);
+        List<PumpShiftDefinition> yesterdaysDefinitions = repository.findActiveForPumpOnDate(pumpId, yesterday);
+        if (todaysDefinitions.isEmpty() && yesterdaysDefinitions.isEmpty()) {
             throw new BusinessException(
                     "No shift schedule has been configured for this pump. " +
                     "Ask an admin to set up shift definitions under Pump Settings.");
         }
 
-        return active.stream()
-                .filter(d -> d.containsTime(now))
+        Optional<PumpShiftDefinition> continuingNightShift = yesterdaysDefinitions.stream()
+                .filter(d -> d.isInAfterMidnightPart(time))
+                .findFirst();
+        if (continuingNightShift.isPresent()) {
+            return new CurrentShiftWindow(continuingNightShift.get(), yesterday);
+        }
+
+        return todaysDefinitions.stream()
+                .filter(d -> d.containsTime(time) && !d.isInAfterMidnightPart(time))
                 .findFirst()
+                .map(d -> new CurrentShiftWindow(d, today))
                 .orElseThrow(() -> new BusinessException(
-                        "The current time (" + now + ") does not fall within any configured shift window " +
-                        "for this pump. Ask an admin to review the shift definitions."));
+                        "The current time (" + time.withSecond(0).withNano(0) + ") does not fall within any configured " +
+                        "shift window for this pump. Ask an admin to review the shift definitions."));
     }
 
     /**
@@ -114,7 +132,7 @@ public class PumpShiftDefinitionService {
         PumpShiftDefinition def = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift definition not found: " + id));
         if (!def.getPumpId().equals(pumpId)) {
-            throw new BusinessException("Shift definition " + id + " does not belong to pump " + pumpId);
+            throw new ResourceNotFoundException("Shift definition " + id + " not found");
         }
         return def;
     }
@@ -152,46 +170,7 @@ public class PumpShiftDefinitionService {
         // Validate the shift time windows together
         supportService.validateBatch(requests);
 
-        // Guard: reject only if an ACTIVE (open-ended, effectiveTo = null) group already starts on this date.
-        // Disabled groups (effectiveTo set) are allowed to share the same effectiveFrom — they are historical.
-        boolean activeGroupOnSameDate = repository.findByPumpIdAndEffectiveFrom(pumpId, effectiveFrom)
-                .stream().anyMatch(d -> d.getEffectiveTo() == null);
-        if (activeGroupOnSameDate) {
-            throw new BusinessException(
-                    "An active shift schedule already exists for " + effectiveFrom +
-                    ". Disable or delete the active group first, then create a new one.");
-        }
-
-        // Guard: reject only if an ACTIVE (open-ended) group's range overlaps the new range.
-        // Disabled groups are intentionally closed and do not block new schedules.
-        LocalDate overlapCheckEnd = effectiveTo != null ? effectiveTo : LocalDate.of(9999, 12, 31);
-        List<PumpShiftDefinition> overlapping = repository.findOpenDefinitionsForPump(pumpId)
-                .stream()
-                .filter(d -> !d.getEffectiveFrom().isAfter(overlapCheckEnd))
-                .toList();
-        if (!overlapping.isEmpty()) {
-            PumpShiftDefinition conflict = overlapping.get(0);
-            throw new BusinessException(
-                    "The date range [" + effectiveFrom + (effectiveTo != null ? " – " + effectiveTo : " onwards") +
-                    "] overlaps with an active schedule effective from " + conflict.getEffectiveFrom() +
-                    ". Disable or delete the conflicting group first.");
-        }
-
-        // Close out any definitions that are still active on the new schedule's start date.
-        // This covers both:
-        //  - Open-ended definitions (effectiveTo = null) — the normal case of replacing a schedule
-        //  - Manually-disabled definitions whose effectiveTo = effectiveFrom — they would appear as
-        //    active on the same day as the new schedule if not trimmed here.
-        LocalDate closingDate = effectiveFrom.minusDays(1);
-        List<PumpShiftDefinition> toClose = repository.findOverlappingDefinitions(pumpId, effectiveFrom, effectiveFrom)
-                .stream()
-                // Only trim if the resulting range stays valid (effectiveTo >= effectiveFrom of that def)
-                .filter(d -> !closingDate.isBefore(d.getEffectiveFrom()))
-                .toList();
-        toClose.forEach(d -> d.setEffectiveTo(closingDate));
-        if (!toClose.isEmpty()) {
-            repository.saveAll(toClose);
-        }
+        rejectOverlapsAndTrimEarlierGroups(pumpId, effectiveFrom, effectiveTo);
 
         // Build and save the new definitions
         List<PumpShiftDefinition> newDefs = requests.stream().map(req -> {
@@ -215,6 +194,39 @@ public class PumpShiftDefinitionService {
                 pumpId, saved.size(), effectiveFrom);
 
         return saved.stream().map(ShiftDefinitionResponse::from).toList();
+    }
+
+    /**
+     * An earlier disabled group whose last day falls inside the new range is shortened to end the day
+     * before the new group starts. Any other overlap would leave two schedules active on the same day,
+     * so it is rejected.
+     */
+    private void rejectOverlapsAndTrimEarlierGroups(Long pumpId, LocalDate effectiveFrom, @Nullable LocalDate effectiveTo) {
+        LocalDate newRangeEnd = effectiveTo != null ? effectiveTo : OPEN_ENDED_RANGE_END;
+        String newRangeLabel = "[" + effectiveFrom + (effectiveTo != null ? " – " + effectiveTo : " onwards") + "]";
+
+        List<PumpShiftDefinition> toTrim = new ArrayList<>();
+        for (PumpShiftDefinition existing : repository.findOverlappingDefinitions(pumpId, effectiveFrom, newRangeEnd)) {
+            if (existing.getEffectiveTo() == null) {
+                throw new BusinessException(
+                        "The date range " + newRangeLabel + " overlaps with an active schedule effective from " +
+                        existing.getEffectiveFrom() + ". Disable or delete the conflicting group first.");
+            }
+            boolean startsEarlierAndEndsInsideNewRange = existing.getEffectiveFrom().isBefore(effectiveFrom)
+                    && !existing.getEffectiveTo().isAfter(newRangeEnd);
+            if (!startsEarlierAndEndsInsideNewRange) {
+                throw new BusinessException(
+                        "The date range " + newRangeLabel + " overlaps the schedule " +
+                        existing.getEffectiveFrom() + " – " + existing.getEffectiveTo() +
+                        ". Delete that schedule or choose dates that do not overlap it.");
+            }
+            toTrim.add(existing);
+        }
+
+        toTrim.forEach(d -> d.setEffectiveTo(effectiveFrom.minusDays(1)));
+        if (!toTrim.isEmpty()) {
+            repository.saveAll(toTrim);
+        }
     }
 
     // ── Delete ────────────────────────────────────────────────────────────────

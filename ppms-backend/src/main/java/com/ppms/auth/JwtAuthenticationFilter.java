@@ -1,13 +1,13 @@
 package com.ppms.auth;
 
+import com.ppms.user.User;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,26 +21,22 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Runs once per request. Extracts the JWT from the httpOnly cookie named "ppms_jwt",
- * validates it, and sets the authenticated user in the Spring Security context.
+ * Authenticates requests from the httpOnly JWT cookie.
  *
- * The token is read from a cookie (not the Authorization header) to prevent XSS attacks
- * from stealing it — httpOnly cookies cannot be accessed by JavaScript.
- *
- * Validation steps (in order):
- *   1. JWT signature and expiry (JwtService.isTokenValid)
- *   2. Token not in blacklist (revoked via logout or forced sign-out)
- *   3. User account is still ACTIVE (user not deactivated after token was issued)
+ * A token is accepted only if its signature and expiry are valid, it is not revoked,
+ * its token version matches the user's current one, and the user is still ACTIVE.
+ * A rejected token is cleared and the request continues unauthenticated, so public
+ * endpoints (login, password reset) still work and Spring Security answers 401 elsewhere.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final String COOKIE_NAME = "ppms_jwt";
-
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
     private final TokenRevocationService tokenRevocationService;
+    private final JwtCookieSupport jwtCookieSupport;
 
     @Override
     protected void doFilterInternal(
@@ -49,55 +45,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        final String jwt = extractJwtFromCookie(request);
+        String jwt = jwtCookieSupport.readToken(request);
 
-        if (jwt == null) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        final String phoneNumber;
-        try {
-            phoneNumber = jwtService.extractUsername(jwt);
-        } catch (JwtException e) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write("{\"message\":\"Session expired. Please log in again.\"}");
-            return;
-        }
-
-        if (phoneNumber != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails;
-            try {
-                userDetails = userDetailsService.loadUserByUsername(phoneNumber);
-            } catch (UsernameNotFoundException e) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            if (jwtService.isTokenValid(jwt, userDetails)
-                    && !tokenRevocationService.isRevoked(jwt)
-                    && userDetails.isEnabled()
-                    && userDetails.isAccountNonLocked()) {
-
+        if (jwt != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            User user = findUserForValidToken(jwt);
+            if (user != null) {
                 UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails, null, userDetails.getAuthorities());
+                        new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+            } else {
+                jwtCookieSupport.clearToken(response);
             }
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private String extractJwtFromCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
-        for (Cookie cookie : request.getCookies()) {
-            if (COOKIE_NAME.equals(cookie.getName())) {
-                return cookie.getValue();
+    private User findUserForValidToken(String jwt) {
+        try {
+            UserDetails userDetails = userDetailsService.loadUserByUsername(jwtService.extractUsername(jwt));
+            if (userDetails instanceof User user
+                    && jwtService.isTokenValid(jwt, user)
+                    && !tokenRevocationService.isRevoked(jwt)
+                    && user.isEnabled()
+                    && user.isAccountNonLocked()) {
+                return user;
             }
+            return null;
+        } catch (JwtException | UsernameNotFoundException e) {
+            log.debug("Rejected JWT cookie: {}", e.getClass().getSimpleName());
+            return null;
         }
-        return null;
     }
 }
