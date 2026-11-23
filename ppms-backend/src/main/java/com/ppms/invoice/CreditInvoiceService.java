@@ -8,6 +8,8 @@ import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.credit.CreditClient;
@@ -27,9 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -54,7 +58,9 @@ public class CreditInvoiceService {
     @Transactional
     public CreditInvoice issue(Long pumpId, Long clientId, LocalDate periodFrom, LocalDate periodTo, User issuedBy) {
         return issueIfAnythingToBill(pumpId, clientId, periodFrom, periodTo, issuedBy)
-                .orElseThrow(() -> new BusinessException("Nothing to invoice: this client has no uninvoiced credit sales between "
+                .orElseThrow(() -> new BusinessException(ErrorCodes.INVOICE_NOTHING_TO_BILL,
+                        Map.of("periodFrom", periodFrom.toString(), "periodTo", periodTo.toString()),
+                        "Nothing to invoice: this client has no uninvoiced credit sales between "
                         + periodFrom + " and " + periodTo + "."));
     }
 
@@ -68,9 +74,11 @@ public class CreditInvoiceService {
     @Transactional
     public CreditInvoice cancel(Long pumpId, Long invoiceId, String reason, User cancelledBy) {
         CreditInvoice invoice = invoiceRepository.findByIdAndPumpIdForUpdate(invoiceId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.INVOICE, "Invoice not found"));
         if (invoice.getStatus() == CreditInvoiceStatus.CANCELLED) {
-            throw new BusinessException("Invoice " + invoice.getInvoiceNumber() + " is already cancelled.");
+            throw new BusinessException(ErrorCodes.INVOICE_ALREADY_CANCELLED,
+                    Map.of("invoiceNumber", invoice.getInvoiceNumber()),
+                    "Invoice " + invoice.getInvoiceNumber() + " is already cancelled.");
         }
         invoice.setStatus(CreditInvoiceStatus.CANCELLED);
         invoice.setCancelReason(reason.trim());
@@ -101,12 +109,44 @@ public class CreditInvoiceService {
     @Transactional(readOnly = true)
     public CreditInvoice requireInvoiceForPump(Long pumpId, Long invoiceId) {
         return invoiceRepository.findByIdAndPumpId(invoiceId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.INVOICE, "Invoice not found"));
     }
 
     @Transactional(readOnly = true)
     public List<CreditInvoiceLine> linesOf(CreditInvoice invoice) {
         return lineRepository.findByInvoiceIdOrderByLineTypeAscSaleDateAscIdAsc(invoice.getId());
+    }
+
+    /**
+     * The clients and total a pump-wide run would invoice for the period: the same uninvoiced sales and the same
+     * line totals as {@link #issueInNewTransaction}, read for the whole pump at once and without writing anything.
+     */
+    @Transactional(readOnly = true)
+    public InvoiceRunPreview previewForAllClients(Long pumpId, LocalDate periodFrom, LocalDate periodTo) {
+        PumpLocation pump = pumpLocationRepository.findById(pumpId)
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
+        validatePeriod(periodFrom, periodTo);
+
+        Map<Long, List<ShiftCreditEntry>> fuelByClient = lineRepository
+                .findUninvoicedFuelEntriesOfPump(pumpId, periodFrom, periodTo).stream()
+                .collect(Collectors.groupingBy(ShiftCreditEntry::getClientId));
+        List<AncillarySale> ancillarySales = lineRepository.findUninvoicedAncillarySalesOfPump(
+                pumpId, TransactionPaymentMode.CREDIT, periodFrom, periodTo);
+        Map<Long, List<AncillarySale>> ancillaryByClient = ancillarySales.stream()
+                .collect(Collectors.groupingBy(AncillarySale::getClientId));
+        Map<Long, AncillaryProduct> productsById = productsOf(ancillarySales);
+
+        Set<Long> clientIds = new HashSet<>(fuelByClient.keySet());
+        clientIds.addAll(ancillaryByClient.keySet());
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (Long clientId : clientIds) {
+            List<CreditInvoiceLine> lines = new ArrayList<>(
+                    CreditInvoiceLineBuilder.fuelLines(fuelByClient.getOrDefault(clientId, List.of())));
+            lines.addAll(CreditInvoiceLineBuilder.ancillaryLines(
+                    ancillaryByClient.getOrDefault(clientId, List.of()), productsById, true));
+            total = total.add(withTotals(CreditInvoice.builder(), lines).build().getGrandTotal());
+        }
+        return new InvoiceRunPreview(clientIds.size(), total, hasGstDetails(pump));
     }
 
     public InvoicePeriod defaultPeriod(Long pumpId, Long clientId) {
@@ -117,19 +157,27 @@ public class CreditInvoiceService {
     /** Throws when the pump cannot issue tax invoices yet, so a pump-wide run fails before touching any client. */
     public PumpLocation requirePumpWithGstDetails(Long pumpId) {
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
-        if (pump.getGstin() == null || pump.getLegalName() == null || pump.getInvoicePrefix() == null) {
-            throw new BusinessException(MISSING_GST_DETAILS_MESSAGE);
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
+        if (!hasGstDetails(pump)) {
+            throw new BusinessException(ErrorCodes.INVOICE_GST_DETAILS_MISSING, Map.of(), MISSING_GST_DETAILS_MESSAGE);
         }
         return pump;
     }
 
+    public static boolean hasGstDetails(PumpLocation pump) {
+        return pump.getGstin() != null && pump.getLegalName() != null && pump.getInvoicePrefix() != null;
+    }
+
     public void validatePeriod(LocalDate periodFrom, LocalDate periodTo) {
         if (periodFrom.isAfter(periodTo)) {
-            throw new BusinessException("The period start must be on or before its end.");
+            throw new BusinessException(ErrorCodes.INVOICE_PERIOD_START_AFTER_END,
+                    Map.of(),
+                    "The period start must be on or before its end.");
         }
         if (periodTo.isAfter(businessClock.today())) {
-            throw new BusinessException("The period cannot end after today.");
+            throw new BusinessException(ErrorCodes.INVOICE_PERIOD_ENDS_IN_FUTURE,
+                    Map.of(),
+                    "The period cannot end after today.");
         }
     }
 
@@ -144,8 +192,7 @@ public class CreditInvoiceService {
         // Locked before reading the sales: a concurrent issue for this pump waits here and then sees our lines.
         InvoiceSequence sequence = lockSequence(pumpId, financialYear);
 
-        List<ShiftCreditEntry> fuelEntries = lineRepository.findUninvoicedFuelEntries(clientId,
-                businessClock.startOfDay(periodFrom), businessClock.startOfDay(periodTo.plusDays(1)));
+        List<ShiftCreditEntry> fuelEntries = lineRepository.findUninvoicedFuelEntries(clientId, periodFrom, periodTo);
         List<AncillarySale> ancillarySales = lineRepository.findUninvoicedAncillarySales(
                 pumpId, clientId, TransactionPaymentMode.CREDIT, periodFrom, periodTo);
         if (fuelEntries.isEmpty() && ancillarySales.isEmpty()) {
@@ -157,7 +204,7 @@ public class CreditInvoiceService {
         String buyerStateCode = client.getGstin() != null ? GstFields.stateCodeOf(client.getGstin()) : sellerStateCode;
 
         List<CreditInvoiceLine> lines = new ArrayList<>(
-                CreditInvoiceLineBuilder.fuelLines(fuelEntries, businessClock.zone()));
+                CreditInvoiceLineBuilder.fuelLines(fuelEntries));
         lines.addAll(CreditInvoiceLineBuilder.ancillaryLines(ancillarySales, productsOf(ancillarySales),
                 sellerStateCode.equals(buyerStateCode)));
 

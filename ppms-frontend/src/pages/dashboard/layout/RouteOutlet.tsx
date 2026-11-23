@@ -6,7 +6,7 @@ export function RouteOutlet() {
   const { pathname } = useLocation()
   const selectedPumpId = usePumpStore((state) => state.selectedPumpId)
   return (
-    <div key={`${pathname}:${selectedPumpId ?? 'none'}`} className="ui-route-fade">
+    <div key={`${pathname}:${selectedPumpId ?? 'none'}`}>
       <Outlet />
     </div>
   )

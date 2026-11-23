@@ -14,12 +14,12 @@ public record LogCalibrationRequest(
 
         @NotNull @PastOrPresent LocalDate calibrationDate,
 
-        /** Optional. Set this to schedule the next calibration check. */
-        LocalDate nextCalibrationDue,
+        /** Required: shifts on the nozzle are blocked once this date has passed. Must be after calibrationDate. */
+        @NotNull(message = "Next calibration due date is required") LocalDate nextCalibrationDue,
 
         @NotBlank @Size(max = 150) String calibratedBy,
 
-        @Size(max = 100) String certificateReference,
+        @NotBlank(message = "Certificate reference is required") @Size(max = 100) String certificateReference,
 
         @Size(max = 1000) String notes
 ) {}

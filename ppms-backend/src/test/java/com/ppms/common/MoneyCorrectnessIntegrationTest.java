@@ -6,6 +6,8 @@ import com.ppms.ancillary.AncillaryProduct;
 import com.ppms.ancillary.AncillaryProductPrice;
 import com.ppms.ancillary.AncillaryProductPriceRepository;
 import com.ppms.ancillary.AncillaryProductRepository;
+import com.ppms.ancillary.AncillarySale;
+import com.ppms.ancillary.AncillarySaleRepository;
 import com.ppms.ancillary.AncillaryProductStatus;
 import com.ppms.ancillary.RecordAncillarySaleRequest;
 import com.ppms.ancillary.RecordStockDeliveryRequest;
@@ -40,6 +42,7 @@ import com.ppms.settlement.VoidSettlementRequest;
 import com.ppms.settlement.SettlementResponse;
 import com.ppms.settlement.RecordSettlementRequest;
 import com.ppms.settlement.SettlementPaymentType;
+import com.ppms.shift.DiscrepancyResolution;
 import com.ppms.shift.DiscrepancyType;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftCreditEntry;
@@ -94,6 +97,7 @@ class MoneyCorrectnessIntegrationTest {
     @Autowired private PayrollRepository payrollRepository;
     @Autowired private AncillaryProductRepository ancillaryProductRepository;
     @Autowired private AncillaryProductPriceRepository ancillaryPriceRepository;
+    @Autowired private AncillarySaleRepository ancillarySaleRepository;
 
     private User owner;
     private User manager;
@@ -132,7 +136,7 @@ class MoneyCorrectnessIntegrationTest {
         savePayment(client, "2000.00", ExpenseApprovalStatus.REJECTED, manager);
         savePayment(client, "100.00", ExpenseApprovalStatus.PENDING_APPROVAL, manager);
 
-        List<CreditTransactionResponse> statement = ledgerQueryService.getStatementTransactions(client.getId(), null, null);
+        List<CreditTransactionResponse> statement = ledgerQueryService.getStatement(client, null, null).transactions();
 
         assertThat(statement).hasSize(5);
         assertThat(statement.get(statement.size() - 1).getRunningBalance())
@@ -199,6 +203,42 @@ class MoneyCorrectnessIntegrationTest {
     }
 
     @Test
+    void overDiscrepancyCannotBeDeductedFromSalaryByPayroll() {
+        Shift over = saveOverDiscrepancy(ShiftStatus.CLOSED_DISCREPANCY_PENDING, null);
+
+        assertThatThrownBy(() -> payrollService.generate(pump.getId(), payrollRequest(over), owner))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("only SHORT discrepancies");
+
+        Shift reloaded = shiftRepository.findById(over.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(ShiftStatus.CLOSED_DISCREPANCY_PENDING);
+        assertThat(reloaded.getDiscrepancyResolution()).isNull();
+        assertThat(payrollRepository.findAll()).noneMatch(record -> record.getPumpId().equals(pump.getId()));
+    }
+
+    @Test
+    void overDiscrepancyAlreadyMarkedAsSalaryDeductionIsLeftOutOfPayrollDeductions() {
+        saveOverDiscrepancy(ShiftStatus.CLOSED_DISCREPANCY_RESOLVED, DiscrepancyResolution.SALARY_DEDUCTION);
+        Shift shortShift = saveClosedShift(TestDates.today().minusDays(2), ShiftStatus.CLOSED_DISCREPANCY_RESOLVED, "40.00");
+        shortShift.setDiscrepancyResolution(DiscrepancyResolution.SALARY_DEDUCTION);
+        shiftRepository.save(shortShift);
+
+        PayrollRecord payroll = payrollService.generate(pump.getId(), payrollRequest(null), owner);
+
+        assertThat(payroll.getDeductions()).isEqualByComparingTo("40.00");
+    }
+
+    @Test
+    void pendingDiscrepanciesOfferedForSalaryDeductionAreOnlyShortOnes() {
+        Shift shortShift = saveClosedShift(TestDates.today().minusDays(2), ShiftStatus.CLOSED_DISCREPANCY_PENDING, "50.00");
+        saveOverDiscrepancy(ShiftStatus.CLOSED_DISCREPANCY_PENDING, null);
+
+        assertThat(shiftRepository.findPendingDiscrepanciesByPumpAndOperator(pump.getId(), operator.getId()))
+                .extracting(Shift::getId)
+                .containsExactly(shortShift.getId());
+    }
+
+    @Test
     void subAccountPaymentCannotTakeTheGroupBelowZero() {
         CreditClient parent = saveClient(BigDecimal.ZERO);
         CreditClient child = clientRepository.save(CreditClient.builder()
@@ -256,14 +296,12 @@ class MoneyCorrectnessIntegrationTest {
         seedOutstandingInterest(healthyRoot, "1000.00", 40);
         saveCreditSaleOn(healthyRoot, "1000.00", TestDates.today().minusDays(39));
 
-        CreditClient failingRoot = saveClient(new BigDecimal("2.00"));
+        CreditClient failingRoot = saveClient(new BigDecimal("999.99"));
         seedOutstandingInterest(failingRoot, "1000.00", 40);
-        saveCreditSaleOn(failingRoot, "1000.00", TestDates.today().minusDays(39));
-        CreditClient overflowingChild = saveClient(new BigDecimal("999.99"));
-        overflowingChild.setParentClientId(failingRoot.getId());
-        clientRepository.save(overflowingChild);
-        seedOutstandingInterest(overflowingChild, "1.00", 400);
-        saveCreditSaleOn(overflowingChild, "900000000000.00", TestDates.today().minusDays(399));
+        CreditClient child = saveClient(BigDecimal.ZERO);
+        child.setParentClientId(failingRoot.getId());
+        clientRepository.save(child);
+        saveCreditSaleOn(child, "900000000000.00", TestDates.today().minusDays(39));
 
         CreditInterestRunService.InterestRunResult result =
                 interestRunService.applyProRataForAllClients(pump.getId(), owner.getId());
@@ -290,13 +328,16 @@ class MoneyCorrectnessIntegrationTest {
 
     @Test
     void voidedSettlementNoLongerReducesTheWalletAndDuplicatesAreRefused() {
+        Shift collected = saveClosedShift(TestDates.today(), ShiftStatus.CLOSED_BALANCED, null);
+        collected.setUpiCollected(new BigDecimal("79000.00"));
+        shiftRepository.save(collected);
         RecordSettlementRequest request = RecordSettlementRequest.builder()
                 .paymentType(SettlementPaymentType.UPI)
                 .settlementDate(TestDates.today())
                 .amountReceived(new BigDecimal("79000.00"))
                 .build();
         SettlementResponse recorded = settlementService.record(pump.getId(), request, manager);
-        assertThat(settlementService.getWalletSummary(pump.getId()).getUpiPending()).isEqualByComparingTo("-79000.00");
+        assertThat(settlementService.getWalletSummary(pump.getId()).getUpiPending()).isEqualByComparingTo("0.00");
 
         assertThatThrownBy(() -> settlementService.record(pump.getId(), request, manager))
                 .isInstanceOf(BusinessException.class)
@@ -306,32 +347,44 @@ class MoneyCorrectnessIntegrationTest {
                 VoidSettlementRequest.builder().reason("Typed 79000 instead of 7900").build(), owner);
 
         assertThat(voided.getVoidStatus()).isEqualTo("VOIDED");
-        assertThat(settlementService.getWalletSummary(pump.getId()).getUpiPending()).isEqualByComparingTo("0.00");
+        assertThat(settlementService.getWalletSummary(pump.getId()).getUpiPending()).isEqualByComparingTo("79000.00");
+    }
+
+    @Test
+    void counterSaleOnCreditToASubAccountOfADisabledParentIsRefused() {
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
+        CreditClient parent = saveClient(BigDecimal.ZERO);
+        CreditClient subAccount = saveSubAccount(parent);
+        parent.setActive(false);
+        clientRepository.save(parent);
+
+        assertThatThrownBy(() -> ancillaryWorkflowService.recordSale(pump.getId(), creditSale(product, subAccount, 1), manager))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("parent account");
+    }
+
+    @Test
+    void linkingAnUnlinkedCreditEntryForTheFirstTimeChecksTheClientsLimit() {
+        CreditClient client = saveClient(BigDecimal.ZERO);
+        client.setCreditLimit(new BigDecimal("500.00"));
+        clientRepository.save(client);
+        saveCreditSaleOn(client, "400.00", TestDates.today());
+        Shift shift = saveClosedShift(TestDates.today(), ShiftStatus.CLOSED_BALANCED, null);
+        ShiftCreditEntry tooLarge = saveUnlinkedCreditEntry(shift, "150.00");
+        ShiftCreditEntry fits = saveUnlinkedCreditEntry(shift, "100.00");
+
+        assertThatThrownBy(() -> ledgerService.reassignCreditEntry(pump.getId(), tooLarge.getId(), reassignTo(client), manager))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Credit limit exceeded");
+        ledgerService.reassignCreditEntry(pump.getId(), fits.getId(), reassignTo(client), manager);
+
+        assertThat(creditEntryRepository.findById(tooLarge.getId()).orElseThrow().getClientId()).isNull();
+        assertThat(interestService.computeOutstanding(client.getId())).isEqualByComparingTo("500.00");
     }
 
     @Test
     void managerCannotSellBelowTheConfiguredPriceButOwnerCan() {
-        AncillaryProduct product = ancillaryProductRepository.save(AncillaryProduct.builder()
-                .pumpId(pump.getId())
-                .name("Engine oil " + shortId())
-                .packageSize(new BigDecimal("1.000"))
-                .unitOfMeasure(UnitOfMeasure.LITRE)
-                .currentStockUnits(0)
-                .gstRatePercent(new BigDecimal("18.00"))
-                .status(AncillaryProductStatus.ACTIVE)
-                .build());
-        RecordStockDeliveryRequest stock = new RecordStockDeliveryRequest();
-        stock.setQuantityUnits(10);
-        stock.setCostPricePerUnit(new BigDecimal("300.00"));
-        stock.setDeliveryDate(TestDates.today());
-        ancillaryWorkflowService.recordDelivery(pump.getId(), product.getId(), stock, manager);
-        ancillaryPriceRepository.save(AncillaryProductPrice.builder()
-                .productId(product.getId())
-                .pumpId(pump.getId())
-                .pricePerUnit(new BigDecimal("400.00"))
-                .effectiveFrom(TestDates.now().minusDays(1))
-                .setByUserId(owner.getId())
-                .build());
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
 
         RecordAncillarySaleRequest cheapSale = new RecordAncillarySaleRequest();
         cheapSale.setProductId(product.getId());
@@ -344,6 +397,130 @@ class MoneyCorrectnessIntegrationTest {
                 .hasMessageContaining("Only an Owner or Admin");
         assertThat(ancillaryWorkflowService.recordSale(pump.getId(), cheapSale, owner).getSale().getSellingPricePerUnit())
                 .isEqualByComparingTo("0.01");
+    }
+
+    @Test
+    void creditCounterSaleRaisesTheClientsBalanceAndStoresTheProductsGstRate() {
+        CreditClient client = saveClient(BigDecimal.ZERO);
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
+
+        AncillarySale sale = ancillaryWorkflowService.recordSale(pump.getId(), creditSale(product, client, 2), manager).getSale();
+
+        assertThat(interestService.computeOutstanding(client.getId())).isEqualByComparingTo("800.00");
+        assertThat(sale.getGstRatePercent()).isEqualByComparingTo("18.00");
+        assertThat(sale.getClientName()).isEqualTo(client.getName());
+    }
+
+    @Test
+    void creditCounterSaleBeyondTheGroupLimitIsRefusedAndTakesNoStock() {
+        CreditClient parent = saveClient(BigDecimal.ZERO);
+        parent.setCreditLimit(new BigDecimal("1000.00"));
+        clientRepository.save(parent);
+        CreditClient child = saveSubAccount(parent);
+        saveCreditSaleOn(child, "500.00", TestDates.today());
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
+
+        assertThatThrownBy(() -> ancillaryWorkflowService.recordSale(pump.getId(), creditSale(product, child, 2), manager))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Credit limit exceeded");
+
+        assertThat(ancillaryProductRepository.findById(product.getId()).orElseThrow().getCurrentStockUnits()).isEqualTo(10);
+        assertThat(interestService.computeOutstandingWithChildren(parent.getId())).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void creditCounterSaleWithoutAClientIsRefused() {
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
+        RecordAncillarySaleRequest request = creditSale(product, saveClient(BigDecimal.ZERO), 1);
+        request.setClientId(null);
+        request.setClientName("Walk-in");
+
+        assertThatThrownBy(() -> ancillaryWorkflowService.recordSale(pump.getId(), request, manager))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Choose a credit client");
+    }
+
+    @Test
+    void creditCounterSaleIsAddedToTheLedgerWithProductQuantityAndBillNumber() {
+        CreditClient client = saveClient(BigDecimal.ZERO);
+        AncillaryProduct product = saveProductWithStockAndPrice("400.00");
+        RecordAncillarySaleRequest request = creditSale(product, client, 2);
+        request.setBillNo("B-42");
+        ancillaryWorkflowService.recordSale(pump.getId(), request, manager);
+        Shift shift = saveClosedShift(TestDates.today(), ShiftStatus.CLOSED_BALANCED, null);
+        saveCreditSale(shift, client, "100.00", "ACTIVE");
+
+        List<CreditTransactionResponse> rows = ledgerQueryService.getAllTransactions(client, false);
+
+        assertThat(rows).anySatisfy(row -> {
+            assertThat(row.getType()).isEqualTo("COUNTER_SALE");
+            assertThat(row.getReference()).contains(product.getName()).contains("× 2").contains("Bill B-42");
+            assertThat(row.getAmount()).isEqualByComparingTo("800.00");
+        });
+        assertThat(rows.get(0).getRunningBalance()).isEqualByComparingTo("900.00");
+    }
+
+    @Test
+    void parentIsChargedInterestOnTheWholeGroupBalanceAndSubAccountsAreNotCharged() {
+        CreditClient parent = saveClient(new BigDecimal("3.00"));
+        CreditClient child = saveSubAccount(parent);
+        seedChargeEndingOn(parent, "0.00", LocalDate.of(2025, 10, 31));
+        saveCreditSaleOn(parent, "10000.00", LocalDate.of(2025, 11, 1));
+        saveCreditSaleOn(child, "15000.00", LocalDate.of(2025, 11, 1));
+        saveCounterSaleOn(child, "5000.00", LocalDate.of(2025, 11, 1));
+
+        interestService.applyToClientGroupInNewTransaction(parent.getId(), LocalDate.of(2025, 11, 30), "SCHEDULED", null);
+
+        // ₹30,000 combined (fuel and counter sales) × 3% / 30 per day × 30 days of November
+        CreditInterestCharge charge = interestChargeRepository.findByClientIdOrderByCreatedAtDesc(parent.getId()).get(0);
+        assertThat(charge.getAmount()).isEqualByComparingTo("900.00");
+        assertThat(charge.getOutstandingBalance()).isEqualByComparingTo("30000.00");
+        assertThat(interestChargeRepository.findByClientIdOrderByCreatedAtDesc(child.getId())).isEmpty();
+    }
+
+    @Test
+    void groupInterestIsZeroOnceTheParentHasPaidTheWholeGroupBalance() {
+        CreditClient parent = saveClient(new BigDecimal("3.00"));
+        CreditClient child = saveSubAccount(parent);
+        seedChargeEndingOn(parent, "0.00", LocalDate.of(2025, 10, 31));
+        saveCreditSaleOn(child, "30000.00", LocalDate.of(2025, 11, 1));
+        CreditPayment payment = savePayment(parent, "30000.00", ExpenseApprovalStatus.APPROVED, owner);
+        payment.setPaidAt(LocalDate.of(2025, 11, 1));
+        paymentRepository.save(payment);
+
+        int charges = interestService.applyToClientGroupInNewTransaction(
+                parent.getId(), LocalDate.of(2025, 11, 30), "SCHEDULED", null);
+
+        assertThat(charges).isZero();
+        assertThat(interestChargeRepository.findByClientIdOrderByCreatedAtDesc(parent.getId())).hasSize(1);
+        assertThat(interestChargeRepository.findByClientIdOrderByCreatedAtDesc(child.getId())).isEmpty();
+    }
+
+    @Test
+    void groupInterestStartsAfterTheLastDayAlreadyChargedToASubAccount() {
+        CreditClient parent = saveClient(new BigDecimal("3.00"));
+        CreditClient child = saveSubAccount(parent);
+        seedChargeEndingOn(child, "50.00", LocalDate.of(2025, 11, 15));
+        saveCreditSaleOn(child, "30000.00", LocalDate.of(2025, 11, 1));
+
+        interestService.applyToClientGroupInNewTransaction(parent.getId(), LocalDate.of(2025, 11, 30), "SCHEDULED", null);
+
+        CreditInterestCharge charge = interestChargeRepository.findByClientIdOrderByCreatedAtDesc(parent.getId()).get(0);
+        assertThat(charge.getPeriodFrom()).isEqualTo(LocalDate.of(2025, 11, 16));
+        // ₹30,000 × 0.1% per day × 15 days
+        assertThat(charge.getAmount()).isEqualByComparingTo("450.00");
+    }
+
+    @Test
+    void subAccountCannotBeChargedInterestOnItsOwn() {
+        CreditClient parent = saveClient(new BigDecimal("3.00"));
+        CreditClient child = saveSubAccount(parent);
+        saveCreditSaleOn(child, "30000.00", TestDates.today().minusDays(40));
+
+        assertThatThrownBy(() -> interestService.applyProRata(pump.getId(), child.getId(), owner.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("charged on its parent account '" + parent.getName() + "'");
+        assertThat(interestChargeRepository.findByClientIdOrderByCreatedAtDesc(child.getId())).isEmpty();
     }
 
     @Test
@@ -408,31 +585,82 @@ class MoneyCorrectnessIntegrationTest {
     }
 
     @Test
-    void deletingAnInterestChargeTakesItsAmountOffTheOutstandingBalance() {
+    void waivingAnInterestChargeKeepsTheRowButTakesItsAmountOffTheOutstandingBalance() {
         CreditClient client = saveClient(new BigDecimal("2.00"));
         saveCreditSaleOn(client, "1000.00", TestDates.today().minusDays(5));
         seedChargeEndingOn(client, "40.00", TestDates.today().minusDays(1));
         CreditInterestCharge charge = interestChargeRepository.findByClientIdOrderByCreatedAtDesc(client.getId()).get(0);
         assertThat(interestService.computeOutstanding(client.getId())).isEqualByComparingTo("1040.00");
 
-        ledgerService.deleteInterestCharge(pump.getId(), client.getId(), charge.getId(), owner);
+        ledgerService.waiveInterestCharge(pump.getId(), client.getId(), charge.getId(), "Agreed with the client", owner);
 
         assertThat(interestService.computeOutstanding(client.getId())).isEqualByComparingTo("1000.00");
-        assertThat(interestChargeRepository.findById(charge.getId())).isEmpty();
+        CreditInterestCharge waived = interestChargeRepository.findById(charge.getId()).orElseThrow();
+        assertThat(waived.getVoidedAt()).isNotNull();
+        assertThat(waived.getVoidedBy()).isEqualTo(owner.getId());
+        assertThat(waived.getVoidReason()).isEqualTo("Agreed with the client");
+        assertThat(interestService.computeInterestBreakdownBatch(List.of(client.getId())).get(client.getId())
+                .outstandingInterest()).isEqualByComparingTo("0");
+        assertThat(ledgerQueryService.getAllTransactions(client, false))
+                .filteredOn(row -> "INTEREST".equals(row.getType()))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getStatus()).isEqualTo("WAIVED");
+                    assertThat(row.isCountedInBalance()).isFalse();
+                });
     }
 
     @Test
-    void interestChargeOfAnotherClientCannotBeDeletedThroughThisClient() {
+    void waivingAnInterestChargeNeedsAReasonAndCannotBeDoneTwice() {
+        CreditClient client = saveClient(new BigDecimal("2.00"));
+        seedChargeEndingOn(client, "40.00", TestDates.today().minusDays(1));
+        CreditInterestCharge charge = interestChargeRepository.findByClientIdOrderByCreatedAtDesc(client.getId()).get(0);
+
+        assertThatThrownBy(() -> ledgerService.waiveInterestCharge(pump.getId(), client.getId(), charge.getId(), " ", owner))
+                .isInstanceOf(BusinessException.class);
+        ledgerService.waiveInterestCharge(pump.getId(), client.getId(), charge.getId(), "Wrong rate", owner);
+        assertThatThrownBy(() -> ledgerService.waiveInterestCharge(pump.getId(), client.getId(), charge.getId(), "Again", owner))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("already been waived");
+    }
+
+    @Test
+    void periodOfAWaivedLatestChargeCanBeChargedAgain() {
+        CreditClient client = saveClient(new BigDecimal("3.00"));
+        seedChargeEndingOn(client, "10.00", LocalDate.of(2025, 10, 31));
+        saveCreditSaleOn(client, "30000.00", LocalDate.of(2025, 11, 1));
+        LocalDate periodTo = LocalDate.of(2025, 11, 30);
+        interestService.applyToClientGroupInNewTransaction(client.getId(), periodTo, "SCHEDULED", null);
+        CreditInterestCharge novemberCharge =
+                interestChargeRepository.findByClientIdOrderByCreatedAtDesc(client.getId()).get(0);
+        assertThat(novemberCharge.getPeriodFrom()).isEqualTo(LocalDate.of(2025, 11, 1));
+
+        ledgerService.waiveInterestCharge(pump.getId(), client.getId(), novemberCharge.getId(), "Rate was wrong", owner);
+        int chargedAgain = interestService.applyToClientGroupInNewTransaction(client.getId(), periodTo, "SCHEDULED", null);
+
+        assertThat(chargedAgain).isEqualTo(1);
+        CreditInterestCharge recharged = interestChargeRepository.findByClientIdOrderByCreatedAtDesc(client.getId()).get(0);
+        assertThat(recharged.getId()).isNotEqualTo(novemberCharge.getId());
+        assertThat(recharged.getPeriodFrom()).isEqualTo(LocalDate.of(2025, 11, 1));
+        assertThat(recharged.getPeriodTo()).isEqualTo(periodTo);
+        assertThat(recharged.getAmount()).isEqualByComparingTo("900.00");
+        // ₹30,000 of sales + ₹10 seeded charge + ₹900 recharged November; the waived ₹900 is not owed
+        assertThat(interestService.computeOutstanding(client.getId())).isEqualByComparingTo("30910.00");
+    }
+
+    @Test
+    void interestChargeOfAnotherClientCannotBeWaivedThroughThisClient() {
         CreditClient client = saveClient(new BigDecimal("2.00"));
         CreditClient otherClient = saveClient(new BigDecimal("2.00"));
         seedChargeEndingOn(otherClient, "40.00", TestDates.today().minusDays(1));
         CreditInterestCharge othersCharge =
                 interestChargeRepository.findByClientIdOrderByCreatedAtDesc(otherClient.getId()).get(0);
 
-        assertThatThrownBy(() -> ledgerService.deleteInterestCharge(pump.getId(), client.getId(), othersCharge.getId(), owner))
+        assertThatThrownBy(() -> ledgerService.waiveInterestCharge(
+                pump.getId(), client.getId(), othersCharge.getId(), "Not owed", owner))
                 .isInstanceOf(BusinessException.class);
 
-        assertThat(interestChargeRepository.findById(othersCharge.getId())).isPresent();
+        assertThat(interestChargeRepository.findById(othersCharge.getId()).orElseThrow().getVoidedAt()).isNull();
     }
 
     @Test
@@ -482,9 +710,83 @@ class MoneyCorrectnessIntegrationTest {
                 .clientName(client.getName())
                 .fuelType(FuelType.PETROL.name())
                 .amount(new BigDecimal(amount))
+                .saleDate(day)
                 .build());
         jdbcTemplate.update("UPDATE shift_credit_entries SET created_at = ? WHERE id = ?",
                 day.atTime(12, 0).atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime(), entry.getId());
+    }
+
+    private void saveCounterSaleOn(CreditClient client, String amount, LocalDate day) {
+        AncillaryProduct product = saveProductWithStockAndPrice(amount);
+        ancillarySaleRepository.save(AncillarySale.builder()
+                .pumpId(pump.getId())
+                .productId(product.getId())
+                .quantityUnits(1)
+                .sellingPricePerUnit(new BigDecimal(amount))
+                .totalAmount(new BigDecimal(amount))
+                .gstAmount(BigDecimal.ZERO.setScale(2))
+                .totalWithGst(new BigDecimal(amount))
+                .gstRatePercent(new BigDecimal("18.00"))
+                .paymentMode(TransactionPaymentMode.CREDIT)
+                .clientId(client.getId())
+                .clientName(client.getName())
+                .soldByUserId(manager.getId())
+                .saleDate(day)
+                .build());
+    }
+
+    private AncillaryProduct saveProductWithStockAndPrice(String price) {
+        AncillaryProduct product = ancillaryProductRepository.save(AncillaryProduct.builder()
+                .pumpId(pump.getId())
+                .name("Engine oil " + shortId())
+                .packageSize(new BigDecimal("1.000"))
+                .unitOfMeasure(UnitOfMeasure.LITRE)
+                .currentStockUnits(0)
+                .gstRatePercent(new BigDecimal("18.00"))
+                .status(AncillaryProductStatus.ACTIVE)
+                .build());
+        RecordStockDeliveryRequest stock = new RecordStockDeliveryRequest();
+        stock.setQuantityUnits(10);
+        stock.setCostPricePerUnit(new BigDecimal("300.00"));
+        stock.setDeliveryDate(TestDates.today());
+        ancillaryWorkflowService.recordDelivery(pump.getId(), product.getId(), stock, manager);
+        ancillaryPriceRepository.save(AncillaryProductPrice.builder()
+                .productId(product.getId())
+                .pumpId(pump.getId())
+                .pricePerUnit(new BigDecimal(price))
+                .effectiveFrom(TestDates.now().minusDays(1))
+                .setByUserId(owner.getId())
+                .build());
+        return product;
+    }
+
+    private static RecordAncillarySaleRequest creditSale(AncillaryProduct product, CreditClient client, int quantity) {
+        RecordAncillarySaleRequest request = new RecordAncillarySaleRequest();
+        request.setProductId(product.getId());
+        request.setQuantityUnits(quantity);
+        request.setSellingPricePerUnit(new BigDecimal("400.00"));
+        request.setPaymentMode(TransactionPaymentMode.CREDIT);
+        request.setClientId(client.getId());
+        return request;
+    }
+
+    private CreditClient saveSubAccount(CreditClient parent) {
+        return clientRepository.save(CreditClient.builder()
+                .pumpId(pump.getId())
+                .name("Child " + shortId())
+                .parentClientId(parent.getId())
+                .monthlyInterestRate(BigDecimal.ZERO)
+                .build());
+    }
+
+    private ShiftCreditEntry saveUnlinkedCreditEntry(Shift shift, String amount) {
+        return creditEntryRepository.save(ShiftCreditEntry.builder()
+                .shiftId(shift.getId())
+                .clientName("Free text " + shortId())
+                .fuelType(FuelType.PETROL.name())
+                .amount(new BigDecimal(amount))
+                .saleDate(shift.getShiftDate())
+                .build());
     }
 
     private void seedChargeEndingOn(CreditClient client, String amount, LocalDate periodTo) {
@@ -526,6 +828,13 @@ class MoneyCorrectnessIntegrationTest {
                 .build());
     }
 
+    private Shift saveOverDiscrepancy(ShiftStatus status, DiscrepancyResolution resolution) {
+        Shift over = saveClosedShift(TestDates.today().minusDays(3), status, "75.00");
+        over.setDiscrepancyType(DiscrepancyType.OVER);
+        over.setDiscrepancyResolution(resolution);
+        return shiftRepository.save(over);
+    }
+
     private CreditClient saveClient(BigDecimal monthlyInterestRate) {
         return clientRepository.save(CreditClient.builder()
                 .pumpId(pump.getId())
@@ -541,6 +850,7 @@ class MoneyCorrectnessIntegrationTest {
                 .clientName(client.getName())
                 .fuelType(FuelType.PETROL.name())
                 .amount(new BigDecimal(amount))
+                .saleDate(shift.getShiftDate())
                 .voidStatus(voidStatus)
                 .build());
     }

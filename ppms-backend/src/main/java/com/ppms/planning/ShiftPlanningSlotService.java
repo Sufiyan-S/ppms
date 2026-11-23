@@ -1,6 +1,7 @@
 package com.ppms.planning;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -41,7 +43,8 @@ public class ShiftPlanningSlotService {
     public int slotIndex(LocalDate weekStart, LocalDate date, Long shiftDefinitionId) {
         int dayOffset = (int) weekStart.until(date, java.time.temporal.ChronoUnit.DAYS);
         if (dayOffset < 0 || dayOffset > 6) {
-            throw new BusinessException("Date " + date + " is outside the plan's week.");
+            throw new BusinessException(ErrorCodes.DATE_OUTSIDE_PLAN_WEEK, Map.of("date", date.toString()),
+                    "Date " + date + " is outside the plan's week.");
         }
         int sortOrder = shiftDefinitionRepository.findById(shiftDefinitionId)
                 .map(PumpShiftDefinition::getSortOrder)

@@ -94,7 +94,7 @@ export function RowActionMenu({ label, open, onOpenChange, items, triggerClassNa
               <span aria-hidden="true" className="mt-0.5 shrink-0 leading-none">{item.icon}</span>
               <span className="min-w-0">
                 <span className="block text-xs font-semibold leading-5">{item.label}</span>
-                <span className="block text-[11px] leading-4 text-slate-600">{item.description}</span>
+                <span className="block text-xs text-ink-2">{item.description}</span>
               </span>
             </button>
           ))}

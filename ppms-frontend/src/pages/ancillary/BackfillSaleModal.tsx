@@ -1,19 +1,32 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { X, ChevronLeft } from 'lucide-react'
+import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ancillaryApi } from '../../api/ancillaryApi'
+import { pumpApi } from '../../api/pumpApi'
 import type { AncillaryProduct, BackfillSaleRequest, AncillaryPaymentMode } from '../../api/ancillaryApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { localDateInputValue } from '../../utils/date'
-import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
+import { NumericInput } from '../../components/NumericInput'
+import { FormField } from '../../components/FormField'
+import { FormGrid, FormGridFullRow } from '../../components/layout/FormGrid'
+import { LiveFigures } from '../../components/LiveFigures'
+import { LoadingButton } from '../../components/LoadingButton'
+import { StatusBadge } from '../../components/StatusBadge'
+import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
-import { PAYMENT_MODES, fmtDate } from './ancillaryFormat'
-import { ReviewRow } from './ReviewRow'
+import { PAYMENT_MODES, fmtDate, paymentModeBadge } from './ancillaryFormat'
+import { ReviewList, ReviewRow } from './ReviewRow'
 import { codeLabel } from '../../constants/labels'
 
-// ── Backfill Sale Modal ───────────────────────────────────────────────────────
+interface FieldErrors {
+  product?: string
+  saleDate?: string
+  quantity?: string
+  client?: string
+}
+
 /**
  * 2-step modal for Admin/Owner to retroactively record a historical counter sale.
  *
@@ -33,7 +46,9 @@ export function BackfillSaleModal({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { t } = useTranslation(['ancillary', 'common'])
   const { addToast } = useToastStore()
+  const stillNeededId = useId()
   const yesterday = localDateInputValue(-1)
 
   const [step, setStep] = useState<'form' | 'review'>('form')
@@ -43,122 +58,141 @@ export function BackfillSaleModal({
     quantityUnits: 1,
     paymentMode: 'CASH',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [serverError, setServerError] = useState<string | null>(null)
+
+  const { data: creditClients = [] } = useQuery({
+    queryKey: ['creditClients', pumpId],
+    queryFn: () => pumpApi.getCreditClients(pumpId),
+    enabled: form.paymentMode === 'CREDIT',
+  })
 
   const backfillMutation = useMutation({
     mutationFn: (data: BackfillSaleRequest) => ancillaryApi.backfillSale(pumpId, data),
     onSuccess: () => {
-      addToast('Historical sale backfilled successfully', 'success')
+      addToast(t('backfill.backfilled'), 'success')
       onSuccess()
     },
     onError: (err) => {
-      const msg = parseApiError(err, 'Failed to backfill sale')
-      setError(msg)
+      const msg = parseApiError(err, t('backfill.failed'))
+      setServerError(msg)
       addToast(msg, 'error')
     },
   })
 
   const selectedProduct = products.find(p => p.id === form.productId) ?? null
+  const hasQuantity = form.quantityUnits > 0
 
-  const validate = (): string | null => {
-    if (!form.productId) return 'Select a product'
-    if (!form.saleDate) return 'Sale date is required'
-    if (form.saleDate >= localDateInputValue()) {
-      return 'Sale date must be before today. Use the Sell button on the Products tab for today\'s sales.'
-    }
-    if (!form.quantityUnits || form.quantityUnits < 1) return 'Quantity must be at least 1'
-    if (form.paymentMode === 'CREDIT' && !form.clientName?.trim()) {
-      return 'Client name is required for CREDIT payment mode'
-    }
-    return null
+  const validate = (): FieldErrors => {
+    const errors: FieldErrors = {}
+    if (!form.productId) errors.product = t('validation.selectProduct')
+    if (!form.saleDate) errors.saleDate = t('backfill.dateMissing')
+    else if (form.saleDate >= localDateInputValue()) errors.saleDate = t('backfill.dateNotPast')
+    if (!form.quantityUnits || form.quantityUnits < 1) errors.quantity = t('validation.quantityMin')
+    if (form.paymentMode === 'CREDIT' && !form.clientId) errors.client = t('validation.creditClient')
+    return errors
   }
 
-  const handleReview = () => {
-    const err = validate()
-    if (err) { setError(err); return }
-    setError(null)
+  const handleReview = (e: React.FormEvent) => {
+    e.preventDefault()
+    const errors = validate()
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) return
+    setServerError(null)
     setStep('review')
   }
 
+  const stillNeeded = [
+    ...(form.productId ? [] : [t('stockIn.needProduct')]),
+    ...(form.saleDate ? [] : [t('backfill.needDate')]),
+    ...(hasQuantity ? [] : [t('sell.needQuantity')]),
+    ...(form.paymentMode === 'CREDIT' && !form.clientId ? [t('sell.needClient')] : []),
+  ]
+
+  const stockAfter = selectedProduct && hasQuantity ? selectedProduct.currentStockUnits - form.quantityUnits : null
+
+  const optional = (label: string) => (
+    <>{label} <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span></>
+  )
+
   return (
-    <ModalPortal onClose={onClose} closeOnBackdropClick>
-    <div className="ui-modal-backdrop px-4">
-      <div className="ui-modal-panel w-full max-w-md">
-
-        {/* Header */}
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h3 className="ui-modal-title">
-              {step === 'form' ? 'Backfill Sale' : 'Review Backfill Sale'}
-            </h3>
-            <p className="ui-modal-subtitle">
-              {step === 'form'
-                ? 'Enter a historical counter sale. Price is resolved from price history.'
-                : 'Review the details before submitting.'}
-            </p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
-        </div>
-
-        {/* Step 1 — Form */}
+    <Modal
+      tone="info"
+      title={step === 'form' ? t('backfill.title') : t('backfill.reviewTitle')}
+      subtitle={step === 'form'
+        ? t('backfill.subtitle')
+        : `${selectedProduct?.displayName ?? '—'} · ${fmtDate(form.saleDate)}`}
+      size="lg"
+      onClose={onClose}
+      canClose={!backfillMutation.isPending}
+      closeOnBackdropClick
+      onSubmit={step === 'form' ? handleReview : undefined}
+      bodyClassName="space-y-4"
+      footer={step === 'form' ? (
+        <>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">{t('common:actions.cancel')}</button>
+          <button type="submit" disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn ui-btn-primary">
+            {t('common:actions.review')}
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={() => { setStep('form'); setServerError(null) }}
+            disabled={backfillMutation.isPending} className="ui-btn ui-btn-secondary">
+            {t('common:actions.edit')}
+          </button>
+          <LoadingButton type="button" isLoading={backfillMutation.isPending} loadingLabel={t('actions.recording')}
+            onClick={() => backfillMutation.mutate(form)} className="ui-btn-primary">
+            {t('backfill.confirm')}
+          </LoadingButton>
+        </>
+      )}
+    >
         {step === 'form' && (
-          <div className="ui-modal-body space-y-4">
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error}</div>
-            )}
-
-            {/* Info banner about price resolution */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-              <strong>Note:</strong> The selling price will be automatically resolved from the product's
-              price history for the selected date. Make sure a price was set on or before that date.
-              Stock must also have been delivered on or before the sale date.
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
-                <span className="ui-label">Product *</span>
-                <SearchableSelect label="Product"
+          <>
+            <FormGrid>
+              <FormGridFullRow>
+                <span className="ui-label">{t('fields.product')}</span>
+                <SearchableSelect label={t('fields.product')}
                   value={form.productId ? form.productId.toString() : ''}
                   onChange={v => setForm(f => ({ ...f, productId: v ? parseInt(v) : 0 }))}
-                  placeholder="Select product…"
-                  options={products.map(p => ({ value: p.id.toString(), label: `${p.displayName} (stock: ${p.currentStockUnits})` }))}
+                  placeholder={t('fields.selectProduct')}
+                  options={products.map(p => ({ value: p.id.toString(), label: t('fields.productOption', { name: p.displayName, stock: p.currentStockUnits }) }))}
                 />
-              </div>
+                {fieldErrors.product && <p role="alert" className="ui-error-text">{fieldErrors.product}</p>}
+              </FormGridFullRow>
+
+              <FormField label={t('backfill.saleDate')} error={fieldErrors.saleDate} help={fieldErrors.saleDate ? undefined : t('backfill.saleDateHelp')}>
+                <input
+                  type="date"
+                  value={form.saleDate}
+                  max={yesterday}
+                  onChange={e => setForm(f => ({ ...f, saleDate: e.target.value }))}
+                />
+              </FormField>
+
+              <FormField label={t('fields.quantity')} error={fieldErrors.quantity}>
+                <NumericInput
+                  unit={t('fields.unitsSuffix')}
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.quantityUnits || ''}
+                  onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
+                />
+              </FormField>
 
               <div>
-                <label className="block">
-                  <span className="ui-label">Sale Date * (past only)</span>
-                  <input
-                    type="date"
-                    className="text-sm"
-                    value={form.saleDate}
-                    max={yesterday}
-                    onChange={e => setForm(f => ({ ...f, saleDate: e.target.value }))}
-                  />
-                </label>
-              </div>
-
-              <div>
-                <label className="block">
-                  <span className="ui-label">Quantity (units) *</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="text-sm"
-                    value={form.quantityUnits}
-                    onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
-                  />
-                </label>
-              </div>
-
-              <div className="sm:col-span-2">
-                <span className="ui-label">Payment Mode *</span>
-                <SearchableSelect label="Payment Mode"
+                <span className="ui-label">{t('fields.paymentMode')}</span>
+                <SearchableSelect label={t('fields.paymentMode')}
                   value={form.paymentMode}
                   onChange={v => setForm(f => ({
                     ...f,
                     paymentMode: v as AncillaryPaymentMode,
+                    clientId: v !== 'CREDIT' ? undefined : f.clientId,
                     clientName: v !== 'CREDIT' ? undefined : f.clientName,
                   }))}
                   options={PAYMENT_MODES.map(m => ({ value: m, label: codeLabel(m) }))}
@@ -166,100 +200,70 @@ export function BackfillSaleModal({
               </div>
 
               {form.paymentMode === 'CREDIT' && (
-                <div className="sm:col-span-2">
-                  <label className="block">
-                    <span className="ui-label">Client Name * (required for credit)</span>
-                    <input
-                      className="text-sm"
-                      value={form.clientName ?? ''}
-                      onChange={e => setForm(f => ({ ...f, clientName: e.target.value || undefined }))}
-                      placeholder="Enter client name"
-                    />
-                  </label>
+                <div>
+                  <span className="ui-label">{t('fields.client')}</span>
+                  <SearchableSelect label={t('fields.client')}
+                    value={form.clientId ? form.clientId.toString() : ''}
+                    onChange={v => {
+                      const client = creditClients.find(c => c.id === parseInt(v))
+                      setForm(f => ({ ...f, clientId: client?.id, clientName: client?.name }))
+                    }}
+                    placeholder={t('fields.searchClient')}
+                    options={creditClients.map(c => ({
+                      value: c.id.toString(),
+                      label: c.name + (c.phone ? ` · ${c.phone}` : ''),
+                    }))}
+                  />
+                  {fieldErrors.client && <p role="alert" className="ui-error-text">{fieldErrors.client}</p>}
                 </div>
               )}
 
-              <div>
-                <label className="block">
-                  <span className="ui-label">Bill No</span>
-                  <input
-                    className="text-sm"
-                    value={form.billNo ?? ''}
-                    onChange={e => setForm(f => ({ ...f, billNo: e.target.value || undefined }))}
-                    placeholder="Optional"
-                  />
-                </label>
-              </div>
+              <FormField label={optional(t('fields.billNo'))}>
+                <input
+                  value={form.billNo ?? ''}
+                  onChange={e => setForm(f => ({ ...f, billNo: e.target.value || undefined }))}
+                />
+              </FormField>
 
-              <div>
-                <label className="block">
-                  <span className="ui-label">Notes</span>
+              <FormGridFullRow>
+                <FormField label={optional(t('common:fields.notes'))}>
                   <input
-                    className="text-sm"
                     value={form.notes ?? ''}
                     onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))}
-                    placeholder="Optional"
                   />
-                </label>
-              </div>
-            </div>
-          </div>
+                </FormField>
+              </FormGridFullRow>
+            </FormGrid>
+
+            <LiveFigures
+              label={t('sell.stockAfter')}
+              figures={[
+                { label: t('backfill.price'), value: <span className="text-ink-2">{t('backfill.priceFromHistory')}</span> },
+                { label: t('sell.stockAfter'), value: stockAfter == null ? '—' : t('fields.quantityUnits', { count: stockAfter }), isResult: true },
+              ]}
+            />
+            <p className="ui-help">{t('backfill.note')}</p>
+
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
 
-        {/* Step 2 — Review */}
         {step === 'review' && (
-          <div className="ui-modal-body space-y-4">
-            <div className="bg-violet-50 border border-violet-200 rounded-lg px-4 py-2.5 text-xs text-violet-700 font-medium">
-              This sale will be recorded as <strong>Backfilled</strong> for {fmtDate(form.saleDate)}.
-              The selling price is resolved from price history.
-            </div>
-
-            <div className="ui-card-plain ui-card-muted divide-y divide-slate-100 overflow-hidden text-sm">
-              <ReviewRow label="Product" value={selectedProduct?.displayName ?? '—'} />
-              <ReviewRow label="Sale Date" value={fmtDate(form.saleDate)} />
-              <ReviewRow label="Quantity" value={`${form.quantityUnits} unit${form.quantityUnits !== 1 ? 's' : ''}`} />
-              <ReviewRow label="Payment Mode" value={codeLabel(form.paymentMode)} />
-              {form.paymentMode === 'CREDIT' && <ReviewRow label="Client" value={form.clientName ?? '—'} />}
-              {form.billNo && <ReviewRow label="Bill No" value={form.billNo} />}
-              {form.notes && <ReviewRow label="Notes" value={form.notes} />}
-              <ReviewRow label="Price" value="Resolved from price history" />
-            </div>
-
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error}</div>
-            )}
-          </div>
+          <>
+            <ReviewList>
+              <ReviewRow label={t('fields.product')} value={selectedProduct?.displayName ?? '—'} />
+              <ReviewRow label={t('backfill.saleDate')} value={fmtDate(form.saleDate)} />
+              <ReviewRow label={t('fields.quantity')} value={t('fields.quantityUnits', { count: form.quantityUnits })} />
+              <ReviewRow label={t('fields.paymentMode')} value={<StatusBadge {...paymentModeBadge(form.paymentMode)} />} />
+              {form.paymentMode === 'CREDIT' && <ReviewRow label={t('fields.client')} value={form.clientName ?? '—'} />}
+              {form.billNo && <ReviewRow label={t('fields.billNo')} value={form.billNo} />}
+              {form.notes && <ReviewRow label={t('common:fields.notes')} value={form.notes} />}
+              <ReviewRow label={t('backfill.price')} value={t('backfill.priceFromHistory')} />
+              <ReviewRow label={t('backfill.recordedAs')} value={<StatusBadge tone="neutral" label={t('fields.backfilled')} />} />
+            </ReviewList>
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
-
-        {/* Footer */}
-        <div className="ui-modal-footer">
-          {step === 'form' ? (
-            <>
-              <button onClick={onClose} className="ui-btn ui-btn-secondary">Cancel</button>
-              <button onClick={handleReview} className="ui-btn ui-btn-primary">Review →</button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { setStep('form'); setError(null) }}
-                className="ui-btn ui-btn-secondary"
-              >
-                <span className="inline-flex items-center gap-1.5"><ChevronLeft size={14} strokeWidth={2} />Back</span>
-              </button>
-              <button
-                onClick={() => backfillMutation.mutate(form)}
-                disabled={backfillMutation.isPending}
-                className="ui-btn ui-btn-primary disabled:opacity-50"
-              >
-                {backfillMutation.isPending
-                  ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Recording…</span>
-                  : 'Confirm Backfill'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+    </Modal>
   )
 }

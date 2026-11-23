@@ -1,4 +1,5 @@
 import type { CloseShiftRequest, CreditEntryInput, FuelReading } from '../../../types/shift'
+import i18n from '../../../i18n'
 import { emptyNum } from '../components/creditRow'
 import type { CreditRow } from '../components/creditRow'
 
@@ -26,31 +27,31 @@ export function buildCloseShiftRequest(values: CloseFormValues): { request: Clos
   const { fuelReadings, endReadings, readingsBelowStart, creditRows, cash, upi, card, fleetCard, creditTotal, discrepancyReason } = values
 
   if (readingsBelowStart) {
-    return { error: 'End reading cannot be less than the start reading. Please correct the highlighted fields.' }
+    return { error: i18n.t('shifts:close.validation.readingBelowStart') }
   }
 
   for (const row of creditRows) {
-    if (!row.clientName.trim()) return { error: 'Each credit entry must have a client.' }
-    if (!row.clientId)          return { error: 'Please select a client from the dropdown for each credit entry.' }
-    if (!row.fuelType)          return { error: 'Each credit entry must have a fuel type.' }
-    if (emptyNum(row.amount) <= 0) return { error: 'Each credit entry amount must be > 0.' }
+    if (!row.clientName.trim()) return { error: i18n.t('shifts:close.validation.clientRequired') }
+    if (!row.clientId)          return { error: i18n.t('shifts:close.validation.clientFromList') }
+    if (!row.fuelType)          return { error: i18n.t('shifts:close.validation.fuelRequired') }
+    if (emptyNum(row.amount) <= 0) return { error: i18n.t('shifts:close.validation.amountPositive') }
   }
 
   for (const r of fuelReadings) {
     if (safeParse(endReadings[r.nozzleId] ?? '') === null) {
-      return { error: 'End reading contains an invalid value. Please re-enter.' }
+      return { error: i18n.t('shifts:close.validation.readingInvalid') }
     }
   }
 
   const paymentFields = [
-    { label: 'Cash',       val: cash },
-    { label: 'UPI',        val: upi },
-    { label: 'Card',       val: card },
-    { label: 'Fleet Card', val: fleetCard },
+    { label: i18n.t('common:paymentMethods.CASH'),      val: cash },
+    { label: i18n.t('common:paymentMethods.UPI'),       val: upi },
+    { label: i18n.t('common:paymentMethods.CARD'),      val: card },
+    { label: i18n.t('common:paymentMethods.FLEET_CARD'), val: fleetCard },
   ]
   for (const f of paymentFields) {
     if (f.val !== '' && safeParse(f.val) === null) {
-      return { error: `${f.label} amount contains an invalid value.` }
+      return { error: i18n.t('shifts:close.validation.paymentInvalid', { field: f.label }) }
     }
   }
 

@@ -1,6 +1,8 @@
 package com.ppms.superadmin;
 
 import com.ppms.pump.PumpLocation;
+import com.ppms.pump.SetupChecklistResponse;
+import com.ppms.pump.SetupChecklistService;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -17,10 +19,12 @@ public class OwnerSummaryAssembler {
 
     private final PumpLocationRepository pumpLocationRepository;
     private final UserRepository userRepository;
+    private final SetupChecklistService setupChecklistService;
 
     public OwnerSummaryResponse buildOwnerSummary(User owner) {
         List<PumpLocation> pumps = pumpLocationRepository.findByOwnerId(owner.getId());
-        return buildOwnerSummary(owner, pumps, buildStaffCountMap(pumps.stream().map(PumpLocation::getId).toList()));
+        return buildOwnerSummary(owner, pumps, buildStaffCountMap(pumps.stream().map(PumpLocation::getId).toList()),
+                setupChecklistService.checklistsFor(pumps));
     }
 
     public List<OwnerSummaryResponse> buildOwnerSummaries(List<User> owners) {
@@ -33,13 +37,17 @@ public class OwnerSummaryAssembler {
                 .map(PumpLocation::getId)
                 .toList();
         Map<Long, Long> staffCounts = allPumpIds.isEmpty() ? Map.of() : buildStaffCountMap(allPumpIds);
+        Map<Long, SetupChecklistResponse> checklists = setupChecklistService.checklistsFor(
+                pumpsByOwner.values().stream().flatMap(List::stream).toList());
 
         return owners.stream()
-                .map(owner -> buildOwnerSummary(owner, pumpsByOwner.getOrDefault(owner.getId(), List.of()), staffCounts))
+                .map(owner -> buildOwnerSummary(owner, pumpsByOwner.getOrDefault(owner.getId(), List.of()), staffCounts,
+                        checklists))
                 .toList();
     }
 
-    private OwnerSummaryResponse buildOwnerSummary(User owner, List<PumpLocation> pumps, Map<Long, Long> staffCounts) {
+    private OwnerSummaryResponse buildOwnerSummary(User owner, List<PumpLocation> pumps, Map<Long, Long> staffCounts,
+                                                   Map<Long, SetupChecklistResponse> checklists) {
         List<OwnerSummaryResponse.PumpSummary> pumpSummaries = pumps.stream()
                 .map(pump -> OwnerSummaryResponse.PumpSummary.builder()
                         .pumpId(pump.getId())
@@ -47,6 +55,8 @@ public class OwnerSummaryAssembler {
                         .pumpAddress(pump.getAddress())
                         .enabled(pump.isEnabled())
                         .staffCount(staffCounts.getOrDefault(pump.getId(), 0L))
+                        .setupDoneCount(checklists.get(pump.getId()).doneCount())
+                        .setupRequiredCount(checklists.get(pump.getId()).requiredCount())
                         .build())
                 .toList();
 

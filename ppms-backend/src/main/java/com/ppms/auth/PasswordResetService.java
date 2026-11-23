@@ -1,6 +1,7 @@
 package com.ppms.auth;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -14,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -64,24 +66,29 @@ public class PasswordResetService {
         try {
             tokenUuid = UUID.fromString(token);
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("Invalid reset token format.");
+            throw new BusinessException(ErrorCodes.RESET_TOKEN_INVALID_FORMAT, Map.of(), "Invalid reset token format.");
         }
 
         PasswordResetToken resetToken = tokenRepository.findByTokenHashForUpdate(TokenHashing.sha256Hex(tokenUuid.toString()))
-                .orElseThrow(() -> new BusinessException("Invalid or expired password reset link."));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.RESET_LINK_INVALID_OR_EXPIRED, Map.of(),
+                        "Invalid or expired password reset link."));
 
         if (resetToken.getUsedAt() != null) {
-            throw new BusinessException("This password reset link has already been used. Please request a new one.");
+            throw new BusinessException(ErrorCodes.RESET_LINK_ALREADY_USED, Map.of(),
+                    "This password reset link has already been used. Please request a new one.");
         }
         if (businessClock.now().isAfter(resetToken.getExpiresAt())) {
-            throw new BusinessException("This password reset link has expired. Please request a new one.");
+            throw new BusinessException(ErrorCodes.RESET_LINK_EXPIRED, Map.of(),
+                    "This password reset link has expired. Please request a new one.");
         }
 
         User user = userRepository.findByIdForUpdate(resetToken.getUserId())
-                .orElseThrow(() -> new BusinessException("User not found for this reset token."));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.RESET_LINK_USER_NOT_FOUND, Map.of(),
+                        "User not found for this reset token."));
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
         resetToken.setUsedAt(businessClock.now());

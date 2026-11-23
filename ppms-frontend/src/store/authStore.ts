@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { AuthUser } from '../types/auth'
 import { queryClient } from '../queryClient'
 import { usePumpStore } from './usePumpStore'
+import { removeAllDrafts } from '../hooks/useSaveDraft'
 
 interface AuthState {
   user: AuthUser | null
@@ -31,6 +32,7 @@ export const useAuthStore = create<AuthState>()(
       clearAuth: () => {
         queryClient.clear()
         usePumpStore.getState().clearSelectedPump()
+        removeAllDrafts()
         set({ user: null, isAuthenticated: false })
       },
 
@@ -48,6 +50,8 @@ export const useAuthStore = create<AuthState>()(
               fullName: state.user.fullName,
               role: state.user.role,
               assignedPumpId: state.user.assignedPumpId,
+              mustChangePassword: state.user.mustChangePassword,
+              preferredLanguage: state.user.preferredLanguage,
             }
           : null,
       }),

@@ -1,0 +1,604 @@
+{
+  "close": {
+    "title": {
+      "reviewHandover": "हैंडओवर से पहले जाँच करें",
+      "reviewClose": "बंद करने से पहले जाँच करें",
+      "handedOver": "शिफ्ट हैंडओवर हो गई",
+      "closed": "शिफ्ट बंद हो गई",
+      "handover": "शिफ्ट हैंडओवर करें",
+      "close": "शिफ्ट बंद करें"
+    },
+    "subtitle": "नोज़ल {{nozzles}} · {{operator}} · {{window}}",
+    "nozzleLine": "नोज़ल #{{number}} · {{fuel}}",
+    "errors": {
+      "closeFailed": "शिफ्ट बंद नहीं हो पाई। कृपया फिर से कोशिश करें।",
+      "handoverFailed": "शिफ्ट हैंडओवर नहीं हो पाई। कृपया फिर से कोशिश करें।",
+      "reportLoadFailed": "शिफ्ट रिपोर्ट लोड नहीं हो पाई। कृपया फिर से कोशिश करें।",
+      "roundOffNegative": "राउंड ऑफ नहीं हो सकता: नकद राशि माइनस में चली जाएगी।"
+    },
+    "sections": {
+      "endReadings": "मीटर रीडिंग",
+      "creditSales": "क्रेडिट बिक्री",
+      "payment": "भुगतान"
+    },
+    "newEntries_one": "{{count}} नई एंट्री · ₹{{amount}}",
+    "newEntries_other": "{{count}} नई एंट्री · ₹{{amount}}",
+    "noCredit": "कोई क्रेडिट बिक्री नहीं",
+    "addEntry": "क्रेडिट बिक्री जोड़ें",
+    "payment": {
+      "cash": "नकद (₹)",
+      "upi": "UPI (₹)",
+      "card": "कार्ड (₹)",
+      "fleetCard": "फ़्लीट कार्ड (₹)",
+      "creditTotal": "क्रेडिट बिक्री कुल",
+      "fillRest": "बाकी भरें · ₹{{amount}}"
+    },
+    "validation": {
+      "readingBelowStart": "अंतिम रीडिंग शुरुआती रीडिंग से कम नहीं हो सकती। कृपया लाल निशान वाले खाने ठीक करें।",
+      "clientRequired": "हर क्रेडिट एंट्री में ग्राहक होना ज़रूरी है।",
+      "clientFromList": "हर क्रेडिट एंट्री के लिए सूची से ग्राहक चुनें।",
+      "fuelRequired": "हर क्रेडिट एंट्री में ईंधन का प्रकार होना ज़रूरी है।",
+      "amountPositive": "हर क्रेडिट एंट्री की राशि 0 से ज़्यादा होनी चाहिए।",
+      "readingInvalid": "अंतिम रीडिंग में गलत मान है। कृपया फिर से डालें।",
+      "paymentInvalid": "{{field}} राशि में गलत मान है।"
+    },
+    "fields": {
+      "unchanged": "कोई बदलाव नहीं · 0 {{unit}} बिका",
+      "endReadingAria": "{{label}} अंतिम रीडिंग",
+      "belowStart": "अंतिम रीडिंग शुरुआत ({{start}}) से कम नहीं हो सकती, जब तक मीटर अपनी अधिकतम सीमा से दोबारा शुरू न हुआ हो",
+      "noChange": "कोई बदलाव नहीं",
+      "startReading": "शुरुआत {{reading}}"
+    },
+    "footer": {
+      "reviewClose": "बंद करना जाँचें",
+      "reviewHandover": "हैंडओवर जाँचें"
+    },
+    "liveSummary": {
+      "title": "सारांश",
+      "sold": "बिका",
+      "totalDue": "कुल देय",
+      "due": "देय",
+      "collected": "मिला",
+      "credit": "क्रेडिट",
+      "difference": "अंतर",
+      "showDetails": "विवरण",
+      "hideDetails": "छिपाएँ"
+    },
+    "stillNeeded": {
+      "title": "अभी बाकी",
+      "ready": "जाँचने के लिए तैयार",
+      "incomingOperator": "आने वाला ऑपरेटर चुनें",
+      "endReadings_one": "{{count}} नोज़ल की अंतिम रीडिंग",
+      "endReadings_other": "{{count}} नोज़ल की अंतिम रीडिंग",
+      "readingsBelowStart": "शुरुआत से कम अंतिम रीडिंग ठीक करें",
+      "payments": "मिला भुगतान",
+      "creditEntries_one": "{{count}} क्रेडिट एंट्री पूरी करें",
+      "creditEntries_other": "{{count}} क्रेडिट एंट्री पूरी करें",
+      "reason": "अंतर का कारण"
+    },
+    "review": {
+      "introHandover": "हैंडओवर के बाद इसे वापस नहीं बदला जा सकता। ये आँकड़े ऑपरेटर के साथ जाँच लें।",
+      "introClose": "बंद करने के बाद इसे वापस नहीं बदला जा सकता। ये आँकड़े ऑपरेटर के साथ जाँच लें।",
+      "incomingOperator": "आने वाला ऑपरेटर",
+      "salesByNozzle": "नोज़ल के हिसाब से बिक्री",
+      "columns": {
+        "nozzle": "नोज़ल",
+        "sold": "बिका",
+        "amount": "राशि"
+      },
+      "totalDue": "कुल देय",
+      "collected": "मिला",
+      "fleetCard": "फ़्लीट कार्ड",
+      "credit_one": "क्रेडिट ({{count}} एंट्री)",
+      "credit_other": "क्रेडिट ({{count}} एंट्री)",
+      "totalCollected": "कुल मिला",
+      "result": "नतीजा",
+      "reason": "कारण: {{reason}}",
+      "needsApproval": "यह ₹{{limit}} की सीमा से ज़्यादा है, इसलिए मालिक या एडमिन की मंज़ूरी चाहिए।",
+      "handingOver": "शिफ्ट हैंडओवर हो रही है",
+      "closing": "शिफ्ट बंद हो रही है",
+      "confirmHandover": "हैंडओवर पक्का करें",
+      "confirmClose": "बंद करना पक्का करें"
+    },
+    "summary": {
+      "totalDue": "कुल देय",
+      "collected": "मिला",
+      "creditEntries": "क्रेडिट एंट्री",
+      "result": "नतीजा",
+      "newShiftOpen": "{{name}} के लिए इन्हीं नोज़ल पर नई शिफ्ट चालू हो गई है।",
+      "escalated": "अंतर मंज़ूरी सीमा से ज़्यादा है और मालिक या एडमिन की मंज़ूरी बाकी है।",
+      "listed": "यह अंतर, अंतर की सूची में दर्ज है; मैनेजर इसे सुलझाएँगे।",
+      "openNext": "अगली शिफ्ट शुरू करें",
+      "preparing": "रिपोर्ट तैयार हो रही है",
+      "print": "प्रिंट / शेयर करें"
+    },
+    "discrepancy": {
+      "short": "शिफ्ट में ₹{{amount}} कम हैं",
+      "excess": "शिफ्ट में ₹{{amount}} ज़्यादा हैं",
+      "collectedLess": "ऑपरेटर ने देय राशि से कम पैसे लिए।",
+      "collectedMore": "ऑपरेटर ने देय राशि से ज़्यादा पैसे लिए।",
+      "roundOffOrReason": "इसे नकद में राउंड ऑफ करें, या नीचे कारण लिखें।",
+      "reasonToClose": "यह शिफ्ट बंद करने के लिए नीचे कारण लिखें।",
+      "roundOffTitle": "नकद को ₹{{amount}} बदलें ताकि शिफ्ट संतुलित हो जाए",
+      "roundOff": "₹{{amount}} नकद में राउंड ऑफ करें",
+      "requiredToClose": "(बंद करने के लिए ज़रूरी)",
+      "placeholder": "जैसे मीटर गड़बड़ी",
+      "enterReason": "बंद करने के लिए कारण लिखें"
+    },
+    "lateClose": {
+      "title": "शिफ्ट बंद होने का समय बदला गया",
+      "body": "आप तय समय के बाद बंद कर रहे हैं। बंद होने का समय <time>{{time}}</time> (आपकी शिफ्ट का तय अंतिम समय) दर्ज होगा।"
+    },
+    "preRecorded": {
+      "heading": "शिफ्ट के दौरान दर्ज ({{count}})",
+      "reasonAria": "हटाने का कारण",
+      "reasonPlaceholder": "हटाने का कारण (ज़रूरी)",
+      "reasonRequired": "कारण ज़रूरी है",
+      "confirmDelete": "हटाना पक्का करें",
+      "subtotal": "पहले दर्ज एंट्री का जोड़"
+    }
+  },
+  "handover": {
+    "fields": {
+      "title": "आने वाला ऑपरेटर",
+      "explainer": "{{name}} की शिफ्ट नीचे दी रीडिंग और भुगतान के साथ बंद होगी, और इन्हीं अंतिम रीडिंग से इन्हीं नोज़ल पर आने वाले ऑपरेटर की नई शिफ्ट शुरू होगी।",
+      "chooseIncoming": "आने वाला ऑपरेटर चुनें",
+      "cashCounted": "आने वाले ऑपरेटर के साथ नकद गिना",
+      "metersChecked": "मीटर रीडिंग साथ में जाँची",
+      "notes": "हैंडओवर नोट (वैकल्पिक)",
+      "notesPlaceholder": "जैसे खाने की छुट्टी"
+    },
+    "report": {
+      "title": "शिफ्ट हैंडओवर रिपोर्ट",
+      "subtitle": "शिफ्ट #{{id}} · {{operator}} · {{date}}",
+      "stillOpen": "चालू",
+      "print": "प्रिंट करें",
+      "operator": "ऑपरेटर",
+      "date": "तारीख",
+      "du": "DU",
+      "duFallback": "DU #{{number}}",
+      "shiftWindow": "शिफ्ट का समय",
+      "meterReadings": "मीटर रीडिंग",
+      "columns": {
+        "nozzle": "नोज़ल",
+        "opening": "शुरुआती",
+        "closing": "अंतिम",
+        "litresSold": "बिके लीटर",
+        "rate": "दर"
+      },
+      "collections": "वसूली",
+      "totalDue": "कुल देय",
+      "discrepancy": "अंतर",
+      "reason": "कारण: {{reason}}",
+      "operatorSignature": "ऑपरेटर के हस्ताक्षर",
+      "supervisorSignature": "सुपरवाइज़र के हस्ताक्षर"
+    }
+  },
+  "creditEntry": {
+    "added": "{{client}} के लिए {{amount}} का क्रेडिट जोड़ा गया",
+    "saveFailed": "क्रेडिट एंट्री सेव नहीं हो पाई। कृपया फिर से कोशिश करें।",
+    "deleteFailed": "एंट्री हटाई नहीं जा सकी। कृपया फिर से कोशिश करें।",
+    "selectClient": "कृपया सूची से ग्राहक चुनें।",
+    "fuelRequired": "ईंधन का प्रकार ज़रूरी है",
+    "validAmount": "सही राशि डालें",
+    "title": "क्रेडिट बिक्री जोड़ें",
+    "subtitle": "नोज़ल {{nozzles}} · {{operator}}",
+    "saving": "क्रेडिट एंट्री सेव हो रही है",
+    "save": "क्रेडिट बिक्री सेव करें",
+    "recorded": "दर्ज एंट्री",
+    "tapVoid": "किसी को रद्द करने के लिए \"रद्द\" दबाएँ",
+    "void": "रद्द",
+    "voidReason": "रद्द करने का कारण",
+    "voidHint": "एंट्री शिफ्ट पर रद्द के निशान के साथ बनी रहेगी और इसके जोड़ में नहीं गिनी जाएगी।",
+    "voiding": "एंट्री रद्द हो रही है",
+    "reasonRequired": "कारण ज़रूरी है",
+    "confirmVoid": "एंट्री रद्द करें",
+    "searchClient": "ग्राहक का नाम खोजें…",
+    "searchClientShort": "ग्राहक का नाम खोजें...",
+    "subAccount": "उप-खाता",
+    "billToParentOption": "— मुख्य खाते ({{name}}) में बिल करें —",
+    "billToParent": "मुख्य खाते ({{name}}) में बिल करें",
+    "fuel": "ईंधन",
+    "fuelType": "ईंधन का प्रकार",
+    "amount": "राशि",
+    "quantity": "मात्रा",
+    "enterIn": "किसमें भरें",
+    "amountModeAria": "रुपये में राशि डालें",
+    "litresModeAria": "मात्रा डालें",
+    "stillNeeded": {
+      "client": "सूची से ग्राहक",
+      "fuel": "ईंधन",
+      "amount": "राशि"
+    },
+    "creditLimit": "क्रेडिट सीमा",
+    "availableCredit": "बचा क्रेडिट",
+    "leftAfterSale": "इस बिक्री के बाद बचेगा",
+    "billNo": "बिल नंबर",
+    "billNoPlaceholder": "जैसे B-101",
+    "description": "विवरण",
+    "descriptionPlaceholder": "जैसे ड्राइवर को दिया",
+    "editAria": "क्रेडिट एंट्री {{number}} बदलें",
+    "incomplete": "अधूरी — बदलने के लिए दबाएँ",
+    "deleteEntry": "एंट्री हटाएँ",
+    "entryNumber": "एंट्री {{number}}"
+  },
+  "clientSearch": {
+    "noMatch": "कोई मेल नहीं",
+    "noMatchFor": "\"{{search}}\" से कोई मेल नहीं",
+    "askManager": "यह ग्राहक जोड़ने के लिए अपने मैनेजर से कहें।",
+    "addClient": "+ ग्राहक जोड़ें →",
+    "standingFailed": "कौन से ग्राहक रुके हैं, यह जाँच नहीं हो पाई; सेव करते समय बिक्री फिर भी जाँची जाएगी।",
+    "client": "ग्राहक",
+    "chooseClient": "ग्राहक चुनें",
+    "chooseClientSubtitle": "इस क्रेडिट बिक्री के लिए",
+    "searchAria": "नाम या फ़ोन से ग्राहक खोजें",
+    "recentAria": "हाल के ग्राहक",
+    "recent": "हाल के",
+    "noClients": "अभी कोई ग्राहक नहीं जोड़ा गया — मालिक इन्हें सेटअप में जोड़ सकते हैं।",
+    "listAria": "क्रेडिट ग्राहक",
+    "callManager": "मैनेजर को बुलाएँ",
+    "hasSubAccounts": "उप-खाते हैं",
+    "available": "{{amount}} उपलब्ध",
+    "blocked": {
+      "parentDisabled": "मुख्य खाता बंद है",
+      "creditDisabled": "क्रेडिट बंद है",
+      "overLimit": "क्रेडिट सीमा से ज़्यादा",
+      "cycleOverdue": "बिलिंग चक्र बकाया"
+    }
+  },
+  "creditEntries": {
+    "title": "क्रेडिट बिक्री",
+    "subtitle": "शिफ्ट #{{id}} · नोज़ल {{nozzles}} · {{operator}} · {{date}}",
+    "total": "कुल क्रेडिट",
+    "bill": "बिल:",
+    "noBill": "बिल नहीं"
+  },
+  "resolveDiscrepancy": {
+    "failed": "अंतर सुलझाया नहीं जा सका। कृपया फिर से कोशिश करें।",
+    "chooseAction": "सुलझाने का तरीका चुनें।",
+    "waiveReason": "अंतर माफ़ करने के लिए लिखित कारण ज़रूरी है।",
+    "describeInvestigation": "बताएँ कि किस बात की जाँच हो रही है।",
+    "title": "अंतर सुलझाएँ",
+    "subtitle": "शिफ्ट #{{id}} · {{operator}}",
+    "difference": "अंतर",
+    "reasonAtClose": "बंद करते समय दिया कारण",
+    "startInvestigation": "जाँच शुरू करें",
+    "confirm": "सुलझाएँ",
+    "actionLabel": "सुलझाने का तरीका",
+    "stillNeededAction": "सुलझाने का तरीका",
+    "choosePlaceholder": "तरीका चुनें…",
+    "investigationHint": "कमी खुली रहेगी: यह वेतन में दिखती रहेगी और बाद में इस पर अंतिम फ़ैसला लेना होगा।",
+    "note": "नोट"
+  },
+  "components": {
+    "operatorPicker": {
+      "stepTitle": "चरण 3 — {{title}}",
+      "loading": "ऑपरेटर लोड हो रहे हैं...",
+      "noneAvailable": "कोई ऑपरेटर खाली नहीं — सभी चालू शिफ्ट पर हैं या इस पंप पर कोई नहीं लगा है।",
+      "searchPlaceholder": "नाम से खोजें...",
+      "clearSearch": "खोज साफ़ करें",
+      "noMatch": "\"{{search}}\" से कोई ऑपरेटर नहीं मिला"
+    }
+  },
+  "labels": {
+    "status": {
+      "open": "चालू",
+      "overdue": "समय पार",
+      "autoClosed": "अपने-आप बंद",
+      "balanced": "संतुलित",
+      "discrepancy": "अंतर",
+      "needsApproval": "मंज़ूरी चाहिए",
+      "resolved": "सुलझा"
+    },
+    "awaitingOwnerApproval": "मालिक की मंज़ूरी का इंतज़ार",
+    "dayBeforeYesterday": "परसों",
+    "resolution": {
+      "pendingInvestigation": "जाँच बाकी",
+      "salaryDeduction": "वेतन से कटौती",
+      "cashRecovery": "नकद वसूली",
+      "waived": "माफ़"
+    },
+    "underInvestigation": "{{name}} {{since}} से जाँच कर रहे हैं",
+    "unknownUser": "अज्ञात यूज़र"
+  },
+  "page": {
+    "columns": {
+      "nozzle": "नोज़ल",
+      "operator": "ऑपरेटर",
+      "window": "समय",
+      "started": "शुरू",
+      "prices": "कीमत (₹)",
+      "status": "स्थिति",
+      "actions": "कार्रवाई"
+    },
+    "noPumpsTitle": "अभी कोई पंप सेट नहीं है",
+    "noPumpsBody": "पहले पंप की जगह बनाएँ, फिर नोज़ल जोड़ें और ईंधन कीमत सेट करें।",
+    "goToSetup": "सेटअप पर जाएँ",
+    "title": "शिफ्ट",
+    "subtitle": "ऑपरेटर की शिफ्ट खोलें और बंद करें, मीटर रीडिंग और भुगतान दर्ज करें।",
+    "myActiveShifts": "मेरी चालू शिफ्ट",
+    "activeShifts": "चालू शिफ्ट",
+    "activeShiftsCaption": "चालू शिफ्ट",
+    "backfillHint": "पिछली तारीखों की शिफ्ट का डेटा भरें",
+    "backfillShift": "पुरानी शिफ्ट भरें",
+    "openShift": "शिफ्ट खोलें",
+    "emptyCanOpen": "कोई चालू शिफ्ट नहीं। शुरू करने के लिए शिफ्ट खोलें दबाएँ।",
+    "emptyOperator": "कोई चालू शिफ्ट नहीं। अपने मैनेजर से शिफ्ट खुलवाएँ।",
+    "empty": "कोई चालू शिफ्ट नहीं।",
+    "myShiftHistory": "मेरी शिफ्ट का इतिहास",
+    "shiftHistory": "शिफ्ट इतिहास",
+    "tabs": {
+      "day": "दिन के हिसाब से",
+      "all": "सभी शिफ्ट",
+      "discrepancies": "अंतर"
+    },
+    "openNowCount_one": "अभी {{count}} चालू",
+    "openNowCount_other": "अभी {{count}} चालू",
+    "historyViews": "शिफ्ट इतिहास के व्यू"
+  },
+  "myShift": {
+    "title": "मेरी शिफ्ट",
+    "loadFailed": "आपकी शिफ्ट लोड नहीं हुई। इंटरनेट देखें और पेज रीफ़्रेश करें।",
+    "noOpenShift": "कोई चालू शिफ्ट नहीं।",
+    "askManager": "अपने मैनेजर से शिफ्ट खुलवाएँ।",
+    "addCreditSale": "+ क्रेडिट बिक्री"
+  },
+  "open": {
+    "opened": "{{name}} की शिफ्ट खुल गई",
+    "failed": "शिफ्ट नहीं खुली। फिर से कोशिश करें।",
+    "validation": {
+      "selectDu": "कृपया DU चुनें",
+      "selectNozzle": "कृपया कम से कम एक नोज़ल चुनें",
+      "selectOperator": "कृपया ऑपरेटर चुनें",
+      "confirmReadings": "कृपया पुष्टि करें कि मीटर रीडिंग सही है"
+    },
+    "missing": {
+      "du": "DU चुनें",
+      "nozzle": "कम से कम एक नोज़ल चुनें",
+      "operator": "ऑपरेटर चुनें",
+      "readings": "मीटर रीडिंग की पुष्टि करें"
+    },
+    "title": "नई शिफ्ट खोलें",
+    "subtitle": "DU, नोज़ल और ऑपरेटर चुनें",
+    "confirmReadings": "मैं पुष्टि करता/करती हूँ कि ऊपर की मीटर रीडिंग सही है और यह शिफ्ट खोलने की अनुमति देता/देती हूँ।",
+    "opening": "शिफ्ट खुल रही है",
+    "submit": "शिफ्ट खोलें",
+    "duHeading": "DU",
+    "loadingDus": "DU लोड हो रहे हैं...",
+    "noDus": "कोई सक्रिय DU नहीं मिला। पहले सेटअप में जोड़ें।",
+    "duNumber": "DU #{{number}}",
+    "selected": "चुना गया",
+    "nozzlesHeading": "नोज़ल",
+    "selectedCount_one": "{{count}} चुना",
+    "selectedCount_other": "{{count}} चुने",
+    "selectNozzles": "नोज़ल चुनें",
+    "inUse": "चालू है",
+    "assignOperator": "ऑपरेटर",
+    "currentReadings": "अभी की मीटर रीडिंग",
+    "readOnly": "सिर्फ़ देखने के लिए",
+    "nozzleReadingLabel": "नोज़ल #{{number}} · {{fuel}}",
+    "readingsNote": "ये रीडिंग पिछली शिफ्ट बंद होने से अपने-आप आती हैं। अगर कोई रीडिंग गलत लगे, तो एडमिन को पहले इसे यहाँ ठीक करना होगा:",
+    "readingsNotePath": "सेटअप → नोज़ल → रीडिंग बदलें",
+    "readingsNoteEnd": "।"
+  },
+  "active": {
+    "nozzleList": "नोज़ल {{nozzles}}",
+    "startedAt": "शुरू हुई",
+    "timeOnShift": "शिफ्ट पर समय",
+    "creditEntries": "क्रेडिट एंट्री",
+    "creditSoFar": "अब तक क्रेडिट",
+    "prices": "कीमत",
+    "priceNotSet": "सेट नहीं",
+    "startedTime": "{{time}} पर शुरू",
+    "credit": "क्रेडिट",
+    "handOver": "हैंडओवर"
+  },
+  "backfill": {
+    "title": "पुरानी शिफ्ट भरें",
+    "subtitle": "पिछले 365 दिनों की कोई भी शिफ्ट, आज की नहीं",
+    "deliveriesFirst": "उस तारीख की टैंकर डिलीवरी पहले दर्ज करें: टैंक में स्टॉक कम होने पर शिफ्ट सेव नहीं होगी।",
+    "save": "पुरानी शिफ्ट सेव करें",
+    "reason": {
+      "label": "अंतर का कारण",
+      "hint": "जमा राशि कुल देय से अलग हो तो ज़रूरी।"
+    },
+    "details": {
+      "title": "शिफ्ट की जानकारी",
+      "shiftDate": "शिफ्ट की तारीख",
+      "dateHint": "पिछले 365 दिन · आज नहीं",
+      "du": "DU",
+      "duOption": "{{name}} (DU #{{number}})",
+      "selectDu": "DU चुनें…",
+      "window": "शिफ्ट का समय",
+      "noDefinitions": "इस पंप के लिए कोई शिफ्ट समय नहीं मिला। पहले सेटअप में शिफ्ट समय बनाएँ।",
+      "loadingWindows": "शिफ्ट समय लोड हो रहे हैं…",
+      "selectWindow": "शिफ्ट का समय चुनें…"
+    },
+    "rates": {
+      "title": "{{date}} की कीमत",
+      "fromHistory": "कीमत इतिहास से। बदलने के लिए पहले कीमत इतिहास ठीक करें।",
+      "inputLabel": "{{fuel}} की दर",
+      "noPrice": "{{date}} की कोई कीमत दर्ज नहीं"
+    },
+    "payment": {
+      "title": "भुगतान",
+      "upi": "UPI (₹)",
+      "card": "कार्ड (₹)",
+      "fleetCard": "फ़्लीट कार्ड (₹)",
+      "cash": "नकद (₹)"
+    },
+    "staff": {
+      "operator": "ड्यूटी पर ऑपरेटर",
+      "nozzles": "नोज़ल",
+      "noNozzles": "इस DU पर कोई नोज़ल नहीं है।"
+    },
+    "meter": {
+      "title": "नोज़ल और मीटर रीडिंग",
+      "nozzle": "नोज़ल #{{number}} · {{fuel}}",
+      "opening": "शुरुआती",
+      "closing": "अंतिम",
+      "openingAria": "{{nozzle}} की शुरुआती रीडिंग",
+      "closingAria": "{{nozzle}} की अंतिम रीडिंग",
+      "soldNoRate": "{{sold}} बिका। राशि देखने के लिए ऊपर दर भरें।",
+      "closingBelowOpening": "अंतिम रीडिंग शुरुआती रीडिंग से कम है।"
+    },
+    "credit": {
+      "title": "क्रेडिट बिक्री",
+      "total": "कुल क्रेडिट",
+      "newEntry": "नई एंट्री",
+      "removeLabel": "क्रेडिट एंट्री हटाएँ",
+      "client": "ग्राहक",
+      "selectClient": "ग्राहक चुनें",
+      "amount": "राशि",
+      "fuelType": "ईंधन",
+      "optionalChoice": "नहीं बताया",
+      "billNo": "बिल नंबर",
+      "description": "विवरण",
+      "removeEntry": "एंट्री हटाएँ"
+    },
+    "stillNeeded": {
+      "date": "शिफ्ट की तारीख",
+      "window": "शिफ्ट का समय",
+      "operator": "ड्यूटी पर ऑपरेटर",
+      "du": "DU",
+      "nozzle": "कम से कम एक नोज़ल"
+    },
+    "errors": {
+      "failed": "पुरानी शिफ्ट सेव नहीं हुई। फिर से कोशिश करें।",
+      "selectDate": "कृपया शिफ्ट की तारीख चुनें।",
+      "selectWindow": "कृपया शिफ्ट का समय चुनें।",
+      "selectDu": "कृपया DU चुनें।",
+      "selectOperator": "कृपया ऑपरेटर चुनें।",
+      "selectNozzle": "कृपया कम से कम एक नोज़ल चुनें।",
+      "enterRate": "{{date}} को {{fuel}} की दर भरें।",
+      "openingRequired": "नोज़ल #{{number}} की शुरुआती रीडिंग ज़रूरी है।",
+      "closingRequired": "नोज़ल #{{number}} की अंतिम रीडिंग ज़रूरी है।",
+      "closingBelowOpening": "नोज़ल #{{number}} की अंतिम रीडिंग शुरुआती से कम नहीं हो सकती।",
+      "selectClient": "हर क्रेडिट एंट्री के लिए क्रेडिट ग्राहक चुनें।",
+      "amountPositive": "क्रेडिट एंट्री \"{{name}}\" की राशि 0 से ज़्यादा होनी चाहिए।"
+    }
+  },
+  "history": {
+    "columns": {
+      "id": "ID",
+      "nozzle": "नोज़ल",
+      "shift": "शिफ्ट",
+      "operator": "ऑपरेटर",
+      "date": "तारीख",
+      "amountDue": "देय राशि",
+      "status": "स्थिति",
+      "discrepancy": "अंतर",
+      "actions": "कार्रवाई"
+    },
+    "shiftNotFound": "शिफ्ट #{{id}} इस पंप पर नहीं मिली।",
+    "loadFailed": "शिफ्ट इतिहास लोड नहीं हुआ",
+    "dayEmpty": "पिछले 3 दिनों का कोई शिफ्ट इतिहास नहीं।",
+    "shiftCount_one": "{{count}} शिफ्ट",
+    "shiftCount_other": "{{count}} शिफ्ट",
+    "stillOpen": " ({{count}} अभी चालू)",
+    "shiftsFor": "{{label}} की शिफ्ट",
+    "shiftsForDay": "दिन की शिफ्ट",
+    "to": "से",
+    "fuelOnlyLabel": "सिर्फ़ {{fuel}} की शिफ्ट दिख रही हैं। सभी ईंधन देखें",
+    "fuelOnly": "सिर्फ़ {{fuel}} ×",
+    "filtered": " (छाँटी गई)",
+    "allShiftsCaption": "सभी शिफ्ट",
+    "allEmpty": "चुनी गई तारीखों में कोई शिफ्ट नहीं।",
+    "showingRange": "({{total}} में से {{from}}–{{to}})",
+    "firstPage": "पहला पेज",
+    "lastPage": "आखिरी पेज",
+    "backfilled": "बाद में भरी गई",
+    "duName": "DU {{name}}",
+    "resolve": "सुलझाएँ",
+    "printHandover": "हैंडओवर रिपोर्ट प्रिंट करें",
+    "payment": {
+      "upiCard": "UPI + कार्ड",
+      "upiAmount": "UPI {{amount}}",
+      "cardAmount": "कार्ड {{amount}}",
+      "viewCredit": "क्रेडिट की जानकारी देखने के लिए दबाएँ",
+      "clientCount_one": "{{count}} ग्राहक",
+      "clientCount_other": "{{count}} ग्राहक"
+    },
+    "discrepancies": {
+      "resolveLabel": "शिफ्ट {{id}} का अंतर सुलझाएँ",
+      "approveLabel": "शिफ्ट {{id}} का अंतर मंज़ूर करें",
+      "columns": {
+        "du": "DU",
+        "type": "प्रकार",
+        "amount": "राशि",
+        "note": "नोट",
+        "action": "कार्रवाई"
+      },
+      "recovered": "वसूला:",
+      "loadFailed": "अंतर लोड नहीं हुए",
+      "empty": "अभी तक कोई अंतर दर्ज नहीं।",
+      "shortTotal": "कुल कम: ",
+      "overTotal": "कुल ज़्यादा: ",
+      "resolved": "सुलझे: ",
+      "cashRecovered": "नकद वसूली: ",
+      "filter": "छाँटें:",
+      "all": "सभी",
+      "caption": "अंतर",
+      "noMatch": "चुने गए फ़िल्टर से कोई अंतर नहीं मिला।"
+    },
+    "filtersLabel": "शिफ्ट फ़िल्टर",
+    "listLabel": "शिफ्ट",
+    "detailLabel": "शिफ्ट का ब्योरा",
+    "selectShift": "ब्योरा देखने के लिए सूची से कोई शिफ्ट चुनें।"
+  },
+  "planning": {
+    "title": "शिफ्ट योजना",
+    "subtitleOwner": "ऑपरेटरों का हफ़्ते का शेड्यूल बनाएँ। प्रकाशित योजना से शिफ्ट खोलते समय नाम पहले से भरे आते हैं।",
+    "subtitleStaff": "देखें इस हफ़्ते किस शिफ्ट में कौन है।",
+    "legend": {
+      "planned": "योजना में",
+      "confirmed": "पुष्टि (आया)",
+      "absent": "गैरहाज़िर (नहीं आया)"
+    },
+    "errors": {
+      "generateFailed": "योजना नहीं बनी",
+      "removeFailed": "हटाया नहीं जा सका",
+      "addFailed": "ऑपरेटर नहीं जुड़ा"
+    },
+    "generate": {
+      "title": "शेड्यूल अपने-आप बनाएँ",
+      "subtitle": "सिस्टम पसंद, छुट्टी की तारीखों और बराबरी के हिसाब से ऑपरेटर लगाएगा।",
+      "dayOperators": "सुबह / शाम की हर शिफ्ट में ऑपरेटर",
+      "nightOperators": "रात की हर शिफ्ट में ऑपरेटर (12 AM – 8 AM)",
+      "submit": "प्लान बनाएँ"
+    },
+    "week": {
+      "previous": "पिछला हफ़्ता",
+      "next": "अगला हफ़्ता",
+      "weekOf": "{{date}} का हफ़्ता",
+      "published": "प्रकाशित",
+      "draft": "ड्राफ्ट",
+      "pastWeek": "बीते हफ़्ते की योजना नहीं बन सकती",
+      "regenerate": "फिर से बनाएँ",
+      "autoGenerate": "अपने-आप बनाएँ",
+      "publishing": "प्रकाशित हो रहा है…",
+      "publish": "हफ़्ता प्रकाशित करें"
+    },
+    "grid": {
+      "noPlanOwner": "इस हफ़्ते की योजना अभी नहीं बनी।",
+      "noPlanHint": "शेड्यूल बनाने के लिए \"अपने-आप बनाएँ\" दबाएँ।",
+      "noPlanStaff": "इस हफ़्ते की योजना अभी प्रकाशित नहीं हुई।",
+      "regionLabel": "हफ़्ते की शिफ्ट योजना",
+      "shift": "शिफ्ट",
+      "actual": "असल",
+      "noDefinitions": "इस पंप के लिए शिफ्ट समय नहीं बने हैं। पहले पंप सेटअप में बनाएँ।",
+      "nightShift": "रात की शिफ्ट",
+      "nextDay": "+1 दिन",
+      "noShift": "कोई शिफ्ट नहीं",
+      "removeFromPlan": "योजना से हटाएँ",
+      "addOperator": "ऑपरेटर जोड़ें",
+      "addShort": "+ जोड़ें",
+      "operatorToAdd": "जोड़ने के लिए ऑपरेटर",
+      "pickOperator": "— ऑपरेटर चुनें —"
+    }
+  },
+  "detail": {
+    "nozzles": "नोज़ल",
+    "time": "समय"
+  }
+}

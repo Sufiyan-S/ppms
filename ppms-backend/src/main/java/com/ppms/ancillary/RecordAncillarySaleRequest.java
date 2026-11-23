@@ -29,13 +29,10 @@ public class RecordAncillarySaleRequest {
     @NotNull(message = "Payment mode is required")
     private TransactionPaymentMode paymentMode;
 
-    /** Optional. FK to credit_clients table for known credit clients. */
+    /** Required when payment mode is CREDIT: the credit client of this pump the sale is charged to. */
     private Long clientId;
 
-    /**
-     * Optional for non-credit sales.
-     * Required when payment mode is CREDIT — used as the display name on receipts/ledger.
-     */
+    /** Display name on receipts; defaults to the credit client's name for a CREDIT sale. */
     private String clientName;
 
     private String billNo;

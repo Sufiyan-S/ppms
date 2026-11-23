@@ -1,16 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
+import { Check, Lock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { shiftApi } from '../../api/shiftApi'
 import { pumpApi } from '../../api/pumpApi'
 import { userApi } from '../../api/userApi'
 import { shiftDefinitionApi } from '../../api/shiftDefinitionApi'
 import type { DUOption, NozzleDetail, OpenShiftRequest, Shift } from '../../types/shift'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
+import { StatusBadge } from '../../components/StatusBadge'
+import { LoadingButton } from '../../components/LoadingButton'
+import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
-import { FUEL_LABELS, FUEL_UNIT } from '../../constants/fuel'
+import { FUEL_UNIT } from '../../constants/fuel'
+import { codeLabel } from '../../constants/labels'
+import { formatDecimal } from '../../utils/format'
 import { OperatorPicker } from './components/OperatorPicker'
-import { IconButton } from '../../components/IconButton'
+import { useToastStore } from '../../store/toastStore'
 
 /** Stored end times are inclusive (08:59 means the shift runs until 09:00), so the end minute is inside the window. */
 function isTimeInWindow(startTime: string, endTime: string, crossesMidnight: boolean, nowHHMM: string): boolean {
@@ -26,8 +32,6 @@ const IST_TIME_FORMAT = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 })
 
-
-
 interface Props {
   pumpId: number
   activeShifts: Shift[]
@@ -37,7 +41,9 @@ interface Props {
 }
 
 export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefilledDuId, prefilledNozzleIds }: Props) {
+  const { t } = useTranslation(['shifts', 'common'])
   const queryClient = useQueryClient()
+  const { addToast } = useToastStore()
 
   const [selectedDU, setSelectedDU]                 = useState<DUOption | null>(null)
   const [selectedNozzleIds, setSelectedNozzleIds]   = useState<Set<number>>(new Set())
@@ -46,6 +52,7 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefille
   const [readingConfirmed, setReadingConfirmed]     = useState(false)
   const [validationError, setValidationError]       = useState<string | null>(null)
   const [serverError, setServerError]               = useState<string | null>(null)
+  const stillNeededId = useId()
 
   // Nozzle IDs already in an open shift (locked out)
   const busyNozzleIds   = new Set(activeShifts.flatMap((s) => s.nozzles.map((n) => n.id)))
@@ -61,16 +68,24 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefille
     queryFn:  () => userApi.getOperators(pumpId),
   })
 
-  // Auto-select DU and nozzles when opened from a just-closed shift
+  // Auto-select the DU and nozzles of a just-closed shift, or the only DU and its free nozzles
   useEffect(() => {
-    if (!prefilledDuId || !dus.length || selectedDU) return
-    const du = dus.find(d => d.id === prefilledDuId && d.status === 'ACTIVE')
-    if (!du) return
-    setSelectedDU(du)
-    const ids = new Set(
-      (prefilledNozzleIds ?? []).filter(id => du.nozzles.some(n => n.id === id) && !busyNozzleIds.has(id))
-    )
-    setSelectedNozzleIds(ids)
+    if (!dus.length || selectedDU) return
+    const activeDus = dus.filter(d => d.status === 'ACTIVE')
+    const prefilledDu = prefilledDuId ? activeDus.find(d => d.id === prefilledDuId) : undefined
+    if (prefilledDu) {
+      setSelectedDU(prefilledDu)
+      setSelectedNozzleIds(new Set(
+        (prefilledNozzleIds ?? []).filter(id => prefilledDu.nozzles.some(n => n.id === id) && !busyNozzleIds.has(id))
+      ))
+      return
+    }
+    if (activeDus.length !== 1) return
+    const onlyDu = activeDus[0]
+    setSelectedDU(onlyDu)
+    setSelectedNozzleIds(new Set(
+      onlyDu.nozzles.filter(n => n.status === 'ACTIVE' && !busyNozzleIds.has(n.id)).map(n => n.id)
+    ))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dus])
 
@@ -87,12 +102,13 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefille
 
   const openMutation = useMutation({
     mutationFn: (req: OpenShiftRequest) => shiftApi.openShift(pumpId, req),
-    onSuccess: () => {
+    onSuccess: (shift) => {
       queryClient.invalidateQueries({ queryKey: ['activeShifts', pumpId] })
+      addToast(t('open.opened', { name: shift.operatorName }), 'success')
       onClose()
     },
     onError: (err) =>
-      setServerError(parseApiError(err, 'Failed to open shift. Please try again.')),
+      setServerError(parseApiError(err, t('open.failed'))),
   })
 
   // Only ACTIVE DUs are available for shift open
@@ -131,10 +147,10 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefille
     setValidationError(null)
     setServerError(null)
 
-    if (!selectedDU)                    { setValidationError('Please select a Dispensary Unit'); return }
-    if (selectedNozzleIds.size === 0)   { setValidationError('Please select at least one nozzle'); return }
-    if (!selectedOperatorId)            { setValidationError('Please select an operator'); return }
-    if (!readingConfirmed)              { setValidationError('Please confirm the meter readings are correct'); return }
+    if (!selectedDU)                    { setValidationError(t('open.validation.selectDu')); return }
+    if (selectedNozzleIds.size === 0)   { setValidationError(t('open.validation.selectNozzle')); return }
+    if (!selectedOperatorId)            { setValidationError(t('open.validation.selectOperator')); return }
+    if (!readingConfirmed)              { setValidationError(t('open.validation.confirmReadings')); return }
 
     const req: OpenShiftRequest = {
       duId:       selectedDU.id,
@@ -148,206 +164,151 @@ export default function OpenShiftModal({ pumpId, activeShifts, onClose, prefille
     ? selectedDU.nozzles.filter((n) => selectedNozzleIds.has(n.id))
     : []
 
+  const stillNeeded = [
+    !selectedDU && t('open.missing.du'),
+    selectedNozzleIds.size === 0 && t('open.missing.nozzle'),
+    !selectedOperatorId && t('open.missing.operator'),
+    !readingConfirmed && t('open.missing.readings'),
+  ].filter((item): item is string => typeof item === 'string')
+
+  const choiceClass = (isSelected: boolean) => `flex flex-col items-center gap-1 rounded-card border-2 p-3 transition-colors ${
+    isSelected ? 'border-primary bg-info-bg' : 'border-border hover:border-primary hover:bg-bg'
+  }`
+
   return (
-    <ModalPortal onClose={onClose}>
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal-panel w-full max-w-lg overflow-hidden">
-
-        {/* Header */}
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h2 className="ui-modal-title">Open New Shift</h2>
-            <p className="ui-modal-subtitle">Select a Dispensary Unit and assign an operator</p>
+    <Modal
+      title={t('open.title')}
+      subtitle={t('open.subtitle')}
+      tone="success"
+      size="md-wide"
+      fullScreenOnPhone
+      onClose={onClose}
+      canClose={!openMutation.isPending}
+      onSubmit={handleSubmit}
+      bodyClassName="space-y-5"
+      footer={<>
+        <StillNeeded id={stillNeededId} items={stillNeeded} />
+        <button type="button" onClick={onClose} disabled={openMutation.isPending} className="ui-btn ui-btn-secondary">
+          {t('common:actions.cancel')}
+        </button>
+        <LoadingButton type="submit" disabled={stillNeeded.length > 0} isLoading={openMutation.isPending}
+          aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+          loadingLabel={t('open.opening')} className="ui-btn-primary">
+          {t('open.submit')}
+        </LoadingButton>
+      </>}
+    >
+      <section aria-labelledby={`${stillNeededId}-du`}>
+        <h3 id={`${stillNeededId}-du`} className="ui-label mb-2">{t('open.duHeading')}</h3>
+        {dusLoading ? (
+          <p className="ui-empty">{t('open.loadingDus')}</p>
+        ) : activeDUs.length === 0 ? (
+          <p className="ui-alert ui-alert-warning text-sm">{t('open.noDus')}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {activeDUs.map((du) => {
+              const isSelected = selectedDU?.id === du.id
+              const fuelTypes = [...new Set(du.nozzles.filter((n) => n.status === 'ACTIVE').map((n) => codeLabel(n.fuelType)))]
+              return (
+                <button key={du.id} type="button" aria-pressed={isSelected}
+                  onClick={() => handleSelectDU(du)} className={choiceClass(isSelected)}>
+                  <span className="text-xs font-medium text-ink-3">{t('open.duNumber', { number: du.duNumber })}</span>
+                  <span className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-ink'}`}>{du.name}</span>
+                  <span className="text-xs text-ink-3">{fuelTypes.join(' · ')}</span>
+                  {isSelected && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                      <Check size={12} strokeWidth={2.5} aria-hidden="true" />{t('open.selected')}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
-          <IconButton label="Close" icon="×" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close" />
-        </div>
+        )}
+      </section>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          <div className="ui-modal-body space-y-5">
-
-          {/* ── Step 1: Select DU ── */}
-          <div>
-            <span className="ui-label uppercase tracking-wide mb-2">
-              Step 1 — Select Dispensary Unit
-              {selectedDU && (
-                <span className="ml-2 text-blue-600 font-semibold normal-case">
-                  DU #{selectedDU.duNumber} — {selectedDU.name}
-                </span>
-              )}
-            </span>
-            {dusLoading ? (
-              <p className="ui-empty">Loading dispensary units...</p>
-            ) : activeDUs.length === 0 ? (
-              <div className="ui-alert ui-alert-warning text-xs">
-                No active Dispensary Units found. Add one in Setup first.
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {activeDUs.map((du) => {
-                  const isSelected = selectedDU?.id === du.id
-                  const fuelTypes = du.nozzles
-                    .filter((n) => n.status === 'ACTIVE')
-                    .map((n) => FUEL_LABELS[n.fuelType] ?? n.fuelType)
-                  return (
-                    <button key={du.id} type="button"
-                      onClick={() => handleSelectDU(du)}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className={`text-xs font-bold ${isSelected ? 'text-blue-500' : 'text-slate-500'}`}>
-                        DU #{du.duNumber}
-                      </span>
-                      <span className={`text-sm font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
-                        {du.name}
-                      </span>
-                      <div className="flex flex-wrap gap-0.5 justify-center">
-                        {fuelTypes.map((tag) => (
-                          <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                            isSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      {isSelected && (
-                        <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold"><Check size={11} strokeWidth={2.5} />Selected</span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+      {selectedDU && (
+        <section aria-labelledby={`${stillNeededId}-nozzles`}>
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h3 id={`${stillNeededId}-nozzles`} className="ui-label mb-0">{t('open.nozzlesHeading')}</h3>
+            {selectedNozzleIds.size > 0 && (
+              <span className="text-xs text-ink-3">{t('open.selectedCount', { count: selectedNozzleIds.size })}</span>
             )}
           </div>
-
-          {/* ── Step 2: Select Nozzles from selected DU ── */}
-          {selectedDU && (
-            <div>
-              <span className="ui-label uppercase tracking-wide mb-2">
-                Step 2 — Select Nozzle(s)
-                {selectedNozzleIds.size > 0 && (
-                  <span className="ml-2 text-blue-600 font-semibold normal-case">
-                    {selectedNozzleIds.size} selected
-                  </span>
-                )}
-              </span>
-              <div role="group" aria-label="Select nozzles" className="grid grid-cols-3 gap-2">
-                {selectedDU.nozzles.filter((n) => n.status === 'ACTIVE').map((nozzle) => {
-                  const isBusy     = busyNozzleIds.has(nozzle.id)
-                  const isSelected = selectedNozzleIds.has(nozzle.id)
-                  return (
-                    <button key={nozzle.id} type="button"
-                      disabled={isBusy}
-                      onClick={() => handleNozzleToggle(nozzle)}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
-                        isBusy
-                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
-                          : isSelected
-                          ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className={`text-xl font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
-                        #{nozzle.nozzleNumber}
+          <div role="group" aria-label={t('open.selectNozzles')} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {selectedDU.nozzles.filter((n) => n.status === 'ACTIVE').map((nozzle) => {
+              const isBusy     = busyNozzleIds.has(nozzle.id)
+              const isSelected = selectedNozzleIds.has(nozzle.id)
+              return (
+                <button key={nozzle.id} type="button" aria-pressed={isSelected}
+                  disabled={isBusy}
+                  onClick={() => handleNozzleToggle(nozzle)}
+                  className={`${choiceClass(isSelected)} disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-sunken disabled:opacity-60`}
+                >
+                  <span className={`text-lg font-semibold ${isSelected ? 'text-primary' : 'text-ink'}`}>#{nozzle.nozzleNumber}</span>
+                  <span className="text-xs text-ink-3">{codeLabel(nozzle.fuelType)}</span>
+                  {isBusy
+                    ? <span className="text-xs text-ink-3">{t('open.inUse')}</span>
+                    : isSelected && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                        <Check size={12} strokeWidth={2.5} aria-hidden="true" />{t('open.selected')}
                       </span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        isSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {FUEL_LABELS[nozzle.fuelType] ?? nozzle.fuelType}
-                      </span>
-                      {isBusy
-                        ? <span className="text-xs text-slate-500">In use</span>
-                        : isSelected && <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold"><Check size={11} strokeWidth={2.5} />Selected</span>
-                      }
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── Step 3: Operator ── */}
-          <OperatorPicker
-            showStepNumber={!!selectedDU}
-            operatorsLoading={operatorsLoading}
-            noneAvailable={availableOperators.length === 0}
-            filteredOperators={filteredOperators}
-            operatorSearch={operatorSearch}
-            onSearchChange={setOperatorSearch}
-            selectedOperatorId={selectedOperatorId}
-            onSelect={setSelectedOperatorId}
-          />
-
-          {/* ── Current meter readings (acknowledgment) ── */}
-          {selectedNozzles.length > 0 && (
-            <div className="ui-card-plain ui-card-muted p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                  Current Meter Readings
-                </span>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                  Read-only
-                </span>
-              </div>
-              <div className={`grid gap-2 ${selectedNozzles.length > 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                {selectedNozzles.map((nozzle) => (
-                  <div key={nozzle.id} className="ui-card-plain bg-white border-slate-200 px-3 py-2.5">
-                    <p className="text-xs text-slate-500 mb-0.5">
-                      Nozzle #{nozzle.nozzleNumber} — {FUEL_LABELS[nozzle.fuelType] ?? nozzle.fuelType} ({FUEL_UNIT[nozzle.fuelType] ?? 'L'})
-                    </p>
-                    <p className="text-base font-semibold text-slate-800">
-                      {nozzle.lastReading.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                These readings are set automatically from the last shift close.
-                If a reading looks incorrect, an Admin must update it in{' '}
-                <span className="font-medium text-slate-700">Setup → Nozzle → Adjust Reading</span> first.
-              </p>
-
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={readingConfirmed}
-                  onChange={(e) => { setReadingConfirmed(e.target.checked); setValidationError(null) }}
-                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-                <span className="text-xs text-slate-600 leading-relaxed group-hover:text-slate-800 transition-colors">
-                  I confirm the meter readings above are correct and authorise opening this shift.
-                </span>
-              </label>
-            </div>
-          )}
-
-          {/* ── Errors ── */}
-          {(validationError || serverError) && (
-            <div role="alert" className="ui-alert ui-alert-danger">
-              <p className="text-red-600 text-sm">{validationError ?? serverError}</p>
-            </div>
-          )}
-
-          </div>{/* end ui-modal-body */}
-
-          {/* ── Actions ── */}
-          <div className="ui-modal-footer">
-            <button type="button" onClick={onClose}
-              className="ui-btn ui-btn-secondary flex-1">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!selectedDU || selectedNozzleIds.size === 0 || !selectedOperatorId || !readingConfirmed || openMutation.isPending}
-              className="ui-btn ui-btn-primary flex-1 disabled:bg-blue-300 disabled:cursor-not-allowed">
-              {openMutation.isPending ? 'Opening...' : 'Open Shift'}
-            </button>
+                    )}
+                </button>
+              )
+            })}
           </div>
-        </form>
-      </div>
-    </div>
-    </ModalPortal>
+        </section>
+      )}
+
+      <OperatorPicker
+        title={t('open.assignOperator')}
+        showStepNumber={false}
+        operatorsLoading={operatorsLoading}
+        noneAvailable={availableOperators.length === 0}
+        filteredOperators={filteredOperators}
+        operatorSearch={operatorSearch}
+        onSearchChange={setOperatorSearch}
+        selectedOperatorId={selectedOperatorId}
+        onSelect={setSelectedOperatorId}
+      />
+
+      {selectedNozzles.length > 0 && (
+        <section aria-labelledby={`${stillNeededId}-readings`} className="rounded-card border border-border p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 id={`${stillNeededId}-readings`} className="text-sm font-semibold text-ink">{t('open.currentReadings')}</h3>
+            <StatusBadge tone="neutral" icon={Lock} label={t('open.readOnly')} />
+          </div>
+          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {selectedNozzles.map((nozzle) => (
+              <div key={nozzle.id} className="flex items-baseline justify-between gap-3 rounded-control bg-surface-sunken px-3 py-2">
+                <dt className="text-xs text-ink-2">
+                  {t('open.nozzleReadingLabel', { number: nozzle.nozzleNumber, fuel: codeLabel(nozzle.fuelType) })}
+                </dt>
+                <dd className="text-sm font-semibold text-ink tabular-nums">
+                  {formatDecimal(nozzle.lastReading)} {FUEL_UNIT[nozzle.fuelType] ?? 'L'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="ui-help mt-0">
+            {t('open.readingsNote')}{' '}
+            <span className="font-medium text-ink-2">{t('open.readingsNotePath')}</span>{t('open.readingsNoteEnd')}
+          </p>
+          <label className="ui-check-row">
+            <input
+              type="checkbox"
+              checked={readingConfirmed}
+              onChange={(e) => { setReadingConfirmed(e.target.checked); setValidationError(null) }}
+            />
+            <span>{t('open.confirmReadings')}</span>
+          </label>
+        </section>
+      )}
+
+      {(validationError || serverError) && (
+        <p role="alert" className="ui-alert ui-alert-danger">{validationError ?? serverError}</p>
+      )}
+    </Modal>
   )
 }

@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next'
 import type { StaffMember } from '../../../api/userApi'
 import { IconButton } from '../../../components/IconButton'
 
 interface Props {
+  title: string
   showStepNumber: boolean
   operatorsLoading: boolean
   noneAvailable: boolean
@@ -13,43 +15,44 @@ interface Props {
 }
 
 export function OperatorPicker({
-  showStepNumber, operatorsLoading, noneAvailable, filteredOperators, operatorSearch, onSearchChange,
+  title, showStepNumber, operatorsLoading, noneAvailable, filteredOperators, operatorSearch, onSearchChange,
   selectedOperatorId, onSelect,
 }: Props) {
+  const { t } = useTranslation('shifts')
   return (
     <div>
-      <span className="ui-label uppercase tracking-wide mb-2">
-        {showStepNumber ? 'Step 3 — ' : ''}Assign Operator
+      <span className="ui-label mb-2">
+        {showStepNumber ? t('components.operatorPicker.stepTitle', { title }) : title}
       </span>
       {operatorsLoading ? (
-        <p className="ui-empty">Loading operators...</p>
+        <p className="ui-empty">{t('components.operatorPicker.loading')}</p>
       ) : noneAvailable ? (
         <div className="ui-alert ui-alert-warning text-xs">
-          No operators available — all are on active shifts or none are assigned to this pump.
+          {t('components.operatorPicker.noneAvailable')}
         </div>
       ) : (
         <div className="ui-card p-0 overflow-hidden">
-          <div className="ui-search-shell border-b border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="ui-search-shell border-b border-border bg-surface-sunken px-3 py-2">
             <svg className="ui-search-shell__icon" fill="none" viewBox="0 0 24 24"
               stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round"
                 d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
             </svg>
-            <input aria-label="Assign Operator" type="text" value={operatorSearch}
+            <input aria-label={title} type="text" value={operatorSearch}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search by name..."
-              className="ui-search-shell__input flex-1 min-h-0 border-0 bg-transparent p-0 text-sm text-slate-700 shadow-none focus:outline-none focus:ring-0 placeholder-slate-400" />
+              placeholder={t('components.operatorPicker.searchPlaceholder')}
+              className="ui-search-shell__input flex-1 text-sm" />
             {operatorSearch && (
               <IconButton onClick={() => onSearchChange('')}
                 className="ui-search-shell__clear text-lg leading-none"
-                label="Clear search"
+                label={t('components.operatorPicker.clearSearch')}
                 icon={'×'}
               />
             )}
           </div>
-          <div className="max-h-44 overflow-y-auto divide-y divide-slate-50">
+          <div className="max-h-44 overflow-y-auto divide-y divide-border">
             {filteredOperators.length === 0 ? (
-              <p className="ui-empty p-3">No operators match "{operatorSearch}"</p>
+              <p className="ui-empty p-3">{t('components.operatorPicker.noMatch', { search: operatorSearch })}</p>
             ) : (
               filteredOperators.map((o) => {
                 const isSelected = selectedOperatorId === o.id
@@ -57,19 +60,19 @@ export function OperatorPicker({
                   <button key={o.id} type="button"
                     onClick={() => onSelect(o.id)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors text-left ${
-                      isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'
+                      isSelected ? 'bg-info-bg' : 'hover:bg-bg'
                     }`}
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
+                      isSelected ? 'bg-primary text-on-primary' : 'bg-surface-sunken text-ink-2'
                     }`}>
                       {o.fullName.charAt(0).toUpperCase()}
                     </div>
-                    <span className={`flex-1 font-medium ${isSelected ? 'text-blue-800' : 'text-slate-700'}`}>
+                    <span className={`flex-1 font-medium ${isSelected ? 'text-info' : 'text-ink'}`}>
                       {o.fullName}
                     </span>
                     {isSelected && (
-                      <svg className="w-4 h-4 text-blue-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="w-4 h-4 text-info shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
                     )}

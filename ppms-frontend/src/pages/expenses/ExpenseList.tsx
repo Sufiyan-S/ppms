@@ -1,19 +1,50 @@
+import { useMemo, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
 import { expenseApi } from '../../api/expenseApi'
-import type { ExpenseCategory, ApproveExpenseRequest, ExpenseApprovalStatus } from '../../api/expenseApi'
+import type { ExpenseCategory, ApproveExpenseRequest, ExpenseApprovalStatus, PumpExpense } from '../../api/expenseApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { SkeletonTable } from '../../components/Skeleton'
-import { Reveal } from '../../components/Reveal'
 import { EmptyState } from '../../components/EmptyState'
 import { useToastStore } from '../../store/toastStore'
 import { parseApiError } from '../../utils/apiError'
 import { formatCurrency } from '../../utils/format'
 import { ConfirmButton } from '../../components/ConfirmButton'
-import { CATEGORIES, CATEGORY_COLORS, fmtDate } from './expenseFormat'
+import { RejectReasonDialog } from '../../components/RejectReasonDialog'
+import { StatusBadge } from '../../components/StatusBadge'
+import { approvalStatusBadge } from '../../components/statusBadges'
+import { MoneyText } from '../../components/AmountText'
+import { CATEGORIES, fmtDate } from './expenseFormat'
 import type { ExpenseListState } from './useExpenseList'
 import { codeLabel } from '../../constants/labels'
+import { CsvExportButton } from '../../components/CsvExportButton'
+import { csvFilename } from '../../utils/csv'
+import type { CsvColumn } from '../../utils/csv'
+import { PageSection } from '../../components/layout/PageSection'
+import { FilterBar } from '../../components/layout/FilterBar'
+
+function csvColumns(t: TFunction<['expenses', 'common']>): CsvColumn<PumpExpense>[] {
+  return [
+    { header: t('csv.date'), value: (row) => row.expenseDate, kind: 'date' },
+    { header: t('csv.category'), value: (row) => codeLabel(row.category) },
+    { header: t('csv.description'), value: (row) => row.description },
+    { header: t('csv.amount'), value: (row) => row.amount, kind: 'money' },
+    { header: t('csv.status'), value: (row) => codeLabel(row.approvalStatus) },
+    { header: t('csv.approvalNotes'), value: (row) => row.approvalNotes },
+  ]
+}
+
+function ApprovalBadge({ expense }: { expense: PumpExpense }) {
+  const { t } = useTranslation(['expenses', 'common'])
+  const badge = approvalStatusBadge(expense.approvalStatus)
+  const label = expense.approvalStatus === 'REJECTED' && expense.approvalNotes
+    ? t('list.rejectedWithNotes', { label: badge.label, notes: expense.approvalNotes })
+    : badge.label
+  return <StatusBadge {...badge} label={label} wrap />
+}
 
 interface ExpenseListProps {
   pumpId: number | null
@@ -21,144 +52,143 @@ interface ExpenseListProps {
 }
 
 export function ExpenseList({ pumpId, list }: ExpenseListProps) {
+  const { t } = useTranslation(['expenses', 'common'])
+  const columns = useMemo(() => csvColumns(t), [t])
   const { user }     = useAuthStore()
   const qc           = useQueryClient()
   const { addToast } = useToastStore()
   const {
     expensesPage, expenses, isLoading,
     categoryFilter, setCategoryFilter, statusFilter, setStatusFilter,
-    setPage, setPageSize,
+    setPage, setPageSize, loadAllExpenses,
   } = list
 
   const submitMutation = useMutation({
     mutationFn: (expenseId: number) => expenseApi.submitExpense(pumpId!, expenseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
-      addToast('Expense submitted for approval', 'success')
+      addToast(t('toast.submitted'), 'success')
     },
-    onError: (err) => addToast(parseApiError(err, 'Failed to submit expense'), 'error'),
+    onError: (err) => addToast(parseApiError(err, t('toast.submitFailed')), 'error'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (expenseId: number) => expenseApi.deleteExpense(pumpId!, expenseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
-      addToast('Expense deleted', 'success')
+      addToast(t('toast.deleted'), 'success')
     },
-    onError: (err) => addToast(parseApiError(err, 'Failed to delete expense'), 'error'),
+    onError: (err) => addToast(parseApiError(err, t('toast.deleteFailed')), 'error'),
   })
+
+  const [rejectingExpense, setRejectingExpense] = useState<PumpExpense | null>(null)
+  const [rejectError, setRejectError] = useState<string | null>(null)
 
   const approveMutation = useMutation({
     mutationFn: ({ expenseId, data }: { expenseId: number; data: ApproveExpenseRequest }) =>
       expenseApi.approveExpense(pumpId!, expenseId, data),
     onSuccess: (_, { data }) => {
       qc.invalidateQueries({ queryKey: ['expenses', pumpId] })
-      addToast(`Expense ${data.action === 'APPROVED' ? 'approved' : 'rejected'}`, data.action === 'APPROVED' ? 'success' : 'warning')
+      qc.invalidateQueries({ queryKey: ['approvals', pumpId] })
+      setRejectingExpense(null)
+      addToast(data.action === 'APPROVED' ? t('toast.approved') : t('toast.rejected'), data.action === 'APPROVED' ? 'success' : 'warning')
     },
-    onError: (err) => addToast(parseApiError(err, 'Failed to update expense'), 'error'),
+    onError: (err, { data }) => {
+      const message = parseApiError(err, t('toast.updateFailed'))
+      if (data.action === 'REJECTED') setRejectError(message)
+      else addToast(message, 'error')
+    },
   })
+
+  const openRejectDialog = (expense: PumpExpense) => {
+    setRejectError(null)
+    setRejectingExpense(expense)
+  }
 
   const isOwner        = user?.role === 'OWNER'
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const isAccountant   = user?.role === 'ACCOUNTANT'
 
+  const clearFilters = () => { setCategoryFilter(''); setStatusFilter(''); setPage(0) }
+
   return (
-    <Reveal delay={240}>
-    <div className="ui-card p-0 overflow-hidden">
-      <div className="ui-toolbar">
-        <p className="ui-toolbar-title">All Expenses</p>
-        <div className="ui-toolbar-actions">
-          <div className="w-52 max-w-full">
-          <SearchableSelect label="Filter by category"
+    <>
+    {rejectingExpense && (
+      <RejectReasonDialog
+        title={t('list.rejectTitle')}
+        subtitle={`${codeLabel(rejectingExpense.category)} · ${formatCurrency(rejectingExpense.amount)} · ${rejectingExpense.description}`}
+        isPending={approveMutation.isPending}
+        error={rejectError}
+        onConfirm={(reason) => approveMutation.mutate({
+          expenseId: rejectingExpense.id, data: { action: 'REJECTED', notes: reason },
+        })}
+        onClose={() => setRejectingExpense(null)}
+      />
+    )}
+    <PageSection
+      title={t('list.title')}
+      description={isOwnerOrAdmin && (
+        <Trans t={t} i18nKey="list.approvalHint" components={{ status: <span className="font-semibold text-warn" /> }} />
+      )}
+      actions={<CsvExportButton filename={csvFilename('expenses')} columns={columns} rows={loadAllExpenses} disabled={expenses.length === 0} />}
+      flush
+    >
+      <FilterBar label={t('list.filtersLabel')} onClearFilters={clearFilters} hasActiveFilters={Boolean(categoryFilter || statusFilter)}>
+        <div className="w-52 max-w-full">
+          <SearchableSelect label={t('list.filterByCategory')}
             value={categoryFilter}
             onChange={v => { setCategoryFilter(v as ExpenseCategory | ''); setPage(0) }}
             options={[
-              { value: '', label: 'All Categories' },
+              { value: '', label: t('list.allCategories') },
               ...CATEGORIES.map(c => ({ value: c, label: codeLabel(c) })),
             ]}
             size="sm"
           />
         </div>
-
-          <div className="w-52 max-w-full">
-          <SearchableSelect label="Filter by status"
+        <div className="w-52 max-w-full">
+          <SearchableSelect label={t('list.filterByStatus')}
             value={statusFilter}
             onChange={v => { setStatusFilter(v as ExpenseApprovalStatus | ''); setPage(0) }}
             options={[
-              { value: '', label: 'All Statuses' },
-              { value: 'DRAFT',            label: 'Draft' },
-              { value: 'PENDING_APPROVAL', label: 'Pending Approval' },
-              { value: 'APPROVED',         label: 'Approved' },
-              { value: 'REJECTED',         label: 'Rejected' },
+              { value: '', label: t('list.allStatuses') },
+              { value: 'DRAFT',            label: t('list.statusDraft') },
+              { value: 'PENDING_APPROVAL', label: t('list.statusPendingApproval') },
+              { value: 'APPROVED',         label: t('list.statusApproved') },
+              { value: 'REJECTED',         label: t('list.statusRejected') },
             ]}
             size="sm"
           />
         </div>
-
-          {(categoryFilter || statusFilter) && (
-            <button
-              onClick={() => { setCategoryFilter(''); setStatusFilter(''); setPage(0) }}
-              className="ui-btn ui-btn-ghost text-xs"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      </div>
-      {isOwnerOrAdmin && (
-        <div className="px-5 py-2 text-xs text-slate-500 border-b border-slate-100 bg-slate-50/80">
-          Approve and reject actions appear only for expenses in <span className="font-semibold text-amber-700">Pending Approval</span>.
-        </div>
-      )}
+      </FilterBar>
 
       {isLoading ? (
         <div className="px-5 py-4"><SkeletonTable rows={4} cols={3} /></div>
       ) : expenses.length === 0 ? (
         <EmptyState
           icon="expenses"
-          title="No expenses recorded yet"
-          subtitle={isAccountant ? 'No records to display.' : 'Use the form above to record your first expense.'}
+          title={t('list.emptyTitle')}
+          subtitle={isAccountant ? t('list.emptyAccountant') : t('list.emptySubtitle')}
         />
       ) : (
         <>
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-border">
           {expenses.map(e => (
             <div key={e.id} className="px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${CATEGORY_COLORS[e.category]}`}>
-                  {codeLabel(e.category)}
-                </span>
+                <StatusBadge tone="neutral" label={codeLabel(e.category)} className="flex-shrink-0" />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                    <p className="text-sm text-slate-700 break-words sm:truncate">{e.description}</p>
-                    {e.approvalStatus === 'DRAFT' && (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                        Draft
-                      </span>
-                    )}
-                    {e.approvalStatus === 'PENDING_APPROVAL' && (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                        Pending Approval
-                      </span>
-                    )}
-                    {e.approvalStatus === 'APPROVED' && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                        Approved
-                      </span>
-                    )}
-                    {e.approvalStatus === 'REJECTED' && (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        Rejected{e.approvalNotes ? `: ${e.approvalNotes}` : ''}
-                      </span>
-                    )}
+                    <p className="text-sm text-ink break-words sm:truncate">{e.description}</p>
+                    <ApprovalBadge expense={e} />
                   </div>
-                  <p className="text-xs text-slate-500">{fmtDate(e.expenseDate)}</p>
+                  <p className="text-xs text-ink-3">{fmtDate(e.expenseDate)}</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
-                <span className={`text-sm font-semibold mr-auto sm:mr-0 ${e.approvalStatus === 'REJECTED' ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-                  {formatCurrency(e.amount)}
-                </span>
+                <MoneyText
+                  value={e.amount}
+                  className={`text-sm font-semibold mr-auto sm:mr-0 ${e.approvalStatus === 'REJECTED' ? 'text-ink-3 line-through' : 'text-ink'}`}
+                />
                 {/* Submit — shown on DRAFT expenses to the creator or OWNER/ADMIN */}
                 {e.approvalStatus === 'DRAFT' && (isOwnerOrAdmin || e.recordedByUserId === user?.userId) && (
                   <button
@@ -166,7 +196,7 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
                     disabled={submitMutation.isPending}
                     className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs"
                   >
-                    Submit
+                    {t('common:actions.submit')}
                   </button>
                 )}
                 {/* Approve/Reject — only for Owner/Admin on pending expenses */}
@@ -177,14 +207,14 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
                       disabled={approveMutation.isPending}
                       className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs"
                     >
-                      Approve
+                      {t('common:actions.approve')}
                     </button>
                     <button
-                      onClick={() => approveMutation.mutate({ expenseId: e.id, data: { action: 'REJECTED' } })}
+                      onClick={() => openRejectDialog(e)}
                       disabled={approveMutation.isPending}
                       className="ui-btn ui-btn-danger min-h-0 px-3 py-1 text-xs"
                     >
-                      Reject
+                      {t('common:actions.reject')}
                     </button>
                   </>
                 )}
@@ -193,7 +223,7 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
                   <ConfirmButton
                     onConfirm={() => deleteMutation.mutate(e.id)}
                     disabled={deleteMutation.isPending}
-                    triggerAriaLabel="Delete expense"
+                    triggerAriaLabel={t('list.deleteExpense')}
                   />
                 )}
               </div>
@@ -212,7 +242,7 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
         )}
         </>
       )}
-    </div>
-    </Reveal>
+    </PageSection>
+    </>
   )
 }

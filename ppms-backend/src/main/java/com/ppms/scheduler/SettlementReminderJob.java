@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Fires daily settlement reminder notifications after the configured alert time (per pump, per type).
@@ -25,7 +26,7 @@ import java.util.List;
  *    it calls NotificationDedupService with a date-scoped dedup key.
  * 4. The dedup key (SETTLEMENT_REMINDER:{type}:{pumpId}:{today}) guarantees exactly one
  *    notification per payment type per pump per calendar day — regardless of how many
- *    job runs occur after the alert fires.
+ *    job runs occur after the alert fires — and today's reminder replaces earlier days' ones.
  *
  * The notification prompts Admin/Owner to record the day's settlement
  * (i.e. how much arrived in the bank account) before end of business.
@@ -57,16 +58,18 @@ public class SettlementReminderJob {
 
             String type      = cfg.getPaymentType().name();
             Long   pumpId    = cfg.getPumpId();
-            String dedupKey  = "SETTLEMENT_REMINDER:" + type + ":" + pumpId + ":" + today;
+            String seriesKey = "SETTLEMENT_REMINDER:" + type + ":" + pumpId;
             String typeLabel = toLabel(type);
 
-            dedupService.maybeInsert(
+            dedupService.insertDaily(
                     pumpId,
                     NotificationType.SETTLEMENT_REMINDER,
-                    dedupKey,
+                    seriesKey,
+                    today,
                     typeLabel + " Settlement Reminder",
                     "Record today's " + typeLabel + " settlement — amount received in bank account. " +
-                    "Go to Settlements to log the credit."
+                    "Go to Settlements to log the credit.",
+                    Map.of("paymentTypeCode", type)
             );
             fired++;
         }

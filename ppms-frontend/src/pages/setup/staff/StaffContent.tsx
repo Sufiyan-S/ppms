@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { userApi } from '../../../api/userApi'
 import type { StaffMember } from '../../../api/userApi'
@@ -9,12 +10,14 @@ import { shiftDefinitionApi } from '../../../api/shiftDefinitionApi'
 import type { StaffPanel } from './staffForm'
 import { StaffRow } from './StaffRow'
 import { AddStaffForm } from './AddStaffForm'
+import { canPerformAction } from '../../../permissions/permissions'
 
-export function StaffContent({ pump }: { pump: PumpSummary }) {
+/** The add form shows while isAddFormOpen, and always while the pump has no staff yet. */
+export function StaffContent({ pump, isAddFormOpen, onCloseAddForm }: { pump: PumpSummary; isAddFormOpen: boolean; onCloseAddForm: () => void }) {
+  const { t } = useTranslation('setup')
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuthStore()
-  const isOwner = currentUser?.role === 'OWNER'
-  const isOwnerOrAdmin = isOwner || currentUser?.role === 'ADMIN'
+  const viewerRole = currentUser?.role
 
   const [statusError, setStatusError] = useState<string | null>(null)
 
@@ -35,7 +38,7 @@ export function StaffContent({ pump }: { pump: PumpSummary }) {
       queryClient.invalidateQueries({ queryKey: ['staff', pump.id] })
       queryClient.invalidateQueries({ queryKey: ['operators', pump.id] })
     },
-    onError: (err) => setStatusError(parseApiError(err, 'Failed to update status')),
+    onError: (err) => setStatusError(parseApiError(err, t('staff.statusFailed'))),
   })
 
   const { data: activeShiftDefs = [] } = useQuery({
@@ -50,8 +53,10 @@ export function StaffContent({ pump }: { pump: PumpSummary }) {
 
   return (
     <div className="space-y-4">
+      {isAddFormOpen && (
+        <AddStaffForm pumpId={pump.id} canAssignAdmin={canPerformAction('staff:create-admin', viewerRole)} onCancel={onCloseAddForm} />
+      )}
 
-      {/* Staff list */}
       {!isLoading && staff.length > 0 && (
         <div className="space-y-2">
           {statusError && <p role="alert" className="ui-error-text">{statusError}</p>}
@@ -60,8 +65,7 @@ export function StaffContent({ pump }: { pump: PumpSummary }) {
               key={member.id}
               pumpId={pump.id}
               member={member}
-              isOwner={isOwner}
-              isOwnerOrAdmin={isOwnerOrAdmin}
+              viewerRole={viewerRole}
               activeShiftDefs={activeShiftDefs}
               openPanel={openStaffPanel?.userId === member.id ? openStaffPanel.panel : null}
               onOpenPanel={(panel) => openPanel(member.id, panel)}
@@ -75,8 +79,9 @@ export function StaffContent({ pump }: { pump: PumpSummary }) {
         </div>
       )}
 
-      {/* Add staff form */}
-      <AddStaffForm pumpId={pump.id} />
+      {!isLoading && staff.length === 0 && !isAddFormOpen && (
+        <AddStaffForm pumpId={pump.id} canAssignAdmin={canPerformAction('staff:create-admin', viewerRole)} />
+      )}
     </div>
   )
 }

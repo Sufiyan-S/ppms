@@ -1,7 +1,9 @@
 package com.ppms.credit;
 
+import java.util.Map;
 import com.ppms.ancillary.AncillarySaleRepository;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.shift.ShiftCreditEntryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,11 +31,13 @@ public class CreditClientService {
     public void deleteClient(Long pumpId, Long clientId) {
         CreditClient client = clientAccessService.requireClientForPump(pumpId, clientId);
         if (!clientRepository.findByParentClientId(clientId).isEmpty()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.CREDIT_CLIENT_HAS_SUB_ACCOUNTS, Map.of(),
                     "Cannot remove a parent account that has sub-accounts. Please remove all sub-accounts first.");
         }
         if (hasLedgerHistory(clientId)) {
-            throw new BusinessException("Client has ledger history — deactivate instead.");
+            throw new BusinessException(ErrorCodes.CREDIT_CLIENT_HAS_LEDGER_HISTORY,
+                    Map.of(),
+                    "Client has ledger history — deactivate instead.");
         }
         clientRepository.delete(client);
         log.info("Credit client deleted: pump={}, client={}", pumpId, clientId);

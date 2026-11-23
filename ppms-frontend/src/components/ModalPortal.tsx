@@ -11,6 +11,8 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+const BACKDROP_CLASSES = ['ui-modal-backdrop', 'ui-side-panel-backdrop']
+
 const openDialogs: HTMLElement[] = []
 
 function isTopDialog(dialog: HTMLElement) {
@@ -26,7 +28,7 @@ interface ModalPortalProps {
   children: ReactNode
   /** Called on Escape. Leave undefined while the modal must not be dismissed (e.g. a save is in flight). */
   onClose?: () => void
-  /** Also call onClose when the `.ui-modal-backdrop` itself (not the panel) is clicked. */
+  /** Also call onClose when the backdrop itself (not the panel) is clicked. */
   closeOnBackdropClick?: boolean
   /** Where focus goes on close when the element that opened the modal is gone. Defaults to <main>. */
   returnFocusRef?: RefObject<HTMLElement | null>
@@ -117,7 +119,7 @@ export function ModalPortal({ children, onClose, closeOnBackdropClick = false, r
     const handleBackdropClick = (event: MouseEvent) => {
       const target = event.target
       if (!closeOnBackdropClickRef.current || !onCloseRef.current || !isTopDialog(dialog)) return
-      if (target instanceof HTMLElement && target.classList.contains('ui-modal-backdrop')) onCloseRef.current()
+      if (target instanceof HTMLElement && BACKDROP_CLASSES.some((name) => target.classList.contains(name))) onCloseRef.current()
     }
     document.addEventListener('keydown', handleKeyDown)
     dialog.addEventListener('click', handleBackdropClick)

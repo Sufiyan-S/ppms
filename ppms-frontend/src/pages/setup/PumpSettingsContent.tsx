@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../utils/apiError'
 import { pumpApi } from '../../api/pumpApi'
 import type { PumpSummary } from '../../api/pumpApi'
 import { useToastStore } from '../../store/toastStore'
+import { FormField } from '../../components/FormField'
+import { LoadingButton } from '../../components/LoadingButton'
+import { NumericInput } from '../../components/NumericInput'
+import { formatCurrency } from '../../utils/format'
 
 // ── Pump Settings Content ─────────────────────────────────────────────────────
 
 export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; onUpdated: () => void }) {
+  const { t } = useTranslation(['setup', 'common'])
   const { addToast } = useToastStore()
   const [threshold, setThreshold] = useState(pump.discrepancyEscalationThreshold?.toString() ?? '')
   const [error, setError]         = useState<string | null>(null)
@@ -16,14 +22,15 @@ export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; on
     mutationFn: (val: number | null) =>
       pumpApi.updatePumpSettings(pump.id, { discrepancyEscalationThreshold: val }),
     onSuccess: () => {
-      addToast('Settings saved', 'success')
+      addToast(t('settings.saved'), 'success')
       setError(null)
       onUpdated()
     },
-    onError: (err) => setError(parseApiError(err, 'Failed to save settings')),
+    onError: (err) => setError(parseApiError(err, t('settings.saveFailed'))),
   })
 
-  const handleSave = () => {
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault()
     const val = threshold.trim()
     if (val === '') {
       mutation.mutate(null)
@@ -31,42 +38,36 @@ export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; on
     }
     const num = parseFloat(val)
     if (isNaN(num) || num < 0) {
-      setError('Enter a valid positive amount, or leave blank to disable escalation.')
+      setError(t('settings.invalidAmount'))
       return
     }
     mutation.mutate(num)
   }
 
+  const typedLimit = Number(threshold)
+  const effect = threshold.trim() === ''
+    ? t('settings.effectOff')
+    : Number.isFinite(typedLimit) && typedLimit >= 0
+    ? t('settings.effectOn', { amount: formatCurrency(typedLimit) })
+    : null
+
   return (
-    <div className="space-y-5 pt-2">
-      <div className="ui-alert bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-        When a shift closes with a discrepancy above this amount, only Owner or Admin can resolve it.
-        Managers will see it as locked. Leave blank to disable escalation.
-      </div>
+    <form onSubmit={handleSave} className="space-y-4 pt-2">
+      <p className="text-xs text-ink-3">{t('settings.explanation')}</p>
 
-      <div className="max-w-xs">
-        <label className="block">
-          <span className="ui-label">Discrepancy Escalation Threshold (₹)</span>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={threshold}
-            onChange={(e) => setThreshold(e.target.value)}
-            placeholder="e.g. 500 — blank to disable"
-            className="text-sm"
-          />
-        </label>
-        {error && <p role="alert" className="ui-error-text mt-1">{error}</p>}
-      </div>
-
-      <button
-        onClick={handleSave}
-        disabled={mutation.isPending}
-        className="ui-btn ui-btn-primary"
+      <FormField
+        className="max-w-xs"
+        label={<>{t('settings.thresholdLabel')} <span className="text-ink-3 font-normal">{t('common:fields.optionalSuffix')}</span></>}
+        help={effect ?? undefined}
+        error={error ?? undefined}
       >
-        {mutation.isPending ? 'Saving…' : 'Save Settings'}
-      </button>
-    </div>
+        <NumericInput min="0" step="1" unit="₹" value={threshold}
+          onChange={(e) => { setThreshold(e.target.value); setError(null) }} />
+      </FormField>
+
+      <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('common:actions.saving')} className="ui-btn-primary">
+        {t('settings.save')}
+      </LoadingButton>
+    </form>
   )
 }

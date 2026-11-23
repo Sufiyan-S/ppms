@@ -1,6 +1,7 @@
 package com.ppms.common.config;
 
 import com.ppms.auth.JwtAuthenticationFilter;
+import com.ppms.common.exception.ErrorCodes;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -69,7 +70,8 @@ public class SecurityConfig {
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.setContentType("application/json");
-                    response.getWriter().write("{\"message\":\"Session expired. Please log in again.\"}");
+                    response.getWriter().write("{\"message\":\"Session expired. Please log in again.\",\"code\":\""
+                            + ErrorCodes.SESSION_EXPIRED + "\"}");
                 })
             )
             .authenticationProvider(authenticationProvider())

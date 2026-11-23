@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import type { UserRole } from '../types/auth'
-import { ACTION_PERMISSIONS, PAGE_PERMISSIONS, canAccessPage, canPerformAction, getDefaultPath } from './permissions'
+import { ACTION_PERMISSIONS, PAGE_PERMISSIONS, canAccessPage, canManageStaffMember, canPerformAction, getDefaultPath } from './permissions'
+
+describe('canManageStaffMember', () => {
+  it('lets an owner manage every staff role', () => {
+    for (const role of ['ADMIN', 'MANAGER', 'OPERATOR', 'ACCOUNTANT']) {
+      expect(canManageStaffMember('OWNER', role)).toBe(true)
+    }
+  })
+
+  it('lets an admin manage only the roles below admin', () => {
+    expect(canManageStaffMember('ADMIN', 'OPERATOR')).toBe(true)
+    expect(canManageStaffMember('ADMIN', 'ACCOUNTANT')).toBe(true)
+    expect(canManageStaffMember('ADMIN', 'ADMIN')).toBe(false)
+    expect(canManageStaffMember('ADMIN', 'OWNER')).toBe(false)
+  })
+
+  it('lets nobody below admin manage staff', () => {
+    expect(canManageStaffMember('MANAGER', 'OPERATOR')).toBe(false)
+    expect(canManageStaffMember('OPERATOR', 'OPERATOR')).toBe(false)
+  })
+})
 
 describe('getDefaultPath', () => {
   it.each<[UserRole | undefined, string]>([
@@ -9,8 +29,8 @@ describe('getDefaultPath', () => {
     ['OWNER', '/dashboard'],
     ['ADMIN', '/dashboard'],
     ['MANAGER', '/dashboard'],
-    ['OPERATOR', '/dashboard/shifts'],
-    ['ACCOUNTANT', '/dashboard/credit'],
+    ['OPERATOR', '/dashboard/my-shift'],
+    ['ACCOUNTANT', '/dashboard'],
   ])('sends %s to %s', (role, path) => {
     expect(getDefaultPath(role)).toBe(path)
   })
@@ -36,9 +56,16 @@ describe('canAccessPage', () => {
     expect(canAccessPage('payroll', 'ADMIN')).toBe(false)
   })
 
-  it('keeps ACCOUNTANT to credit and expenses', () => {
+  it('keeps ACCOUNTANT to the overview, credit, expenses and their own notifications', () => {
     const allowed = Object.keys(PAGE_PERMISSIONS).filter(page => canAccessPage(page, 'ACCOUNTANT'))
-    expect(allowed.sort()).toEqual(['credit', 'expenses'])
+    expect(allowed.sort()).toEqual(['credit', 'expenses', 'notifications', 'overview'])
+  })
+
+  it('limits the approval queue to OWNER and ADMIN', () => {
+    expect(canAccessPage('approvals', 'OWNER')).toBe(true)
+    expect(canAccessPage('approvals', 'ADMIN')).toBe(true)
+    expect(canAccessPage('approvals', 'MANAGER')).toBe(false)
+    expect(canAccessPage('approvals', 'ACCOUNTANT')).toBe(false)
   })
 
   it('denies an unknown page', () => {
@@ -62,6 +89,11 @@ describe('canPerformAction', () => {
     ['payroll:generate', 'ADMIN', false],
     ['settlement:void', 'MANAGER', false],
     ['setup:manage', 'MANAGER', false],
+    ['credit:manage-interest', 'MANAGER', false],
+    ['credit:manage-interest', 'ADMIN', true],
+    ['credit:apply-interest', 'MANAGER', true],
+    ['credit:waive-interest', 'OWNER', true],
+    ['credit:waive-interest', 'MANAGER', false],
   ])('%s for %s is %s', (action, role, expected) => {
     expect(canPerformAction(action, role)).toBe(expected)
   })

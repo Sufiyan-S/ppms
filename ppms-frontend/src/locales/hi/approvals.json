@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "मंज़ूरियाँ",
+    "subtitle": "खर्च और क्रेडिट भुगतान जिन्हें गिने जाने से पहले आपके फ़ैसले की ज़रूरत है",
+    "noPumpSubtitle": "ऊपर की पट्टी में पंप चुनें।",
+    "emptyTitle": "मंज़ूरी के लिए कुछ बाकी नहीं है",
+    "emptySubtitle": "आपकी मंज़ूरी सीमा से ज़्यादा के नए खर्च और भुगतान यहाँ दिखेंगे।",
+    "waitingCount_one": "{{count}} बाकी",
+    "waitingCount_other": "{{count}} बाकी",
+    "queue": "आपके फ़ैसले का इंतज़ार"
+  },
+  "filters": {
+    "label": "दिखाएँ",
+    "all": "सभी",
+    "expenses": "खर्च",
+    "payments": "क्रेडिट भुगतान"
+  },
+  "kind": {
+    "expense": "खर्च",
+    "creditPayment": "क्रेडिट भुगतान"
+  },
+  "selection": {
+    "summary": "{{count}} चुने गए · {{amount}}",
+    "hint": "एक साथ मंज़ूर या अस्वीकार करने के लिए आइटम चुनें।",
+    "reject": "चुने हुए अस्वीकार करें",
+    "approve": "चुने हुए मंज़ूर करें",
+    "approving": "मंज़ूर हो रहा है…"
+  },
+  "outcome": {
+    "approved_one": "{{count}} आइटम मंज़ूर हुआ।",
+    "approved_other": "{{count}} आइटम मंज़ूर हुए।",
+    "rejected_one": "{{count}} आइटम अस्वीकार हुआ।",
+    "rejected_other": "{{count}} आइटम अस्वीकार हुए।",
+    "notApproved_one": "{{count}} मंज़ूर नहीं हो सका:",
+    "notApproved_other": "{{count}} मंज़ूर नहीं हो सके:",
+    "notRejected_one": "{{count}} अस्वीकार नहीं हो सका:",
+    "notRejected_other": "{{count}} अस्वीकार नहीं हो सके:",
+    "expenseName": "खर्च {{amount}}",
+    "paymentName": "भुगतान {{amount}}",
+    "notSaved": "सेव नहीं हुआ"
+  },
+  "errors": {
+    "approveFailed": "चुने हुए आइटम मंज़ूर नहीं हो सके",
+    "rejectFailed": "चुने हुए आइटम अस्वीकार नहीं हो सके",
+    "loadFailed": "मंज़ूरी की सूची लोड नहीं हो सकी। दोबारा कोशिश करने के लिए पेज रीफ़्रेश करें।"
+  },
+  "rejectDialog": {
+    "title_one": "{{count}} आइटम अस्वीकार करें",
+    "title_other": "{{count}} आइटम अस्वीकार करें",
+    "subtitle": "कुल {{amount}}; कारण हर अस्वीकृति के साथ सेव होगा"
+  },
+  "table": {
+    "caption": "मंज़ूरी के लिए बाकी खर्च और क्रेडिट भुगतान, सबसे पुराने पहले",
+    "region": "मंज़ूरी की सूची",
+    "selectAll": "सभी आइटम चुनें",
+    "selectExpense": "खर्च चुनें {{name}} {{amount}}",
+    "selectPayment": "क्रेडिट भुगतान चुनें {{name}} {{amount}}",
+    "clientNumber": "ग्राहक #{{id}}",
+    "type": "प्रकार",
+    "categoryOrClient": "श्रेणी या ग्राहक",
+    "amount": "राशि",
+    "submittedBy": "किसने भेजा",
+    "waiting": "कब से बाकी",
+    "date": "तारीख",
+    "note": "नोट"
+  },
+  "waiting": {
+    "justNow": "अभी-अभी",
+    "minutes_one": "{{count}} मिनट",
+    "minutes_other": "{{count}} मिनट",
+    "hours_one": "{{count}} घंटा",
+    "hours_other": "{{count}} घंटे",
+    "days_one": "{{count}} दिन",
+    "days_other": "{{count}} दिन"
+  }
+}

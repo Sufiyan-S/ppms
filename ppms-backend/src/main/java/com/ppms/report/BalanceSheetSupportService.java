@@ -12,8 +12,10 @@ import com.ppms.expense.ExpenseApprovalStatus;
 import com.ppms.expense.PumpExpense;
 import com.ppms.expense.PumpExpenseRepository;
 import com.ppms.fuel.FuelType;
-import com.ppms.fuel.GlobalFuelPrice;
-import com.ppms.fuel.GlobalFuelPriceRepository;
+import com.ppms.inventory.InventoryLot;
+import com.ppms.inventory.InventoryLotRepository;
+import com.ppms.inventory.LotConsumption;
+import com.ppms.inventory.LotConsumptionRepository;
 import com.ppms.inventory.DipCheck;
 import com.ppms.settlement.PaymentSettlement;
 import com.ppms.settlement.PaymentSettlementRepository;
@@ -30,6 +32,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,16 +48,14 @@ public class BalanceSheetSupportService {
     private final AncillaryProductRepository ancillaryProductRepository;
     private final PumpExpenseRepository pumpExpenseRepository;
     private final UserRepository userRepository;
-    private final GlobalFuelPriceRepository fuelPriceRepository;
+    private final LotConsumptionRepository lotConsumptionRepository;
+    private final InventoryLotRepository inventoryLotRepository;
     private final BusinessClock businessClock;
     private final PaymentSettlementRepository settlementRepository;
     private final ShiftRepository shiftRepository;
 
     public BalanceSheetDetailResponse.ProductSalesSummary buildProductSalesSummary(Long pumpId, ReportPeriod period) {
-        List<AncillarySale> sales = period.live()
-                ? ancillarySaleRepository.findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtAsc(
-                        pumpId, period.start(), period.end())
-                : ancillarySaleRepository.findByPumpIdAndDateRange(pumpId, period.reportDate(), period.reportDate());
+        List<AncillarySale> sales = ancillarySaleRepository.findByPumpIdAndDateRange(pumpId, period.reportDate(), period.reportDate());
         if (sales.isEmpty()) {
             return null;
         }
@@ -124,11 +125,8 @@ public class BalanceSheetSupportService {
     }
 
     public BalanceSheetDetailResponse.ExpenseSummary buildExpenseSummary(Long pumpId, ReportPeriod period) {
-        List<PumpExpense> expenses = period.live()
-                ? pumpExpenseRepository.findByPumpIdAndApprovalStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                        pumpId, ExpenseApprovalStatus.APPROVED, period.start(), period.end())
-                : pumpExpenseRepository.findByPumpIdAndExpenseDateAndApprovalStatus(
-                        pumpId, period.reportDate(), ExpenseApprovalStatus.APPROVED);
+        List<PumpExpense> expenses = pumpExpenseRepository.findByPumpIdAndExpenseDateAndApprovalStatus(
+                pumpId, period.reportDate(), ExpenseApprovalStatus.APPROVED);
         if (expenses.isEmpty()) {
             return null;
         }
@@ -158,7 +156,10 @@ public class BalanceSheetSupportService {
                 .build();
     }
 
-    /** Dip check variances are valued at the selling price in force when each check was taken. */
+    /**
+     * Dip check variances are valued at purchase cost, like drains: a shortfall at the cost of the lots it was
+     * drawn from, extra fuel at the cost of the lot created for it.
+     */
     public List<DipPlLineResponse> buildDipPlEntries(Long pumpId,
                                                      List<FuelDipEntry> dipEntries,
                                                      List<DipCheck> dipChecks,
@@ -176,6 +177,7 @@ public class BalanceSheetSupportService {
                     .build());
         }
 
+        Map<Long, BigDecimal> costByDipCheckId = dipCheckVarianceCosts(dipChecks);
         for (DipCheck dipCheck : dipChecks) {
             FuelType fuelType = tankFuelTypeMap.get(dipCheck.getTankId());
             if (fuelType == null) {
@@ -183,12 +185,12 @@ public class BalanceSheetSupportService {
             }
             BigDecimal litresVariance = dipCheck.getMeasuredQuantity().subtract(dipCheck.getSystemStock())
                     .setScale(3, RoundingMode.HALF_UP);
-            BigDecimal priceAtCheck = fuelPriceRepository
-                    .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
-                            pumpId, fuelType, dipCheck.getCheckedAt())
-                    .map(GlobalFuelPrice::getPricePerUnit)
-                    .orElse(BigDecimal.ZERO);
-            BigDecimal monetaryAmount = litresVariance.multiply(priceAtCheck).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal varianceCost = costByDipCheckId.get(dipCheck.getId());
+            if (varianceCost == null) {
+                varianceCost = litresVariance.abs().multiply(latestPurchaseCost(pumpId, fuelType));
+            }
+            BigDecimal monetaryAmount = (litresVariance.signum() < 0 ? varianceCost.negate() : varianceCost)
+                    .setScale(2, RoundingMode.HALF_UP);
             entries.add(DipPlLineResponse.builder()
                     .type("DIP_CHECK")
                     .fuelType(fuelType.name())
@@ -203,6 +205,31 @@ public class BalanceSheetSupportService {
         return entries;
     }
 
+    /** Unsigned purchase cost of each check's variance, from the lot ledger entries the check made. */
+    private Map<Long, BigDecimal> dipCheckVarianceCosts(List<DipCheck> dipChecks) {
+        if (dipChecks.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> dipCheckIds = dipChecks.stream().map(DipCheck::getId).toList();
+        Map<Long, BigDecimal> costByDipCheckId = new HashMap<>();
+        for (LotConsumption shortfall : lotConsumptionRepository.findByDipCorrectionIdIn(dipCheckIds)) {
+            costByDipCheckId.merge(shortfall.getDipCorrectionId(),
+                    shortfall.getQuantityConsumed().multiply(shortfall.getCostPricePerUnit()), BigDecimal::add);
+        }
+        for (InventoryLot gainLot : inventoryLotRepository.findByDipCheckIdIn(dipCheckIds)) {
+            costByDipCheckId.merge(gainLot.getDipCheckId(),
+                    gainLot.getOriginalQuantity().multiply(gainLot.getCostPricePerUnit()), BigDecimal::add);
+        }
+        return costByDipCheckId;
+    }
+
+    /** Checks recorded before the ledger linked them to lots are valued at the latest real purchase cost. */
+    private BigDecimal latestPurchaseCost(Long pumpId, FuelType fuelType) {
+        return inventoryLotRepository.findFirstByPumpIdAndFuelTypeAndIsDipAdjustmentFalseOrderByDeliveryDateDesc(pumpId, fuelType)
+                .map(InventoryLot::getCostPricePerUnit)
+                .orElse(BigDecimal.ZERO);
+    }
+
     public BigDecimal orZero(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
     }
@@ -214,8 +241,7 @@ public class BalanceSheetSupportService {
     /**
      * Builds the settlement summary for a DAY balance sheet.
      *
-     * settlementsOnDate — entries dated on the report date (the date money arrived in bank), or for a
-     *                     live report, entries recorded within its 24-hour window.
+     * settlementsOnDate — entries dated on the report date (the date money arrived in bank).
      * settled amounts   — totals per type for this date.
      * wallet pending    — cumulative (all collections up to reportDate) − (all settlements up to reportDate).
      *
@@ -224,9 +250,7 @@ public class BalanceSheetSupportService {
      */
     public BalanceSheetDetailResponse.SettlementSummary buildSettlementSummary(Long pumpId, ReportPeriod period) {
         LocalDate reportDate = period.reportDate();
-        List<PaymentSettlement> onDate = period.live()
-                ? settlementRepository.findActiveByPumpIdRecordedBetween(pumpId, period.start(), period.end())
-                : settlementRepository.findActiveByPumpIdAndSettlementDate(pumpId, reportDate);
+        List<PaymentSettlement> onDate = settlementRepository.findActiveByPumpIdAndSettlementDate(pumpId, reportDate);
 
         // Batch-load recorder names
         Set<Long> recorderIds = onDate.stream()

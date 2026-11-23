@@ -1,5 +1,9 @@
 package com.ppms.common.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
@@ -21,7 +25,8 @@ import static org.mockito.Mockito.when;
 class PumpAccessInterceptorTest {
 
     private final PumpLocationRepository pumpLocationRepository = mock(PumpLocationRepository.class);
-    private final PumpAccessInterceptor interceptor = new PumpAccessInterceptor(pumpLocationRepository);
+    private final ObjectMapper objectMapper = JsonMapper.builder().findAndAddModules().build();
+    private final PumpAccessInterceptor interceptor = new PumpAccessInterceptor(pumpLocationRepository, objectMapper);
     private final HandlerMethod handler = mock(HandlerMethod.class);
 
     @AfterEach
@@ -38,6 +43,23 @@ class PumpAccessInterceptorTest {
 
         assertThat(interceptor.preHandle(request, response, handler)).isFalse();
         assertThat(response.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    void rejectionBodyHasTheSameShapeAsOtherErrors() throws Exception {
+        signInAs(User.builder().id(1L).role(UserRole.OWNER).build());
+        when(pumpLocationRepository.existsByIdAndOwnerId(7L, 1L)).thenReturn(false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        interceptor.preHandle(requestFor("/api/pumps/7/shifts", Map.of("pumpId", "7")), response, handler);
+
+        assertThat(response.getContentType()).startsWith("application/json");
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertThat(body.get("status").asInt()).isEqualTo(403);
+        assertThat(body.get("message").asText()).isEqualTo("You do not have access to pump 7");
+        assertThat(body.get("code").asText()).isEqualTo(ErrorCodes.PUMP_ACCESS_DENIED);
+        assertThat(body.get("params").get("pumpId").asLong()).isEqualTo(7L);
+        assertThat(body.has("timestamp")).isTrue();
     }
 
     @Test

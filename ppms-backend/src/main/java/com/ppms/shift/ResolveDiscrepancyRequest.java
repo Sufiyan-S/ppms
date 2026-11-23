@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 /**
  * Request body for PATCH /api/shifts/{id}/discrepancy-resolution.
  * Used by Manager or Admin to set the resolution action after a discrepant shift is closed.
- * WAIVED requires a non-blank resolutionNote (spec Business Rule 19).
+ * WAIVED (spec Business Rule 19) and PENDING_INVESTIGATION require a non-blank resolutionNote.
  */
 public record ResolveDiscrepancyRequest(
 

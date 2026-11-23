@@ -1,26 +1,38 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { userApi } from '../../../api/userApi'
 import type { StaffMember, UpdateStaffDetailsRequest, UserGender } from '../../../api/userApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
-import { Spinner } from '../../../components/Spinner'
+import { codeLabel } from '../../../constants/labels'
+import { LanguagePicker } from '../../../components/LanguagePicker'
+import { isAppLanguage } from '../../../i18n/languages'
+import type { AppLanguage } from '../../../i18n/languages'
+import { FormField } from '../../../components/FormField'
+import { FormGrid, FormGridFullRow } from '../../../components/layout/FormGrid'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { StillNeeded } from '../../../components/StillNeeded'
+import { NightShiftConsentField } from './NightShiftConsentField'
+import { RowPanel, RowPanelActions } from './RowPanel'
 
 interface Props {
   pumpId: number
   member: StaffMember
-  isOwner: boolean
+  canAssignAdmin: boolean
   onClose: () => void
 }
 
-export function EditStaffPanel({ pumpId, member, isOwner, onClose }: Props) {
+export function EditStaffPanel({ pumpId, member, canAssignAdmin, onClose }: Props) {
+  const { t } = useTranslation(['setup', 'common'])
   const queryClient = useQueryClient()
+  const stillNeededId = useId()
   const [editFullName, setEditFullName]               = useState(member.fullName)
   const [editPhone, setEditPhone]                     = useState(member.phoneNumber ?? '')
   const [editRole, setEditRole]                       = useState<string>(member.role)
   const [editGender, setEditGender]                   = useState<UserGender | ''>((member.gender as UserGender | null) ?? '')
   const [editNightShiftConsent, setEditNightShiftConsent] = useState(member.nightShiftConsent)
+  const [editLanguage, setEditLanguage]               = useState<AppLanguage>(isAppLanguage(member.preferredLanguage) ? member.preferredLanguage : 'en')
   const [editError, setEditError]                     = useState<string | null>(null)
 
   const detailsMutation = useMutation({
@@ -32,140 +44,99 @@ export function EditStaffPanel({ pumpId, member, isOwner, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ['staff', pumpId] })
       queryClient.invalidateQueries({ queryKey: ['operators', pumpId] })
     },
-    onError: (err) => setEditError(parseApiError(err, 'Failed to save details')),
+    onError: (err) => setEditError(parseApiError(err, t('staff.edit.failed'))),
+  })
+
+  const stillNeeded = [
+    ...(!editFullName.trim() ? [t('staff.fullName')] : []),
+    ...(!editPhone.trim() ? [t('staff.phone')] : []),
+    ...(!editRole ? [t('staff.role')] : []),
+  ]
+
+  const save = () => detailsMutation.mutate({
+    userId: member.id,
+    req: {
+      fullName: editFullName.trim(),
+      phoneNumber: editPhone.trim(),
+      role: editRole as UpdateStaffDetailsRequest['role'],
+      gender: editGender || undefined,
+      nightShiftConsent: editRole === 'OPERATOR' && editGender === 'FEMALE'
+        ? editNightShiftConsent
+        : false,
+      preferredLanguage: editLanguage,
+    },
   })
 
   return (
-    <div className="border-t border-violet-100 bg-violet-50/30 px-4 py-4">
-      {/* Panel header */}
-      <div className="mb-4 flex items-center gap-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600">
-          <Pencil size={13} strokeWidth={2.5} />
+    <RowPanel title={t('staff.edit.title', { name: member.fullName })}>
+      <FormGrid>
+        <FormField label={t('staff.fullName')}>
+          <input type="text" value={editFullName} onChange={e => setEditFullName(e.target.value)} className="text-sm" />
+        </FormField>
+        <FormField label={t('staff.phone')} help={t('staff.phoneHelp')}>
+          <input type="tel" inputMode="numeric" value={editPhone} onChange={e => setEditPhone(e.target.value)}
+            maxLength={10} className="text-sm" />
+        </FormField>
+        <div>
+          <span className="ui-label">{t('staff.role')}</span>
+          <SearchableSelect label={t('staff.role')}
+            value={editRole}
+            onChange={v => {
+              setEditRole(v)
+              if (v !== 'OPERATOR') setEditNightShiftConsent(false)
+            }}
+            placeholder={t('staff.selectRole')}
+            options={[
+              { value: 'OPERATOR',   label: codeLabel('OPERATOR') },
+              { value: 'MANAGER',    label: codeLabel('MANAGER') },
+              ...(canAssignAdmin ? [{ value: 'ADMIN', label: codeLabel('ADMIN') }] : []),
+              { value: 'ACCOUNTANT', label: codeLabel('ACCOUNTANT') },
+            ]}
+          />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-800">Edit Staff Details</p>
-          <p className="text-[11px] text-slate-500">Changes are saved when you click Save Changes</p>
+          <span className="ui-label">{t('staff.gender')}</span>
+          <SearchableSelect label={t('staff.gender')}
+            value={editGender}
+            onChange={v => {
+              setEditGender(v as UserGender | '')
+              if (v !== 'FEMALE') setEditNightShiftConsent(false)
+            }}
+            placeholder={t('staff.selectGender')}
+            options={[
+              { value: 'MALE',   label: codeLabel('MALE') },
+              { value: 'FEMALE', label: codeLabel('FEMALE') },
+              { value: 'OTHER',  label: codeLabel('OTHER') },
+            ]}
+          />
         </div>
-      </div>
-
-      <div className="max-w-md space-y-3">
-        {/* Row 1: Name + Phone */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block">
-              <span className="ui-label">Full Name</span>
-              <input
-                type="text"
-                value={editFullName}
-                onChange={e => setEditFullName(e.target.value)}
-                placeholder="Full name"
-                className="text-sm"
-              />
-            </label>
-          </div>
-          <div>
-            <label className="block">
-              <span className="ui-label">Phone Number</span>
-              <input
-                type="text"
-                value={editPhone}
-                onChange={e => setEditPhone(e.target.value)}
-                placeholder="10-digit number"
-                maxLength={10}
-                className="text-sm"
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Row 2: Role + Gender */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <span className="ui-label">Role</span>
-            <SearchableSelect label="Role"
-              value={editRole}
-              onChange={v => {
-                setEditRole(v)
-                if (v !== 'OPERATOR') setEditNightShiftConsent(false)
-              }}
-              placeholder="Select role"
-              size="sm"
-              options={[
-                { value: 'OPERATOR',   label: 'Operator' },
-                { value: 'MANAGER',    label: 'Manager' },
-                ...(isOwner ? [{ value: 'ADMIN', label: 'Admin' }] : []),
-                { value: 'ACCOUNTANT', label: 'Accountant' },
-              ]}
-            />
-          </div>
-          <div>
-            <span className="ui-label">Gender</span>
-            <SearchableSelect label="Gender"
-              value={editGender}
-              onChange={v => {
-                setEditGender(v as UserGender | '')
-                if (v !== 'FEMALE') setEditNightShiftConsent(false)
-              }}
-              placeholder="Select gender"
-              size="sm"
-              options={[
-                { value: 'MALE',   label: 'Male' },
-                { value: 'FEMALE', label: 'Female' },
-                { value: 'OTHER',  label: 'Other' },
-              ]}
-            />
-          </div>
-        </div>
-
-        {/* Night shift consent — only for female operators */}
+        <LanguagePicker value={editLanguage} onChange={setEditLanguage} selectClassName="text-sm" />
         {editRole === 'OPERATOR' && editGender === 'FEMALE' && (
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 px-3.5 py-3">
-            <input
-              type="checkbox"
-              checked={editNightShiftConsent}
-              onChange={e => setEditNightShiftConsent(e.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-amber-600"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-amber-900">Okay for night shift</span>
-              <span className="mt-1 block text-xs leading-5 text-amber-800">
-                If left unchecked, shift planning will skip night-shift assignment for this operator.
-              </span>
-            </span>
-          </label>
+          <FormGridFullRow>
+            <NightShiftConsentField checked={editNightShiftConsent} onChange={setEditNightShiftConsent} />
+          </FormGridFullRow>
         )}
+      </FormGrid>
 
-        {editError && <p role="alert" className="ui-error-text">{editError}</p>}
+      {editError && <p role="alert" className="ui-error-text">{editError}</p>}
 
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            disabled={detailsMutation.isPending || !editFullName.trim() || !editPhone.trim() || !editRole}
-            onClick={() => detailsMutation.mutate({
-              userId: member.id,
-              req: {
-                fullName: editFullName.trim(),
-                phoneNumber: editPhone.trim(),
-                role: editRole as UpdateStaffDetailsRequest['role'],
-                gender: editGender || undefined,
-                nightShiftConsent: editRole === 'OPERATOR' && editGender === 'FEMALE'
-                  ? editNightShiftConsent
-                  : false,
-              },
-            })}
-            className="ui-btn ui-btn-primary min-h-0 px-4 py-2 text-sm"
-          >
-            {detailsMutation.isPending ? <span className="flex items-center gap-1.5"><Spinner className="w-3 h-3" />Saving…</span> : 'Save Changes'}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ui-btn ui-btn-secondary min-h-0 px-4 py-2 text-sm"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+      <RowPanelActions>
+        <LoadingButton
+          type="button"
+          isLoading={detailsMutation.isPending}
+          loadingLabel={t('common:actions.saving')}
+          disabled={stillNeeded.length > 0}
+          aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+          onClick={save}
+          className="ui-btn-primary ui-btn-compact"
+        >
+          {t('staff.edit.save')}
+        </LoadingButton>
+        <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary ui-btn-compact">
+          {t('common:actions.cancel')}
+        </button>
+        <StillNeeded id={stillNeededId} items={stillNeeded} />
+      </RowPanelActions>
+    </RowPanel>
   )
 }

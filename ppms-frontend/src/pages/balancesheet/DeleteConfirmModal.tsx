@@ -1,71 +1,71 @@
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { serverText } from '../../utils/serverText'
+import { Trans, useTranslation } from 'react-i18next'
 import { balanceSheetApi } from '../../api/balanceSheetApi'
 import { parseApiError } from '../../utils/apiError'
 import type { BalanceSheetSummary } from '../../api/balanceSheetApi'
-import { Spinner } from '../../components/Spinner'
+import { LoadingButton } from '../../components/LoadingButton'
 import { useToastStore } from '../../store/toastStore'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
 import { fmtDate } from './bsFormat'
 
-// ── Delete Confirm Modal ────────────────────────────────────────────────────────
+export type DeletableSheet = Pick<BalanceSheetSummary, 'id' | 'periodLabel' | 'periodLabelCode' | 'periodLabelParams' | 'reportDate'>
 
 interface DeleteConfirmProps {
-  report: BalanceSheetSummary
+  report: DeletableSheet
   pumpId: number
   onClose: () => void
 }
 
 export function DeleteConfirmModal({ report, pumpId, onClose }: DeleteConfirmProps) {
+  const { t } = useTranslation(['balancesheet', 'common'])
   const qc = useQueryClient()
   const { addToast } = useToastStore()
+  const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: () => balanceSheetApi.delete(pumpId, report.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['balance-sheets', pumpId] })
-      addToast('Balance sheet deleted', 'success')
+      addToast(t('delete.deleted'), 'success')
       onClose()
     },
-    onError: (err) => addToast(parseApiError(err, 'Failed to delete balance sheet'), 'error'),
+    onError: (err) => {
+      const msg = parseApiError(err, t('delete.failed'))
+      setError(msg)
+      addToast(msg, 'error')
+    },
   })
 
   return (
-    <ModalPortal onClose={onClose}>
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal-panel w-full max-w-sm">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--danger">
-          <div className="ui-modal-heading">
-            <h3 className="ui-modal-title">Delete Balance Sheet?</h3>
-            <p className="ui-modal-subtitle">This action removes the saved report entry.</p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
-        </div>
-        <div className="ui-modal-body">
-          <p className="text-sm text-slate-600">
-            This will permanently delete the <span className="font-medium">{report.periodLabel}</span> report
-            for <span className="font-medium">{fmtDate(report.reportDate)}</span>.
-            You can regenerate it afterwards.
+    <Modal
+      title={t('delete.title')}
+      subtitle={`${serverText(report.periodLabelCode, report.periodLabelParams, report.periodLabel)} · ${fmtDate(report.reportDate)}`}
+      tone="danger"
+      size="sm"
+      onClose={onClose}
+      canClose={!mutation.isPending}
+      footer={<>
+        <button type="button" onClick={onClose} disabled={mutation.isPending} className="ui-btn ui-btn-secondary">
+          {t('common:actions.cancel')}
+        </button>
+        <LoadingButton type="button" onClick={() => { setError(null); mutation.mutate() }} isLoading={mutation.isPending}
+          loadingLabel={t('delete.deleting')} className="ui-btn-danger">
+          {t('delete.confirm')}
+        </LoadingButton>
+      </>}
+      bodyClassName="space-y-3"
+    >
+          <p className="text-sm text-ink-2">
+            <Trans
+              t={t}
+              i18nKey="delete.body"
+              values={{ period: serverText(report.periodLabelCode, report.periodLabelParams, report.periodLabel), date: fmtDate(report.reportDate) }}
+              components={{ period: <span className="font-medium" />, date: <span className="font-medium" /> }}
+            />
           </p>
-        </div>
-        <div className="ui-modal-footer">
-          <button
-            onClick={onClose}
-            className="ui-btn ui-btn-secondary"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-            className="ui-btn ui-btn-danger"
-          >
-            {mutation.isPending
-              ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Deleting…</span>
-              : 'Delete Report'}
-          </button>
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+          {error && <p role="alert" className="ui-alert ui-alert-danger">{error}</p>}
+    </Modal>
   )
 }

@@ -1,0 +1,64 @@
+{
+  "page": {
+    "title": "Nozzle Calibration",
+    "subtitle": "Record periodic calibration checks for regulatory compliance",
+    "loadFailed": "Could not load calibration data. Check your connection and refresh.",
+    "nozzleCount_one": "{{count}} nozzle",
+    "nozzleCount_other": "{{count}} nozzles",
+    "recordCount_one": "{{count}} record",
+    "recordCount_other": "{{count}} records"
+  },
+  "nozzleOption": "Nozzle #{{number}} — {{fuel}}",
+  "form": {
+    "title": "Record calibration",
+    "subtitle": "Attach the calibration date, technician, certificate and next due date for compliance history.",
+    "nozzle": "Nozzle",
+    "nozzlePlaceholder": "Select nozzle…",
+    "calibrationDate": "Calibration date",
+    "review": "Review",
+    "nextDue": "Next calibration due",
+    "calibratedBy": "Calibrated by",
+    "calibratedByHelp": "Technician or agency name",
+    "certificate": "Certificate reference"
+  },
+  "validation": {
+    "selectNozzle": "Select a nozzle",
+    "calibratedByRequired": "Enter who did the calibration",
+    "dateRequired": "Calibration date is required",
+    "nextDueRequired": "Next calibration due date is required",
+    "nextDueAfterDate": "Next calibration due date must be after the calibration date",
+    "certificateRequired": "Certificate reference is required"
+  },
+  "toast": {
+    "recorded": "Calibration recorded successfully",
+    "recordFailed": "Failed to record calibration"
+  },
+  "review": {
+    "title": "Review calibration",
+    "confirm": "Confirm calibration",
+    "nozzle": "Nozzle",
+    "calibrationDate": "Calibration date",
+    "nextDue": "Next calibration due",
+    "calibratedBy": "Calibrated by",
+    "certificate": "Certificate reference"
+  },
+  "history": {
+    "title": "Calibration History",
+    "allNozzlesSuffix": "— All nozzles",
+    "nozzleSuffix": "— Nozzle #{{number}} ({{fuel}})",
+    "filterLabel": "Filter by nozzle",
+    "filterPlaceholder": "Filter by nozzle…",
+    "allNozzles": "All nozzles",
+    "emptyTitle": "No calibration records",
+    "emptyRange": "No records match the selected date range.",
+    "emptyNozzle": "No calibration records for this nozzle yet.",
+    "emptyFirst": "Use the form above to record your first calibration.",
+    "nozzleNumber": "Nozzle #{{number}}",
+    "nextDue": "Next due: {{date}}",
+    "by": "By: {{name}}",
+    "cert": "Cert: {{reference}}",
+    "loggedBy": "Logged by: {{name}}",
+    "loggedAt": "Logged at: {{time}}",
+    "filtersLabel": "Calibration history filters"
+  }
+}

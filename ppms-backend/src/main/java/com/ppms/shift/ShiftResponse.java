@@ -60,6 +60,9 @@ public class ShiftResponse {
     private String discrepancyReason;
     private String discrepancyResolution;
     private String discrepancyResolutionNote;
+    private String investigationNote;
+    private String investigatedByName;
+    private OffsetDateTime investigationStartedAt;
     /** Non-null only when discrepancyResolution = CASH_RECOVERY on a SHORT shift. */
     private BigDecimal cashRecoveryAmount;
 

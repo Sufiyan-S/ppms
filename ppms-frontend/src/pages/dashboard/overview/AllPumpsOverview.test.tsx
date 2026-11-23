@@ -30,7 +30,7 @@ describe('AllPumpsOverview', () => {
     renderWithProviders(<AllPumpsOverview onPumpSelected={vi.fn()} />)
 
     await screen.findByRole('button', { name: /North Pump/ })
-    expect(await within(statCard("Today's Revenue")).findByText('₹15,500')).toBeInTheDocument()
+    expect(await within(statCard("Today's Revenue")).findByText('₹15,500.00')).toBeInTheDocument()
     expect(within(statCard('Active Shifts')).getByText('1 shift overdue')).toBeInTheDocument()
     expect(within(statCard('Low Stock Tanks')).getByText('Need attention')).toBeInTheDocument()
     expect(within(statCard('Stale Fuel Prices')).getByText('Pumps to update in Setup')).toBeInTheDocument()
@@ -40,13 +40,13 @@ describe('AllPumpsOverview', () => {
     renderWithProviders(<AllPumpsOverview onPumpSelected={vi.fn()} />)
 
     const north = await screen.findByRole('button', { name: /North Pump/ })
-    expect(within(north).getByText('₹12,000')).toBeInTheDocument()
+    expect(within(north).getByText('₹12,000.00')).toBeInTheDocument()
     expect(within(north).getByText('2 active shifts')).toBeInTheDocument()
     expect(within(north).getByText('1 overdue shift')).toBeInTheDocument()
     expect(within(north).queryByText('Prices not updated today')).not.toBeInTheDocument()
 
     const south = screen.getByRole('button', { name: /South Pump/ })
-    expect(within(south).getByText('₹3,500')).toBeInTheDocument()
+    expect(within(south).getByText('₹3,500.00')).toBeInTheDocument()
     expect(within(south).getByText('1 low tank')).toBeInTheDocument()
     expect(within(south).getByText('Prices not updated today')).toBeInTheDocument()
   })

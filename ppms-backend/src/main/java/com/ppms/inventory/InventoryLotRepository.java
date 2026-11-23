@@ -128,6 +128,9 @@ public interface InventoryLotRepository extends JpaRepository<InventoryLot, Long
             """)
     List<InventoryLot> findActiveLotsByTankForDisplay(Long tankId);
 
+    /** Lots created for the extra fuel found by dip checks. */
+    List<InventoryLot> findByDipCheckIdIn(java.util.Collection<Long> dipCheckIds);
+
     /** Finds the single lot created for a specific tanker delivery. Used by the edit-delivery flow. */
     java.util.Optional<InventoryLot> findByTankerDeliveryId(Long tankerDeliveryId);
 

@@ -39,9 +39,10 @@ public class BackfillSaleRequest {
     @NotNull(message = "Payment mode is required")
     private TransactionPaymentMode paymentMode;
 
-    /**
-     * Required when paymentMode is CREDIT. Used as the display name on ledger entries.
-     */
+    /** Required when paymentMode is CREDIT: the credit client of this pump the sale is charged to. */
+    private Long clientId;
+
+    /** Display name on the sale; defaults to the credit client's name. */
     private String clientName;
 
     private String billNo;

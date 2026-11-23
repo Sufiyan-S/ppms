@@ -13,6 +13,8 @@ public class LoginResponse {
     private String phoneNumber;
     private UserRole role;
     private Long assignedPumpId;    // null for OWNER
+    private boolean mustChangePassword;
+    private String preferredLanguage;
 
     public static LoginResponse from(User user) {
         return LoginResponse.builder()
@@ -21,6 +23,8 @@ public class LoginResponse {
                 .phoneNumber(user.getPhoneNumber())
                 .role(user.getRole())
                 .assignedPumpId(user.getAssignedPumpId())
+                .mustChangePassword(user.isMustChangePassword())
+                .preferredLanguage(user.getPreferredLanguage())
                 .build();
     }
 }

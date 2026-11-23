@@ -12,6 +12,7 @@ import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -81,9 +82,16 @@ public class BalanceSheetDetailAssembler {
                 .reportDate(balanceSheet.getReportDate())
                 .shiftWindow(balanceSheet.getShiftWindow())
                 .periodLabel(balanceSheet.getPeriodLabel())
+                .periodLabelCode(balanceSheet.getPeriodLabelCode())
+                .periodLabelParams(Objects.requireNonNullElse(balanceSheet.getPeriodLabelParams(), Map.of()))
                 .generatedByUserName(generatedByName)
                 .generatedAt(balanceSheet.getGeneratedAt())
                 .notes(balanceSheet.getNotes())
+                .stale(balanceSheet.isStale())
+                .staleReason(balanceSheet.getStaleReason())
+                .staleReasonCode(balanceSheet.getStaleReasonCode())
+                .staleReasonParams(Objects.requireNonNullElse(balanceSheet.getStaleReasonParams(), Map.of()))
+                .openShiftCount(balanceSheet.getOpenShiftCount())
                 .totalExpectedRevenue(balanceSheet.getTotalExpectedRevenue())
                 .totalCashCollected(balanceSheet.getTotalCashCollected())
                 .totalUpiCollected(balanceSheet.getTotalUpiCollected())

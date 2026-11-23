@@ -1,18 +1,27 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { shiftApi } from '../../../api/shiftApi'
 import type { ResolveDiscrepancyRequest } from '../../../api/shiftApi'
 import type { Shift } from '../../../types/shift'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { parseApiError } from '../../../utils/apiError'
-import { ModalPortal } from '../../../components/ModalPortal'
-import { RESOLUTION_OPTIONS } from '../shiftLabels'
-import { IconButton } from '../../../components/IconButton'
+import { Modal } from '../../../components/Modal'
+import { FormField } from '../../../components/FormField'
+import { LiveFigures } from '../../../components/LiveFigures'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { StillNeeded } from '../../../components/StillNeeded'
+import { DiscrepancyBadge } from '../components/DiscrepancyBadge'
+import { investigationLabel, resolutionChoices } from '../shiftLabels'
 
 export function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  const { t } = useTranslation(['shifts', 'common'])
   const qc = useQueryClient()
-  const [action, setAction] = useState<ResolveDiscrepancyRequest['resolutionAction']>('PENDING_INVESTIGATION')
+  const actionLabelId = useId()
+  const stillNeededId = useId()
+  const [action, setAction] = useState<ResolveDiscrepancyRequest['resolutionAction'] | ''>('')
   const [note,   setNote]   = useState('')
+  const [noteError, setNoteError] = useState<string | null>(null)
   const [error,  setError]  = useState<string | null>(null)
 
   const mutation = useMutation({
@@ -21,79 +30,114 @@ export function ResolveDiscrepancyModal({ shift, onClose }: { shift: Shift; onCl
       qc.invalidateQueries({ queryKey: ['shiftHistory', shift.pumpId] })
       onClose()
     },
-    onError: (err: unknown) => setError(parseApiError(err, 'Failed to resolve discrepancy. Please try again.')),
+    onError: (err: unknown) => setError(parseApiError(err, t('resolveDiscrepancy.failed'))),
   })
 
+  const noteRequired = action === 'WAIVED' || action === 'PENDING_INVESTIGATION'
+
   const handleSubmit = () => {
-    if (action === 'WAIVED' && !note.trim()) {
-      setError('A written reason is required when waiving a discrepancy.')
+    setError(null)
+    setNoteError(null)
+    if (!action) {
+      setError(t('resolveDiscrepancy.chooseAction'))
       return
     }
-    setError(null)
+    if (action === 'WAIVED' && !note.trim()) {
+      setNoteError(t('resolveDiscrepancy.waiveReason'))
+      return
+    }
+    if (action === 'PENDING_INVESTIGATION' && !note.trim()) {
+      setNoteError(t('resolveDiscrepancy.describeInvestigation'))
+      return
+    }
     mutation.mutate({ resolutionAction: action, resolutionNote: note.trim() || undefined })
   }
 
   const discType  = shift.discrepancyType
-  const discAmt   = shift.discrepancyAmount
+  const investigation = investigationLabel(shift)
+  // Salary deduction and cash recovery both take money back from the operator, so they only apply to a shortage.
+  const resolutionOptions = discType === 'SHORT'
+    ? resolutionChoices()
+    : resolutionChoices().filter(option => option.value !== 'SALARY_DEDUCTION' && option.value !== 'CASH_RECOVERY')
+  const stillNeeded = action ? [] : [t('resolveDiscrepancy.stillNeededAction')]
 
   return (
     <tr>
       <td colSpan={8} className="p-0">
-        <ModalPortal onClose={onClose} closeOnBackdropClick>
-        <div className="ui-modal-backdrop">
-          <div className="ui-modal-panel w-full max-w-md overflow-hidden">
-
-            {/* Header */}
-            <div className="ui-modal-header ui-modal-header--themed ui-modal-header--danger">
-              <div className="ui-modal-heading">
-                <h2 className="ui-modal-title">Resolve Discrepancy</h2>
-                <p className="ui-modal-subtitle">
-                  Shift #{shift.id} · {discType} ₹{discAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-              <IconButton label="Close" icon="×" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close" />
-            </div>
-
-            <div className="ui-modal-body space-y-4">
-              <div>
-                <span className="ui-label">Resolution Action</span>
-                <SearchableSelect label="Resolution Action"
-                  value={action}
-                  onChange={(v) => setAction(v as ResolveDiscrepancyRequest['resolutionAction'])}
-                  options={RESOLUTION_OPTIONS}
-                />
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">
-                  Note {action === 'WAIVED' && <span className="text-red-500">* required</span>}
-                </span>
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    rows={3}
-                    placeholder="Enter justification or notes…"
-                    className="resize-none text-sm"
-                  />
-                </label>
-              </div>
-              {error && <p role="alert" className="ui-error-text">{error}</p>}
-              <div className="ui-modal-footer -mx-6 -mb-6">
-                <button onClick={onClose} className="ui-btn ui-btn-secondary flex-1">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={mutation.isPending}
-                  className="ui-btn ui-btn-danger flex-1 disabled:bg-red-300"
-                >
-                  {mutation.isPending ? 'Saving…' : 'Confirm Resolution'}
-                </button>
-              </div>
-            </div>
+        <Modal
+          title={t('resolveDiscrepancy.title')}
+          subtitle={t('resolveDiscrepancy.subtitle', { id: shift.id, operator: shift.operatorName })}
+          tone="success"
+          size="md"
+          onClose={onClose}
+          canClose={!mutation.isPending}
+          closeOnBackdropClick
+          bodyClassName="space-y-4"
+          footer={
+            <>
+              <StillNeeded id={stillNeededId} items={stillNeeded} />
+              <button type="button" onClick={onClose} disabled={mutation.isPending} className="ui-btn ui-btn-secondary">
+                {t('common:actions.cancel')}
+              </button>
+              <LoadingButton
+                type="button"
+                onClick={handleSubmit}
+                disabled={!action}
+                aria-describedby={action ? undefined : stillNeededId}
+                isLoading={mutation.isPending}
+                loadingLabel={t('common:actions.saving')}
+                className="ui-btn-primary"
+              >
+                {action === 'PENDING_INVESTIGATION' ? t('resolveDiscrepancy.startInvestigation') : t('resolveDiscrepancy.confirm')}
+              </LoadingButton>
+            </>
+          }
+        >
+          <LiveFigures
+            figures={[
+              {
+                label: t('resolveDiscrepancy.difference'),
+                value: discType === 'SHORT' || discType === 'OVER'
+                  ? <DiscrepancyBadge type={discType} amount={shift.discrepancyAmount ?? 0} />
+                  : <span className="text-ink-3">—</span>,
+              },
+              ...(shift.discrepancyReason
+                ? [{ label: t('resolveDiscrepancy.reasonAtClose'), value: shift.discrepancyReason }]
+                : []),
+            ]}
+          />
+          {investigation && (
+            <p className="ui-alert text-sm">
+              {investigation}{shift.investigationNote ? ` — ${shift.investigationNote}` : ''}
+            </p>
+          )}
+          <div>
+            <span id={actionLabelId} className="ui-label">{t('resolveDiscrepancy.actionLabel')}</span>
+            <SearchableSelect aria-labelledby={actionLabelId}
+              value={action}
+              onChange={(v) => { setAction(v as ResolveDiscrepancyRequest['resolutionAction']); setNoteError(null) }}
+              options={resolutionOptions}
+              placeholder={t('resolveDiscrepancy.choosePlaceholder')}
+            />
+            {action === 'PENDING_INVESTIGATION' && (
+              <p className="ui-help">{t('resolveDiscrepancy.investigationHint')}</p>
+            )}
           </div>
-        </div>
-        </ModalPortal>
+          <FormField
+            label={noteRequired
+              ? t('resolveDiscrepancy.note')
+              : <>{t('resolveDiscrepancy.note')} <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span></>}
+            error={noteError ?? undefined}
+          >
+            <textarea
+              value={note}
+              onChange={(e) => { setNote(e.target.value); setNoteError(null) }}
+              rows={3}
+              className="resize-none text-sm"
+            />
+          </FormField>
+          {error && <p role="alert" className="ui-alert ui-alert-danger">{error}</p>}
+        </Modal>
       </td>
     </tr>
   )

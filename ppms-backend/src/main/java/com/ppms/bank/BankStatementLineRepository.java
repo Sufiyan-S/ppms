@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface BankStatementLineRepository extends JpaRepository<BankStatementLine, Long> {
@@ -17,4 +18,14 @@ public interface BankStatementLineRepository extends JpaRepository<BankStatement
     /** Count of matched lines for an import — used to update the matched_lines counter. */
     @Query("SELECT COUNT(l) FROM BankStatementLine l WHERE l.importId = :importId AND l.matchStatus = 'MATCHED'")
     int countMatchedByImportId(@Param("importId") Long importId);
+
+    /** UTR references among {@code utrReferences} that already appear on an earlier statement of the pump. */
+    @Query("""
+            SELECT DISTINCT l.utrReference FROM BankStatementLine l, BankStatementImport i
+            WHERE l.importId = i.id AND i.pumpId = :pumpId AND l.utrReference IN :utrReferences
+            """)
+    List<String> findImportedUtrReferences(@Param("pumpId") Long pumpId,
+                                           @Param("utrReferences") Collection<String> utrReferences);
+
+    boolean existsByMatchedPaymentIdAndIdNot(Long matchedPaymentId, Long id);
 }

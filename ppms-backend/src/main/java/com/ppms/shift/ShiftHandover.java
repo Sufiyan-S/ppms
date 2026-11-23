@@ -7,8 +7,7 @@ import java.time.OffsetDateTime;
 
 /**
  * Formal handover record between an outgoing and an incoming operator.
- * Created when an incoming operator takes over from an outgoing operator mid-day
- * without the outgoing shift being closed first.
+ * The outgoing shift is closed at handover time and a new shift is opened for the incoming operator.
  *
  * Captures whether physical cash and meter readings were verified at handover time.
  * The outgoing shift must be in OPEN status — handovers against already-closed shifts
@@ -39,6 +38,10 @@ public class ShiftHandover {
 
     @Column(name = "incoming_operator_id", nullable = false)
     private Long incomingOperatorId;
+
+    /** The shift opened for the incoming operator. Null on handovers recorded before shifts were split at handover. */
+    @Column(name = "incoming_shift_id")
+    private Long incomingShiftId;
 
     /** Whether the outgoing operator physically counted and handed over cash. */
     @Column(name = "physical_cash_verified", nullable = false)

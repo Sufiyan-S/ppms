@@ -1,5 +1,7 @@
 package com.ppms.adjustment;
 
+import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
 import jakarta.validation.Valid;
@@ -9,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/pumps")
@@ -63,7 +66,7 @@ public class NozzleAdjustmentController {
 
     private void requireOwnerOrAdmin(User user) {
         if (user.getRole() != UserRole.OWNER && user.getRole() != UserRole.ADMIN) {
-            throw new com.ppms.common.exception.BusinessException(
+            throw new BusinessException(ErrorCodes.ADJUSTMENT_OWNER_OR_ADMIN_ONLY, Map.of(),
                     "Only Owner or Admin can record reading adjustments and dip entries.");
         }
     }

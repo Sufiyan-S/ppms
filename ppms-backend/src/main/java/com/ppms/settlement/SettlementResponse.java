@@ -13,6 +13,7 @@ public class SettlementResponse {
     private String settlementDate;
     private BigDecimal amountReceived;
     private String notes;
+    private String bankReference;
     private String recordedByUserName;
     private String createdAt;
     /** Wallet balance for this payment type at the time of recording. Null for legacy entries. */

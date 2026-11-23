@@ -18,9 +18,9 @@ async function lookUp(pin = '4821') {
   const user = userEvent.setup()
   render(<CreditBalancePortalPage />)
   await user.type(screen.getByLabelText('Pump ID'), '3')
-  await user.type(screen.getByLabelText('Registered Phone Number'), '9876543210')
+  await user.type(screen.getByLabelText('Registered phone number'), '9876543210')
   await user.type(screen.getByLabelText('Portal PIN'), pin)
-  await user.click(screen.getByRole('button', { name: 'Check Balance' }))
+  await user.click(screen.getByRole('button', { name: 'Check balance' }))
 }
 
 describe('CreditBalancePortalPage', () => {

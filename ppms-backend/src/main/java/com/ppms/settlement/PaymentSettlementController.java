@@ -113,6 +113,17 @@ public class PaymentSettlementController {
     }
 
     /**
+     * GET /api/pumps/{pumpId}/settlements/pending-by-age
+     * Unsettled UPI / Card / Fleet Card collections grouped into runs of consecutive collection days, oldest first,
+     * with each run's age and whether it is past the T+2 settlement window.
+     */
+    @GetMapping("/{pumpId}/settlements/pending-by-age")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public List<PendingSettlementRange> getPendingByAge(@PathVariable Long pumpId) {
+        return service.getPendingByAge(pumpId);
+    }
+
+    /**
      * GET /api/pumps/{pumpId}/settlements/daily-summary?from=YYYY-MM-DD&to=YYYY-MM-DD
      * Returns one entry per date (newest first) combining shift collections and recorded settlements.
      * Dates with no activity on either side are omitted.

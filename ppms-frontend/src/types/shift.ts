@@ -108,6 +108,10 @@ export interface Shift {
   discrepancyReason: string | null
   discrepancyResolution: string | null
   discrepancyResolutionNote: string | null
+  /** Set while (and after) a discrepancy was put under investigation; the shift stays pending until a final action. */
+  investigationNote: string | null
+  investigatedByName: string | null
+  investigationStartedAt: string | null
   /** Non-null when discrepancyResolution = CASH_RECOVERY on a SHORT shift. */
   cashRecoveryAmount: number | null
   status: ShiftStatus
@@ -138,6 +142,32 @@ export interface CloseShiftRequest {
   /** Pre-recorded entries corrected in the close form; the backend voids them in the same transaction as the close. */
   replacedCreditEntryIds: number[]
   discrepancyReason?: string
+}
+
+export interface CreateHandoverRequest {
+  outgoingShiftId: number
+  incomingOperatorId: number
+  physicalCashVerified: boolean
+  meterReadingsVerified: boolean
+  notes?: string
+  closing: CloseShiftRequest
+}
+
+export interface HandoverResponse {
+  id: number
+  pumpId: number
+  outgoingShiftId: number
+  outgoingOperatorId: number
+  outgoingOperatorName: string
+  incomingOperatorId: number
+  incomingOperatorName: string
+  incomingShiftId: number
+  outgoingShiftStatus: ShiftStatus
+  physicalCashVerified: boolean
+  meterReadingsVerified: boolean
+  notes: string | null
+  handoverTime: string
+  createdAt: string
 }
 
 export interface BackfillNozzleReading {

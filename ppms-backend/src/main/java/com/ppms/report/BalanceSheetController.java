@@ -40,6 +40,7 @@ public class BalanceSheetController {
      * For DAY reports: reportType=DAY; shiftWindow is ignored.
      *
      * The service will reject the request if:
+     * - Shifts of a past date/window are still open (today's live sheet is allowed and records how many are open)
      * - No closed shifts exist for the requested date/window
      * - A report for the same date/window already exists (delete first to regenerate)
      *
@@ -96,6 +97,23 @@ public class BalanceSheetController {
             @PathVariable Long id) {
 
         return ResponseEntity.ok(balanceSheetService.getById(pumpId, id));
+    }
+
+    /**
+     * POST /api/pumps/{pumpId}/balance-sheets/{id}/regenerate
+     *
+     * Replaces a (typically stale) sheet with a fresh one for the same day, type and shift.
+     * Returns 201 CREATED with the new sheet, which has a new id. OWNER and ADMIN only, like delete.
+     */
+    @PostMapping("/{id}/regenerate")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OWNER')")
+    public ResponseEntity<BalanceSheetDetailResponse> regenerate(
+            @PathVariable Long pumpId,
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser) {
+
+        log.info("Balance sheet regeneration requested: pump={}, id={}, by={}", pumpId, id, currentUser.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(balanceSheetService.regenerate(pumpId, id, currentUser));
     }
 
     /**

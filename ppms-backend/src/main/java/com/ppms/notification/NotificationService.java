@@ -2,18 +2,26 @@ package com.ppms.notification;
 
 import com.ppms.ancillary.AncillaryProductRepository;
 import com.ppms.ancillary.AncillaryProductStatus;
+import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.document.PumpDocumentRepository;
 import com.ppms.fuel.GlobalFuelPriceRepository;
 import com.ppms.inventory.TankStockResponse;
+import com.ppms.pump.Nozzle;
+import com.ppms.pump.NozzleCalibrationLog;
 import com.ppms.pump.NozzleCalibrationLogRepository;
+import com.ppms.pump.NozzleRepository;
 import com.ppms.pump.TankStatus;
 import com.ppms.pump.UndergroundTankRepository;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.shift.ShiftStatus;
+import com.ppms.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +29,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Generates in-app notifications for pump alert conditions.
@@ -40,6 +52,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationService {
 
+    private static final int UNREAD_PAGE_SIZE = 100;
+    private static final int CALIBRATION_WARNING_DAYS = 7;
+
     private final NotificationRepository notificationRepository;
     private final PumpDocumentRepository documentRepository;
     private final GlobalFuelPriceRepository fuelPriceRepository;
@@ -47,6 +62,7 @@ public class NotificationService {
     private final AncillaryProductRepository ancillaryProductRepository;
     private final UndergroundTankRepository tankRepository;
     private final NozzleCalibrationLogRepository calibrationLogRepository;
+    private final NozzleRepository nozzleRepository;
     private final NotificationDedupService dedupService;
     private final BusinessClock businessClock;
 
@@ -65,22 +81,51 @@ public class NotificationService {
         generateAutoClosedShiftAlerts(pumpId, recentlyEndedShifts);
         generateAncillaryLowStockAlerts(pumpId);
         generateCalibrationDueAlerts(pumpId);
+        generateCalibrationDueSoonAlerts(pumpId);
         log.debug("Notification generation complete for pump={}", pumpId);
     }
 
     /**
-     * Returns the newest 100 unread notifications for a pump and the total unread count. Does NOT generate
-     * new ones — generation is handled by NotificationGenerationJob on a background schedule.
+     * Returns the newest 100 notifications this user has not read, limited to the types their role receives
+     * (see NotificationAudience), and their total unread count. Does NOT generate new ones — generation is
+     * handled by NotificationGenerationJob on a background schedule.
      */
-    public NotificationListResponse getUnreadNotifications(Long pumpId) {
+    @Transactional(readOnly = true)
+    public NotificationListResponse getUnreadNotifications(Long pumpId, User currentUser) {
+        Set<NotificationType> types = NotificationAudience.typesVisibleTo(currentUser.getRole());
         return new NotificationListResponse(
-                notificationRepository.findTop100ByPumpIdAndReadAtIsNullOrderByCreatedAtDesc(pumpId),
-                notificationRepository.countByPumpIdAndReadAtIsNull(pumpId));
+                notificationRepository.findUnreadForUser(pumpId, currentUser.getId(), types,
+                        PageRequest.of(0, UNREAD_PAGE_SIZE)).stream()
+                        .map(notification -> NotificationResponse.of(notification, false))
+                        .toList(),
+                notificationRepository.countUnreadForUser(pumpId, currentUser.getId(), types));
     }
 
     /**
-     * Deletes one batch of notifications read more than {@code days} ago, in its own transaction. A deleted
-     * row frees its dedup key, so a condition that is still true (e.g. a document still expired) alerts once more.
+     * One page of every notification this user's role receives, read or not, newest first, each marked with
+     * whether this user has read it. {@code type} narrows it to one type; a type the role does not receive
+     * gives an empty page.
+     */
+    @Transactional(readOnly = true)
+    public PagedResponse<NotificationResponse> getHistory(Long pumpId, NotificationType type, Pageable pageable,
+                                                          User currentUser) {
+        Set<NotificationType> visibleTypes = NotificationAudience.typesVisibleTo(currentUser.getRole());
+        Set<NotificationType> types = type == null ? visibleTypes
+                : visibleTypes.contains(type) ? Set.of(type) : Set.of();
+        if (types.isEmpty()) {
+            return PagedResponse.of(Page.<NotificationResponse>empty(pageable));
+        }
+        Page<Notification> page = notificationRepository.findHistory(pumpId, types, pageable);
+        List<Long> ids = page.getContent().stream().map(Notification::getId).toList();
+        Set<Long> readIds = ids.isEmpty() ? Set.of() : notificationRepository.findReadIdsForUser(currentUser.getId(), ids);
+        return PagedResponse.of(page.map(notification ->
+                NotificationResponse.of(notification, readIds.contains(notification.getId()))));
+    }
+
+    /**
+     * Deletes one batch of notifications that someone first read more than {@code days} ago, in its own
+     * transaction. Notifications nobody has read are kept. A deleted row frees its dedup key, so a condition
+     * that is still true (e.g. a document still expired) alerts once more.
      */
     @Transactional
     public int deleteReadBatchOlderThan(int days, int batchSize) {
@@ -116,10 +161,19 @@ public class NotificationService {
                 .toList();
     }
 
-    /** Marks only the given notifications of this pump as read, so alerts the user has not seen stay unread. */
+    /**
+     * Marks the given notifications as read for this user only; other users keep seeing them as unread.
+     * Types the user's role does not receive are ignored, so they cannot dismiss alerts meant for management.
+     */
     @Transactional
-    public int markRead(Long pumpId, List<Long> ids) {
-        return ids.isEmpty() ? 0 : notificationRepository.markReadForPump(pumpId, ids);
+    public int markRead(Long pumpId, List<Long> ids, User currentUser) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        List<String> types = NotificationAudience.typesVisibleTo(currentUser.getRole()).stream()
+                .map(Enum::name)
+                .toList();
+        return notificationRepository.markReadForUser(pumpId, currentUser.getId(), ids, types);
     }
 
     // ── Private generation helpers ────────────────────────────────────────────
@@ -128,11 +182,14 @@ public class NotificationService {
         tanks.stream()
                 .filter(TankStockResponse::isLowStock)
                 .forEach(tank -> {
-                    String dedupKey = "LOW_STOCK:tank:" + tank.getTankId() + ":" + businessClock.today();
-                    dedupService.maybeInsert(pumpId, NotificationType.LOW_STOCK, dedupKey,
+                    String stockPercent = String.format("%.1f", tank.getStockPercentage().doubleValue());
+                    dedupService.insertDaily(pumpId, NotificationType.LOW_STOCK,
+                            "LOW_STOCK:tank:" + tank.getTankId(), businessClock.today(),
                             "Low Tank Stock",
                             tank.getTankIdentifier() + " (" + tank.getFuelType() + ") is at "
-                                    + String.format("%.1f", tank.getStockPercentage().doubleValue()) + "% — delivery needed.");
+                                    + stockPercent + "% — delivery needed.",
+                            Map.of("tankName", tank.getTankIdentifier(), "fuelTypeCode", tank.getFuelType(),
+                                    "stockPercent", stockPercent));
                 });
     }
 
@@ -144,12 +201,11 @@ public class NotificationService {
         // for any pump that had already set prices, creating spam notifications.
         var currentPrices = fuelPriceRepository.findCurrentPricesForPump(pumpId);
         if (currentPrices.isEmpty()) {
-            LocalDate today = businessClock.today();
-            // Daily dedup key — re-alerts each day until at least one price is configured.
-            String dedupKey = "PRICE_STALE:" + today;
-            dedupService.maybeInsert(pumpId, NotificationType.PRICE_STALE, dedupKey,
+            // Re-alerts each day until at least one price is configured.
+            dedupService.insertDaily(pumpId, NotificationType.PRICE_STALE, "PRICE_STALE", businessClock.today(),
                     "Fuel Prices Not Configured",
-                    "No fuel prices have been set for this pump yet. Go to Setup → Fuel Prices to configure them.");
+                    "No fuel prices have been set for this pump yet. Go to Setup → Fuel Prices to configure them.",
+                    Map.of());
         }
     }
 
@@ -167,7 +223,9 @@ public class NotificationService {
                     String title   = expired ? "Document Expired" : "Document Expiring Soon";
                     String message = doc.getName() + " (" + doc.getDocType() + ") "
                             + (expired ? "expired on " : "expires on ") + doc.getExpiryDate();
-                    dedupService.maybeInsert(pumpId, NotificationType.DOCUMENT_EXPIRING, dedupKey, title, message);
+                    dedupService.maybeInsert(pumpId, NotificationType.DOCUMENT_EXPIRING, dedupKey, title, message,
+                            Map.of("documentName", doc.getName(), "documentType", String.valueOf(doc.getDocType()),
+                                    "expiryDate", doc.getExpiryDate().toString()));
                 });
     }
 
@@ -193,7 +251,8 @@ public class NotificationService {
                     dedupService.maybeInsert(pumpId, NotificationType.ZERO_SALE_SHIFT, dedupKey,
                             "Zero-Sale Shift Detected",
                             "Shift '" + shift.getShiftName() + "' (#" + shift.getId() + ") was open for over 30 minutes but recorded ₹0 in sales. " +
-                            "This may indicate a data entry error or missing readings. Please review.");
+                            "This may indicate a data entry error or missing readings. Please review.",
+                            Map.of("shiftName", String.valueOf(shift.getShiftName()), "shiftId", shift.getId()));
                 });
     }
 
@@ -211,7 +270,8 @@ public class NotificationService {
                     dedupService.maybeInsert(pumpId, NotificationType.AUTO_CLOSED_SHIFT, dedupKey,
                             "Shift Force-Closed Without Readings",
                             "Shift #" + shift.getId() + " was automatically closed because the operator never submitted " +
-                            "closing meter readings. End-meter data is missing — a manual reconciliation is required.");
+                            "closing meter readings. End-meter data is missing — a manual reconciliation is required.",
+                            Map.of("shiftId", shift.getId()));
                 });
     }
 
@@ -232,14 +292,54 @@ public class NotificationService {
      * Dedup key includes the due date, so each missed calibration cycle alerts once.
      */
     private void generateCalibrationDueAlerts(Long pumpId) {
-        calibrationLogRepository.findOverdueCalibrations(pumpId, businessClock.today())
-                .forEach(log -> {
-                    String dedupKey = "CALIBRATION_DUE:nozzle:" + log.getNozzleId() + ":" + log.getNextCalibrationDue();
-                    String message = "Nozzle #" + log.getNozzleId() + " calibration was due on "
-                            + log.getNextCalibrationDue() + ". Please schedule a calibration to remain compliant.";
-                    dedupService.maybeInsert(pumpId, NotificationType.CALIBRATION_DUE, dedupKey,
-                            "Nozzle Calibration Overdue", message);
-                });
+        List<NozzleCalibrationLog> overdue = calibrationLogRepository.findOverdueCalibrations(pumpId, businessClock.today());
+        if (overdue.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> nozzleNumberById = nozzleNumbersFor(overdue);
+        for (NozzleCalibrationLog calibration : overdue) {
+            String dedupKey = "CALIBRATION_DUE:nozzle:" + calibration.getNozzleId() + ":" + calibration.getNextCalibrationDue();
+            int nozzleNumber = nozzleNumberById.getOrDefault(calibration.getNozzleId(), 0);
+            String message = "Nozzle #" + nozzleNumber
+                    + " calibration was due on " + calibration.getNextCalibrationDue()
+                    + ". Please schedule a calibration to remain compliant.";
+            dedupService.maybeInsert(pumpId, NotificationType.CALIBRATION_DUE, dedupKey,
+                    "Nozzle Calibration Overdue", message,
+                    Map.of("nozzleNumber", nozzleNumber, "dueDate", calibration.getNextCalibrationDue().toString()));
+        }
+    }
+
+    /**
+     * Generates CALIBRATION_DUE_SOON alerts for nozzles whose latest calibration falls due within the next
+     * {@value #CALIBRATION_WARNING_DAYS} days, so it can be renewed before shifts on the nozzle are blocked.
+     * Dedup key includes the due date, so each due date alerts once per nozzle.
+     */
+    private void generateCalibrationDueSoonAlerts(Long pumpId) {
+        LocalDate today = businessClock.today();
+        List<NozzleCalibrationLog> dueSoon = calibrationLogRepository.findCalibrationsDueBetween(
+                pumpId, today, today.plusDays(CALIBRATION_WARNING_DAYS));
+        if (dueSoon.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> nozzleNumberById = nozzleNumbersFor(dueSoon);
+        for (NozzleCalibrationLog calibration : dueSoon) {
+            LocalDate due = calibration.getNextCalibrationDue();
+            String dedupKey = "CALIBRATION_DUE_SOON:nozzle:" + calibration.getNozzleId() + ":" + due;
+            int nozzleNumber = nozzleNumberById.getOrDefault(calibration.getNozzleId(), 0);
+            long daysLeft = ChronoUnit.DAYS.between(today, due);
+            String message = "Nozzle #" + nozzleNumber
+                    + " calibration is due on " + due + " (" + daysLeft + " day(s) left)."
+                    + " Shifts on this nozzle are blocked after that date until a new calibration is logged.";
+            dedupService.maybeInsert(pumpId, NotificationType.CALIBRATION_DUE_SOON, dedupKey,
+                    "Nozzle Calibration Due Soon", message,
+                    Map.of("nozzleNumber", nozzleNumber, "dueDate", due.toString(), "daysLeft", daysLeft));
+        }
+    }
+
+    private Map<Long, Integer> nozzleNumbersFor(List<NozzleCalibrationLog> calibrations) {
+        return nozzleRepository
+                .findAllById(calibrations.stream().map(NozzleCalibrationLog::getNozzleId).collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(Nozzle::getId, Nozzle::getNozzleNumber));
     }
 
     /**
@@ -254,12 +354,14 @@ public class NotificationService {
                 .filter(p -> p.getLowStockThreshold() != null
                         && p.getCurrentStockUnits() <= p.getLowStockThreshold())
                 .forEach(p -> {
-                    String dedupKey = "ANCILLARY_LOW_STOCK:product:" + p.getId() + ":" + businessClock.today();
                     String displayName = (p.getBrand() != null ? p.getBrand() + " " : "") + p.getName();
-                    dedupService.maybeInsert(pumpId, NotificationType.ANCILLARY_LOW_STOCK, dedupKey,
+                    dedupService.insertDaily(pumpId, NotificationType.ANCILLARY_LOW_STOCK,
+                            "ANCILLARY_LOW_STOCK:product:" + p.getId(), businessClock.today(),
                             "Low Product Stock",
                             displayName + " has only " + p.getCurrentStockUnits()
-                            + " unit(s) remaining (threshold: " + p.getLowStockThreshold() + "). Restock soon.");
+                            + " unit(s) remaining (threshold: " + p.getLowStockThreshold() + "). Restock soon.",
+                            Map.of("productName", displayName, "unitsLeft", p.getCurrentStockUnits(),
+                                    "threshold", p.getLowStockThreshold()));
                 });
     }
 }

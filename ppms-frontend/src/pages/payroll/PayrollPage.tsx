@@ -1,16 +1,27 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { Plus } from 'lucide-react'
+import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
+import { canPerformAction } from '../../permissions/permissions'
 import { userApi } from '../../api/userApi'
 import { payrollApi } from '../../api/payrollApi'
 import type { PayrollStatus } from '../../api/payrollApi'
-import { Reveal } from '../../components/Reveal'
-import { GeneratePayrollForm } from './GeneratePayrollForm'
+import { Page } from '../../components/layout/Page'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { useUrlParam } from '../../components/layout/useUrlParam'
+import { GeneratePayrollDialog } from './GeneratePayrollDialog'
 import { PayrollRecords } from './PayrollRecords'
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/** Salary drafts, approvals and payments per staff member; ?action=generate-payroll opens the generate form. */
 export default function PayrollPage() {
+  const { t } = useTranslation(['payroll', 'common'])
+  const { user } = useAuthStore()
   const { selectedPumpId: pumpId } = usePumpStore()
+  const canGenerate = canPerformAction('payroll:generate', user?.role)
+  const generateAction = useUrlParam('action')
+  const showGenerate = generateAction.value === 'generate-payroll' && canGenerate && pumpId !== null
 
   const { data: staff = [] } = useQuery({
     queryKey: ['staff', pumpId],
@@ -24,38 +35,45 @@ export default function PayrollPage() {
     enabled:  !!pumpId,
   })
 
-  // ── Accordion: track which status group is open ────────────────────────────
   const [openGroup, setOpenGroup] = useState<PayrollStatus | null>('DRAFT')
 
   return (
-    <div className="ui-page ui-page--narrow space-y-5">
+    <Page>
+      <PageHeader
+        title={t('page.title')}
+        description={t('page.subtitle')}
+        primaryAction={canGenerate && pumpId !== null && (
+          <button type="button" onClick={() => generateAction.set('generate-payroll')} className="ui-btn ui-btn-primary inline-flex items-center gap-1.5">
+            <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
+            {t('generate.title')}
+          </button>
+        )}
+      />
 
-      {/* ── Header ── */}
-      <Reveal delay={60}>
-      <div className="ui-page-header">
-        <div>
-        <h1 className="ui-title-sm">Payroll</h1>
-        <p className="ui-subtitle">Calculate and track staff salary payments based on shift history</p>
-        </div>
-      </div>
-      </Reveal>
+      {pumpId === null ? (
+        <div className="ui-card text-center text-sm text-ink-3">{t('common:notices.noPump')}</div>
+      ) : (
+        <>
+          {recordsError && (
+            <div className="ui-alert ui-alert-warning text-sm">
+              {t('page.loadFailed')}
+            </div>
+          )}
 
-      {recordsError && (
-        <div className="ui-alert ui-alert-warning text-sm">
-          Could not load payroll records. Check your connection and refresh.
-        </div>
+          <PayrollRecords
+            pumpId={pumpId}
+            staff={staff}
+            records={records}
+            isLoading={isLoading}
+            openGroup={openGroup}
+            onOpenGroupChange={setOpenGroup}
+          />
+        </>
       )}
 
-      <GeneratePayrollForm pumpId={pumpId} staff={staff} onGenerated={() => setOpenGroup('DRAFT')} />
-
-      <PayrollRecords
-        pumpId={pumpId}
-        staff={staff}
-        records={records}
-        isLoading={isLoading}
-        openGroup={openGroup}
-        onOpenGroupChange={setOpenGroup}
-      />
-    </div>
+      {showGenerate && (
+        <GeneratePayrollDialog pumpId={pumpId} staff={staff} onGenerated={() => setOpenGroup('DRAFT')} onClose={generateAction.remove} />
+      )}
+    </Page>
   )
 }

@@ -1,7 +1,9 @@
 package com.ppms.credit;
 
+import java.util.Map;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.TooManyRequestsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,7 +39,7 @@ public class CreditBalanceLookupLimiter {
         if (ipCount > MAX_LOOKUPS_PER_IP || phoneCount > MAX_LOOKUPS_PER_PHONE) {
             log.warn("Credit balance lookup blocked: ip={} pump={} ipLookups={} phoneLookups={} in last {}m",
                     ipAddress, pumpId, ipCount, phoneCount, WINDOW_MINUTES);
-            throw new TooManyRequestsException(
+            throw new TooManyRequestsException(ErrorCodes.TOO_MANY_BALANCE_LOOKUPS, Map.of("minutes", WINDOW_MINUTES),
                     "Too many balance lookups. Please wait " + WINDOW_MINUTES + " minutes before trying again.");
         }
     }

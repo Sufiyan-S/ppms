@@ -102,6 +102,55 @@ class CreditInvoiceIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void payingTheWholeInvoiceIncludingCounterSalesIsAcceptedAndClearsTheBalance() throws Exception {
+        long clientId = createClient(SAME_STATE_GSTIN);
+        sellFuelOnCredit(clientId, "1000.00");
+        sellProductOnCredit(clientId, "236.00", 2);
+        JsonNode invoice = json(generate(clientId).andExpect(status().isCreated()));
+
+        perform(post("/api/pumps/{pumpId}/credit-ledger/{clientId}/payments", setup.pumpId(), clientId), setup.owner(),
+                Map.of("amount", invoice.get("grandTotal").decimalValue(), "paymentMode", "CASH", "paidAt", TODAY.toString()))
+                .andExpect(status().is2xxSuccessful());
+
+        JsonNode clients = json(perform(get("/api/pumps/{pumpId}/credit-clients", setup.pumpId()), setup.owner())
+                .andExpect(status().isOk()));
+        assertThat(clients).anySatisfy(client -> {
+            assertThat(client.get("id").asLong()).isEqualTo(clientId);
+            assertThat(client.get("outstandingBalance").decimalValue()).isEqualByComparingTo("0.00");
+        });
+    }
+
+    @Test
+    void counterSaleIsInvoicedAtTheGstRateStoredOnTheSaleAfterTheProductRateChanged() throws Exception {
+        long clientId = createClient(SAME_STATE_GSTIN);
+        saveProductSale(clientId, "224.00", 2, TransactionPaymentMode.CREDIT, new BigDecimal("12.00"));
+
+        JsonNode invoice = json(generate(clientId).andExpect(status().isCreated()));
+
+        assertThat(invoice.get("taxableTotal").decimalValue()).isEqualByComparingTo("200.00");
+        assertThat(invoice.get("cgstTotal").decimalValue()).isEqualByComparingTo("12.00");
+        assertThat(invoice.get("sgstTotal").decimalValue()).isEqualByComparingTo("12.00");
+        assertThat(detail(invoice).get("lines").get(0).get("gstRate").decimalValue()).isEqualByComparingTo("12.00");
+    }
+
+    @Test
+    void creditEntryOfABackfilledShiftIsInvoicedInTheMonthOfTheShiftNotTheMonthItWasEntered() throws Exception {
+        long clientId = createClient(SAME_STATE_GSTIN);
+        LocalDate lastMonthDay = TODAY.withDayOfMonth(1).minusMonths(1).plusDays(9);
+        recordDelivery(setup, "1000", "90.00", lastMonthDay.minusDays(1));
+        perform(post("/api/pumps/{pumpId}/shifts/backfill", setup.pumpId()), setup.owner(),
+                backfillWithCredit(lastMonthDay, clientId, "300.00"))
+                .andExpect(status().is2xxSuccessful());
+
+        generate(clientId).andExpect(status().isBadRequest());
+        JsonNode invoice = json(generate(clientId, lastMonthDay.withDayOfMonth(1),
+                lastMonthDay.withDayOfMonth(lastMonthDay.lengthOfMonth())).andExpect(status().isCreated()));
+
+        assertThat(invoice.get("fuelTotal").decimalValue()).isEqualByComparingTo("300.00");
+        assertThat(detail(invoice).get("lines").get(0).get("saleDate").asText()).isEqualTo(lastMonthDay.toString());
+    }
+
+    @Test
     void voidedEntriesOtherClientsAndCashSalesAreLeftOut() throws Exception {
         long clientId = createClient(null);
         long otherClientId = createClient(null);
@@ -232,6 +281,52 @@ class CreditInvoiceIntegrationTest extends ApiIntegrationTest {
                 .andExpect(status().isOk())).get("content");
         assertThat(invoices).extracting(invoice -> invoice.get("invoiceNumber").asText())
                 .containsExactlyInAnyOrder("PMP3/" + FINANCIAL_YEAR + "/0001", "PMP3/" + FINANCIAL_YEAR + "/0002");
+    }
+
+    @Test
+    void previewForAllClientsEqualsWhatGeneratingForAllClientsIssues() throws Exception {
+        long firstClientId = createClient(null);
+        long secondClientId = createClient(OTHER_STATE_GSTIN);
+        long subAccountId = createSubAccount(firstClientId);
+        createClient(null);
+        sellFuelOnCredit(firstClientId, "100.00");
+        sellFuelOnCredit(subAccountId, "50.00");
+        sellFuelOnCredit(secondClientId, "200.00");
+        sellProductOnCredit(secondClientId, "236.00", 2);
+
+        JsonNode preview = json(preview(setup.admin()).andExpect(status().isOk()));
+
+        JsonNode result = json(perform(post("/api/pumps/{pumpId}/credit-invoices/generate-all", setup.pumpId()),
+                setup.admin(), Map.of("periodFrom", TODAY.toString(), "periodTo", TODAY.toString()))
+                .andExpect(status().isOk()));
+        JsonNode invoices = json(perform(get("/api/pumps/{pumpId}/credit-invoices", setup.pumpId()), setup.owner())
+                .andExpect(status().isOk())).get("content");
+        BigDecimal issuedTotal = BigDecimal.ZERO;
+        for (JsonNode invoice : invoices) {
+            issuedTotal = issuedTotal.add(invoice.get("grandTotal").decimalValue());
+        }
+
+        assertThat(preview.get("clientsToInvoice").asInt()).isEqualTo(3).isEqualTo(result.get("invoicesIssued").asInt());
+        assertThat(preview.get("totalAmount").decimalValue()).isEqualByComparingTo("586.00").isEqualByComparingTo(issuedTotal);
+        assertThat(preview.get("gstDetailsComplete").asBoolean()).isTrue();
+        JsonNode afterRun = json(preview(setup.admin()).andExpect(status().isOk()));
+        assertThat(afterRun.get("clientsToInvoice").asInt()).isZero();
+        assertThat(afterRun.get("totalAmount").decimalValue()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void previewReportsMissingGstDetailsAndIsOnlyForOwnerAndAdmin() throws Exception {
+        long clientId = createClient(null);
+        sellFuelOnCredit(clientId, "100.00");
+        perform(patch("/api/pumps/{pumpId}/settings", setup.pumpId()), setup.owner(), Map.of("gstin", ""))
+                .andExpect(status().isOk());
+
+        JsonNode preview = json(preview(setup.owner()).andExpect(status().isOk()));
+
+        assertThat(preview.get("gstDetailsComplete").asBoolean()).isFalse();
+        assertThat(preview.get("clientsToInvoice").asInt()).isEqualTo(1);
+        preview(setup.manager()).andExpect(status().isForbidden());
+        preview(setup.accountant()).andExpect(status().isForbidden());
     }
 
     @Test
@@ -427,7 +522,32 @@ class CreditInvoiceIntegrationTest extends ApiIntegrationTest {
         return saveProductSale(clientId, pricePaid, quantity, TransactionPaymentMode.CREDIT);
     }
 
+    /** Ten litres at ₹95 on a past day: ₹650 cash and one ₹300 credit entry for the client. */
+    private Map<String, Object> backfillWithCredit(LocalDate shiftDate, long clientId, String creditAmount) {
+        Map<String, Object> request = new HashMap<>();
+        request.put("shiftDefinitionId", setup.allDayShift().getId());
+        request.put("shiftDate", shiftDate.toString());
+        request.put("duId", setup.du().getId());
+        request.put("operatorId", setup.operator().getId());
+        request.put("nozzleReadings", List.of(Map.of("nozzleId", setup.nozzle().getId(),
+                "openingReading", new BigDecimal("1000.000"), "closingReading", new BigDecimal("1010.000"))));
+        request.put("cashCollected", new BigDecimal("950.00").subtract(new BigDecimal(creditAmount)));
+        request.put("upiCollected", BigDecimal.ZERO);
+        request.put("cardCollected", BigDecimal.ZERO);
+        request.put("fleetCardCollected", BigDecimal.ZERO);
+        request.put("creditTotal", new BigDecimal(creditAmount));
+        request.put("creditEntries", List.of(Map.of("clientName", "Client", "clientId", clientId,
+                "amount", new BigDecimal(creditAmount), "fuelType", "PETROL")));
+        request.put("fuelRateOverrides", Map.of("PETROL", new BigDecimal("95.00")));
+        return request;
+    }
+
     private long saveProductSale(long clientId, String pricePaid, int quantity, TransactionPaymentMode paymentMode) {
+        return saveProductSale(clientId, pricePaid, quantity, paymentMode, new BigDecimal("18.00"));
+    }
+
+    private long saveProductSale(long clientId, String pricePaid, int quantity, TransactionPaymentMode paymentMode,
+                                 BigDecimal saleGstRate) {
         AncillaryProduct product = productRepository.save(AncillaryProduct.builder()
                 .pumpId(setup.pumpId())
                 .name("Engine oil " + shortId())
@@ -447,6 +567,7 @@ class CreditInvoiceIntegrationTest extends ApiIntegrationTest {
                 .totalAmount(total)
                 .gstAmount(BigDecimal.ZERO.setScale(2))
                 .totalWithGst(total)
+                .gstRatePercent(saleGstRate)
                 .paymentMode(paymentMode)
                 .clientId(clientId)
                 .clientName("Client")
@@ -459,9 +580,20 @@ class CreditInvoiceIntegrationTest extends ApiIntegrationTest {
         return generate(clientId, setup.owner());
     }
 
+    private ResultActions preview(User user) throws Exception {
+        return perform(get("/api/pumps/{pumpId}/credit-invoices/generate-all/preview", setup.pumpId())
+                .param("periodFrom", TODAY.toString())
+                .param("periodTo", TODAY.toString()), user);
+    }
+
     private ResultActions generate(long clientId, User user) throws Exception {
         return perform(post("/api/pumps/{pumpId}/credit-invoices", setup.pumpId()), user,
                 Map.of("clientId", clientId, "periodFrom", TODAY.toString(), "periodTo", TODAY.toString()));
+    }
+
+    private ResultActions generate(long clientId, LocalDate periodFrom, LocalDate periodTo) throws Exception {
+        return perform(post("/api/pumps/{pumpId}/credit-invoices", setup.pumpId()), setup.owner(),
+                Map.of("clientId", clientId, "periodFrom", periodFrom.toString(), "periodTo", periodTo.toString()));
     }
 
     private ResultActions cancel(long invoiceId, Map<String, Object> body) throws Exception {

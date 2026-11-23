@@ -42,6 +42,18 @@ class PumpSetupRulesIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void nozzleReadingCanNoLongerBeOverwrittenDirectly() throws Exception {
+        int status = perform(put("/api/pumps/{pumpId}/dus/{duId}/nozzles/{nozzleId}/reading",
+                        setup.pumpId(), setup.du().getId(), setup.nozzle().getId()),
+                setup.owner(), Map.of("reading", new BigDecimal("1")))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(status).isIn(404, 405);
+        assertThat(nozzleRepository.findById(setup.nozzle().getId()).orElseThrow().getLastReading())
+                .isEqualByComparingTo("1000.000");
+    }
+
+    @Test
     void tankOfAnotherPumpCannotBeDisabledThroughThisPump() throws Exception {
         PumpSetup other = createPumpWithStock("0");
 

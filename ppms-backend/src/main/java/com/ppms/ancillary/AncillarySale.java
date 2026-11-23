@@ -61,6 +61,10 @@ public class AncillarySale {
     @Column(name = "total_with_gst", nullable = false, precision = 14, scale = 2)
     private BigDecimal totalWithGst;
 
+    /** The product's GST rate when it was sold, so a later rate change does not alter this sale's invoice. */
+    @Column(name = "gst_rate_percent", nullable = false, precision = 5, scale = 2)
+    private BigDecimal gstRatePercent;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "payment_mode", nullable = false)

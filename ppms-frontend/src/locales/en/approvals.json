@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "Approvals",
+    "subtitle": "Expenses and credit payments that need your decision before they count",
+    "noPumpSubtitle": "Choose a pump in the top bar.",
+    "emptyTitle": "Nothing is waiting for approval",
+    "emptySubtitle": "New expenses and payments above your approval limit will appear here.",
+    "waitingCount_one": "{{count}} waiting",
+    "waitingCount_other": "{{count}} waiting",
+    "queue": "Waiting for your decision"
+  },
+  "filters": {
+    "label": "Show",
+    "all": "All",
+    "expenses": "Expenses",
+    "payments": "Credit payments"
+  },
+  "kind": {
+    "expense": "Expense",
+    "creditPayment": "Credit payment"
+  },
+  "selection": {
+    "summary": "{{count}} selected · {{amount}}",
+    "hint": "Select items to approve or reject them together.",
+    "reject": "Reject selected",
+    "approve": "Approve selected",
+    "approving": "Approving…"
+  },
+  "outcome": {
+    "approved_one": "{{count}} item approved.",
+    "approved_other": "{{count}} items approved.",
+    "rejected_one": "{{count}} item rejected.",
+    "rejected_other": "{{count}} items rejected.",
+    "notApproved_one": "{{count}} could not be approved:",
+    "notApproved_other": "{{count}} could not be approved:",
+    "notRejected_one": "{{count}} could not be rejected:",
+    "notRejected_other": "{{count}} could not be rejected:",
+    "expenseName": "Expense {{amount}}",
+    "paymentName": "Payment {{amount}}",
+    "notSaved": "not saved"
+  },
+  "errors": {
+    "approveFailed": "Could not approve the selected items",
+    "rejectFailed": "Could not reject the selected items",
+    "loadFailed": "Could not load the approval queue. Refresh to try again."
+  },
+  "rejectDialog": {
+    "title_one": "Reject {{count}} item",
+    "title_other": "Reject {{count}} items",
+    "subtitle": "{{amount}} in total; the reason is saved with each rejection"
+  },
+  "table": {
+    "caption": "Expenses and credit payments waiting for approval, oldest first",
+    "region": "Approval queue",
+    "selectAll": "Select all items",
+    "selectExpense": "Select expense {{name}} {{amount}}",
+    "selectPayment": "Select credit payment {{name}} {{amount}}",
+    "clientNumber": "Client #{{id}}",
+    "type": "Type",
+    "categoryOrClient": "Category or client",
+    "amount": "Amount",
+    "submittedBy": "Submitted by",
+    "waiting": "Waiting",
+    "date": "Date",
+    "note": "Note"
+  },
+  "waiting": {
+    "justNow": "just now",
+    "minutes_one": "{{count}} min",
+    "minutes_other": "{{count}} min",
+    "hours_one": "{{count}} hour",
+    "hours_other": "{{count}} hours",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days"
+  }
+}

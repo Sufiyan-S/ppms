@@ -46,4 +46,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<Object[]> countStaffByPumpIds(@Param("pumpIds") List<Long> pumpIds);
 
     boolean existsByAssignedPumpId(Long assignedPumpId);
+
+    boolean existsByAssignedPumpIdAndStatus(Long assignedPumpId, UserStatus status);
 }

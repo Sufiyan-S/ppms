@@ -1,6 +1,8 @@
 package com.ppms.shift;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.fuel.FuelType;
@@ -12,6 +14,8 @@ import com.ppms.pump.Nozzle;
 import com.ppms.pump.NozzleRepository;
 import com.ppms.pump.PumpShiftDefinition;
 import com.ppms.pump.PumpShiftDefinitionRepository;
+import com.ppms.report.BalanceSheetStalenessService;
+import com.ppms.report.StaleReasons;
 import com.ppms.settlement.PaymentSettlement;
 import com.ppms.settlement.PaymentSettlementRepository;
 import com.ppms.settlement.SettlementPaymentType;
@@ -57,6 +61,7 @@ public class ShiftBackfillService {
     private final ShiftReadModelService shiftReadModelService;
     private final ShiftFuelDeductionService fuelDeductionService;
     private final BusinessClock businessClock;
+    private final BalanceSheetStalenessService balanceSheetStalenessService;
 
     private record StockScope(Long tankId, FuelType fuelType) {}
 
@@ -83,10 +88,10 @@ public class ShiftBackfillService {
 
         // The definition is only a label and time range for backfill; it need not have been active on shiftDate.
         PumpShiftDefinition shiftDef = shiftDefinitionRepository.findById(request.getShiftDefinitionId())
-                .orElseThrow(() -> new ResourceNotFoundException(
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT_DEFINITION,
                         "Shift definition not found: " + request.getShiftDefinitionId()));
         if (!shiftDef.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Shift definition not found");
+            throw new ResourceNotFoundException(EntityType.SHIFT_DEFINITION, "Shift definition not found");
         }
 
         ZoneId ist = businessClock.zone();
@@ -96,9 +101,10 @@ public class ShiftBackfillService {
         applyRateOverrides(pumpId, shiftDate, priceAsOf, request.getFuelRateOverrides(), currentUser);
 
         DispensaryUnit du = duRepository.findById(request.getDuId())
-                .orElseThrow(() -> new ResourceNotFoundException("Dispensary Unit not found: " + request.getDuId()));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.DISPENSARY_UNIT,
+                        "Dispensary Unit not found: " + request.getDuId()));
         if (!du.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Dispensary Unit not found");
+            throw new ResourceNotFoundException(EntityType.DISPENSARY_UNIT, "Dispensary Unit not found");
         }
 
         User operator = lifecycleSupportService.findOperatorForPump(request.getOperatorId(), pumpId);
@@ -129,10 +135,12 @@ public class ShiftBackfillService {
         shift = shiftRepository.save(shift);
 
         if (request.getCreditEntries() != null && !request.getCreditEntries().isEmpty()) {
-            lifecycleSupportService.persistCloseCreditEntries(shiftId, pumpId, request.getCreditEntries());
+            lifecycleSupportService.persistCloseCreditEntries(shiftId, pumpId, shiftDate, request.getCreditEntries());
         }
 
         autoSettleBackfilledDigitalPayments(pumpId, shiftId, shiftDate, request, currentUser);
+        balanceSheetStalenessService.markSheetsOfShiftStale(pumpId, shiftDate, shiftDef.getId(),
+                StaleReasons.shiftBackfilled(shiftId));
 
         log.info("Shift {} backfilled by {}: du={}, operator={}, date={}, definition='{}', totalDue={}, status={}",
                 shiftId, currentUser.getId(), du.getId(), operator.getId(),
@@ -146,11 +154,11 @@ public class ShiftBackfillService {
     private void validateBackfillDate(LocalDate shiftDate) {
         LocalDate today = businessClock.today();
         if (!shiftDate.isBefore(today)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.BACKFILL_DATE_NOT_BEFORE_TODAY, Map.of(),
                     "Backfill shift date must be before today. Use the normal shift flow for today's shifts.");
         }
         if (shiftDate.isBefore(today.minusDays(365))) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.BACKFILL_DATE_TOO_OLD, Map.of("shiftDate", shiftDate.toString()),
                     "Backfill is only supported for shifts within the last 365 days. " +
                     "The provided date " + shiftDate + " is too far in the past.");
         }
@@ -172,18 +180,25 @@ public class ShiftBackfillService {
             try {
                 fuelType = FuelType.valueOf(entry.getKey());
             } catch (IllegalArgumentException e) {
-                throw new BusinessException("Invalid fuel type in fuelRateOverrides: " + entry.getKey());
+                throw new BusinessException(ErrorCodes.BACKFILL_INVALID_FUEL_TYPE,
+                        Map.of("fuelType", String.valueOf(entry.getKey())),
+                        "Invalid fuel type in fuelRateOverrides: " + entry.getKey());
             }
             BigDecimal rate = entry.getValue();
             if (rate == null || rate.compareTo(ZERO) <= 0) {
-                throw new BusinessException("Fuel rate for " + fuelType + " must be greater than zero.");
+                throw new BusinessException(ErrorCodes.BACKFILL_FUEL_RATE_NOT_POSITIVE,
+                        Map.of("fuelTypeCode", fuelType.name()),
+                        "Fuel rate for " + fuelType + " must be greater than zero.");
             }
             Optional<GlobalFuelPrice> recordedPrice = fuelPriceRepository
                     .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
                             pumpId, fuelType, priceAsOf);
             if (recordedPrice.isPresent()) {
                 if (recordedPrice.get().getPricePerUnit().compareTo(rate) != 0) {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.BACKFILL_RATE_CONFLICTS_WITH_PRICE, Map.of("fuelTypeCode", fuelType.name(),
+                                    "recordedPrice", recordedPrice.get().getPricePerUnit().toPlainString(),
+                                    "effectiveDate", recordedPrice.get().getEffectiveFrom().atZoneSameInstant(ist).toLocalDate().toString(),
+                                    "shiftDate", shiftDate.toString(), "rate", rate.toPlainString()),
                             "A " + fuelType + " price of ₹" + recordedPrice.get().getPricePerUnit().toPlainString() +
                             " (effective " + recordedPrice.get().getEffectiveFrom().atZoneSameInstant(ist).toLocalDate() +
                             ") already applies to " + shiftDate + ". The entered rate ₹" + rate.toPlainString() +
@@ -208,20 +223,24 @@ public class ShiftBackfillService {
         List<Nozzle> nozzles = new ArrayList<>();
         for (BackfillShiftRequest.NozzleReadingRequest nr : nozzleReadings) {
             Nozzle nozzle = nozzleRepository.findById(nr.nozzleId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found: " + nr.nozzleId()));
+                    .orElseThrow(() -> new ResourceNotFoundException(EntityType.NOZZLE,
+                            "Nozzle not found: " + nr.nozzleId()));
 
             if (!nozzle.getDuId().equals(du.getId())) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.NOZZLE_NOT_IN_DU,
+                        Map.of("nozzleNumber", nozzle.getNozzleNumber(), "duName", du.getName()),
                         "Nozzle #" + nozzle.getNozzleNumber() + " does not belong to DU '" + du.getName() + "'.");
             }
             if (nr.closingReading().compareTo(nr.openingReading()) < 0) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.BACKFILL_CLOSING_READING_BELOW_OPENING, Map.of("closingReading", nr.closingReading().toPlainString(),
+                                "openingReading", nr.openingReading().toPlainString(), "nozzleNumber", nozzle.getNozzleNumber()),
                         "Closing reading (" + nr.closingReading() + ") cannot be less than opening reading (" +
                         nr.openingReading() + ") for nozzle #" + nozzle.getNozzleNumber() +
                         ". Meter rollover is not supported for backfilled shifts.");
             }
             if (shiftRepository.countForNozzleDateAndDefinition(nozzle.getId(), shiftDate, shiftDef.getId()) > 0) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.BACKFILL_SHIFT_ALREADY_EXISTS, Map.of("nozzleNumber", nozzle.getNozzleNumber(),
+                                "shiftDate", shiftDate.toString(), "shiftName", shiftDef.getName()),
                         "A shift for nozzle #" + nozzle.getNozzleNumber() +
                         " on " + shiftDate + " under '" + shiftDef.getName() + "' already exists.");
             }
@@ -238,7 +257,8 @@ public class ShiftBackfillService {
                     .findFirstByPumpIdAndFuelTypeAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(
                             pumpId, fuelType, priceAsOf)
                     .map(GlobalFuelPrice::getPricePerUnit)
-                    .orElseThrow(() -> new BusinessException(
+                    .orElseThrow(() -> new BusinessException(ErrorCodes.BACKFILL_NO_FUEL_PRICE,
+                            Map.of("fuelTypeCode", fuelType.name(), "shiftDate", shiftDate.toString()),
                             "No fuel price found for " + fuelType + " on or before " + shiftDate +
                             ". Please set the historical price before backfilling this shift.")));
         }
@@ -272,7 +292,9 @@ public class ShiftBackfillService {
             FuelType fuelType = fuelTypeByScope.get(scope);
             BigDecimal available = fuelDeductionService.availableStockAsOf(pumpId, fuelType, scope.tankId(), stockAsOf);
             if (needed.compareTo(available) > 0) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.BACKFILL_INSUFFICIENT_STOCK, Map.of("fuelTypeCode", fuelType.name(), "shiftDate", shiftDate.toString(),
+                                "litresNeeded", needed.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                                "litresAvailable", available.setScale(2, RoundingMode.HALF_UP).toPlainString()),
                         "Insufficient " + fuelType.name() + " stock for backfill on " + shiftDate +
                         ": shift needs " + needed.setScale(2, RoundingMode.HALF_UP) +
                         " L but only " + available.setScale(2, RoundingMode.HALF_UP) +
@@ -359,7 +381,8 @@ public class ShiftBackfillService {
             discrepancyType = totalCollected.compareTo(totalAmountDue) < 0 ? DiscrepancyType.SHORT : DiscrepancyType.OVER;
             finalStatus = ShiftStatus.CLOSED_DISCREPANCY_PENDING;
             if (request.getDiscrepancyReason() == null || request.getDiscrepancyReason().isBlank()) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.DISCREPANCY_REASON_REQUIRED, Map.of("expectedAmount", totalAmountDue.toPlainString(),
+                                "collectedAmount", totalCollected.toPlainString()),
                         "A discrepancy reason is required when the collected amount does not match the expected amount. " +
                         "Expected: ₹" + totalAmountDue + ", Collected: ₹" + totalCollected + ".");
             }

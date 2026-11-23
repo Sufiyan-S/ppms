@@ -24,6 +24,11 @@ public interface LotConsumptionRepository extends JpaRepository<LotConsumption, 
     /** Batch fetch for all consumptions across multiple lots — avoids N+1 in inventory lots report. */
     List<LotConsumption> findByLotIdIn(java.util.Collection<Long> lotIds);
 
+    /** Stock drawn from the lots by dip checks that found less fuel than expected. */
+    List<LotConsumption> findByDipCorrectionIdIn(java.util.Collection<Long> dipCheckIds);
+
+    List<LotConsumption> findByFuelDipEntryIdIn(java.util.Collection<Long> fuelDipEntryIds);
+
     /** Consumptions of the lots selected by InventoryLotRepository.findReportLots, joined instead of passing lot ids. */
     @Query("""
             SELECT c FROM LotConsumption c, InventoryLot l

@@ -1,0 +1,129 @@
+{
+  "items": {
+    "myShift": "My Shift",
+    "overview": "Overview",
+    "approvals": "Approvals",
+    "shifts": "Shifts",
+    "shiftPlanning": "Shift Planning",
+    "inventory": "Inventory",
+    "credit": "Credit",
+    "expenses": "Expenses",
+    "documents": "Documents",
+    "cashDrawer": "Cash Drawer",
+    "calibration": "Calibration",
+    "payroll": "Payroll",
+    "products": "Products",
+    "auditLog": "Audit Log",
+    "settlements": "Settlements",
+    "balanceSheets": "Balance Sheets",
+    "reports": "Reports",
+    "setup": "Setup",
+    "notifications": "Notifications"
+  },
+  "bottomTabs": {
+    "label": "Quick",
+    "myShift": "My shift",
+    "overview": "Home",
+    "shifts": "Shifts",
+    "shiftPlanning": "Plan",
+    "inventory": "Stock",
+    "credit": "Credit",
+    "expenses": "Expenses",
+    "cashDrawer": "Cash",
+    "reports": "Reports",
+    "more": "More"
+  },
+  "pageTitles": {
+    "notifications": "Notifications",
+    "login": "Sign in",
+    "forgotPassword": "Forgot password",
+    "resetPassword": "Reset password",
+    "changePassword": "Change password",
+    "superAdmin": "Super Admin",
+    "creditBalance": "Credit balance"
+  },
+  "sidebar": {
+    "label": "Main",
+    "title": "Menu",
+    "closeMenu": "Close menu",
+    "currentPump": "Current pump",
+    "collapse": "Collapse sidebar"
+  },
+  "topbar": {
+    "skipToContent": "Skip to main content",
+    "currentTime": "Current time: {{value}}",
+    "shift": {
+      "name": "{{name}} shift",
+      "endsIn": "ends in {{value}}",
+      "hours": "{{hours}}h",
+      "minutes": "{{minutes}}m",
+      "hoursMinutes": "{{hours}}h {{minutes}}m",
+      "open_one": "{{count}} open",
+      "open_other": "{{count}} open",
+      "summary": "Current shift: {{name}}, ends in {{value}}. View shifts.",
+      "openSummary_one": "{{count}} shift open.",
+      "openSummary_other": "{{count}} shifts open."
+    }
+  },
+  "pumpSwitcher": {
+    "switchTo": "Switch to {{name}}"
+  },
+  "suspended": {
+    "yourPumpTitle": "Your pump is suspended",
+    "yourPumpBody": "Its data cannot be viewed or changed until the pump is reactivated. Please contact the pump owner.",
+    "thisPumpTitle": "This pump is suspended",
+    "thisPumpBody": "Its data cannot be viewed or changed until the pump is reactivated.",
+    "chooseAnotherPump": " Choose another pump at the top of the page, or contact PPMS support to reactivate this one.",
+    "contactOwnerOrSupport": " Please contact the pump owner or PPMS support."
+  },
+  "profile": {
+    "yourName": "Your name",
+    "saveName": "Save name",
+    "cancelEditing": "Cancel editing",
+    "editName": "Edit your name, {{name}}",
+    "editNameHint": "Click to edit your name",
+    "nameBlank": "Name cannot be blank",
+    "saveNameFailed": "Failed to save name",
+    "openMenu": "Open profile menu",
+    "changePassword": "Change password",
+    "logout": "Logout",
+    "loggingOut": "Logging out...",
+    "density": "Density",
+    "densityComfortable": "Comfortable",
+    "densityCompact": "Compact",
+    "densityHint": "Compact fits more rows on larger screens. Phones stay comfortable."
+  },
+  "groups": {
+    "operations": "Operations",
+    "money": "Money",
+    "reports": "Reports",
+    "admin": "Admin"
+  },
+  "palette": {
+    "open": "Jump to…",
+    "shortcutOther": "Ctrl K",
+    "shortcutMac": "⌘K",
+    "title": "Jump to a page or action",
+    "searchLabel": "Search pages and actions",
+    "placeholder": "Type a page or action…",
+    "resultsLabel": "Pages and actions",
+    "pages": "Pages",
+    "noResults": "No page or action matches.",
+    "keyboardHint": "↑ ↓ to move · Enter to open · Esc to close",
+    "actions": {
+      "label": "Quick actions",
+      "openShift": "Open shift",
+      "recordDelivery": "Record delivery",
+      "recordPayment": "Record payment",
+      "addExpense": "Add expense",
+      "cashEntry": "Record cash entry",
+      "dipCheck": "Record dip check",
+      "recordSettlement": "Record settlement",
+      "sellProduct": "Sell a product",
+      "generateSheet": "Generate balance sheet",
+      "generatePayroll": "Generate payroll",
+      "setFuelPrices": "Set fuel prices",
+      "addStaff": "Add staff member"
+    }
+  }
+}

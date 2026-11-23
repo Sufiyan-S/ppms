@@ -1,6 +1,11 @@
-import { Truck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { formatNumberIn } from '../../../i18n/format'
 import type { Tanker } from '../../../api/tankerApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
+import { FormField } from '../../../components/FormField'
+import { LiveFigures } from '../../../components/LiveFigures'
+import { LitresText } from '../../../components/AmountText'
+import { FormGrid, FormGridFullRow } from '../../../components/layout/FormGrid'
 
 interface Props {
   date: string
@@ -17,76 +22,50 @@ interface Props {
 }
 
 export function DeliveryHeaderFields({ date, setDate, invoice, setInvoice, tankers, selectedTanker, selectedTankerId, setSelectedTankerId, tankerMismatch, tankerRemaining, totalEnteredQty }: Props) {
+  const { t } = useTranslation('inventory')
+  const isOver = tankerRemaining !== null && tankerRemaining < 0
   return (
-    <div className="ui-modal-body border-b border-slate-100 flex-shrink-0">
-      <div className="ui-inline-form">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block">
-            <span className="ui-label">
-            Delivery Date <span className="text-red-500">*</span>
-          </span>
-            <input
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="shadow-sm"
-            />
-          </label>
-        </div>
-        <div>
-          <label className="block">
-            <span className="ui-label">
-            Invoice / Bill No. <span className="text-red-500">*</span>
-          </span>
-            <input
-              type="text"
-              value={invoice}
-              onChange={e => setInvoice(e.target.value)}
-              placeholder="e.g. INV-2026-0042"
-              className="shadow-sm"
-            />
-          </label>
-        </div>
-      </div>
+    <FormGrid>
+      <FormField label={t('header.date')}>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} data-autofocus />
+      </FormField>
+      <FormField label={t('header.invoice')}>
+        <input type="text" value={invoice} onChange={e => setInvoice(e.target.value)} />
+      </FormField>
 
       {tankers.length > 0 && (
-        <div className="mt-3">
-          <span className="ui-label">Tanker (Truck)</span>
-          <SearchableSelect label="Tanker (Truck)"
+        <FormGridFullRow>
+          <span className="ui-label">{t('header.tanker')}</span>
+          <SearchableSelect label={t('header.tanker')}
             value={selectedTankerId !== null ? String(selectedTankerId) : ''}
             onChange={v => setSelectedTankerId(v ? Number(v) : null)}
             options={[
-              { value: '', label: '— No tanker selected —' },
-              ...tankers.map(t => ({
-                value: String(t.id),
-                label: `${t.name} · ${t.capacityLitres.toLocaleString('en-IN')} L${t.defaultTanker ? ' (Default)' : ''}`,
+              { value: '', label: t('header.noTanker') },
+              ...tankers.map(tanker => ({
+                value: String(tanker.id),
+                label: t(tanker.defaultTanker ? 'header.tankerOptionDefault' : 'header.tankerOption', { name: tanker.name, capacity: formatNumberIn(tanker.capacityLitres) }),
               })),
             ]}
-            placeholder="Select tanker…"
+            placeholder={t('header.selectTanker')}
           />
           {selectedTanker && (
-            <div className={`mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
-              tankerMismatch
-                ? 'bg-red-50 border border-red-200 text-red-700'
-                : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-            }`}>
-              <Truck size={12} strokeWidth={2} className="shrink-0" />
-              <span>
-                Capacity: <span className="font-semibold">{selectedTanker.capacityLitres.toLocaleString('en-IN')} L</span>
-                {' · '}
-                Entered: <span className="font-semibold">{totalEnteredQty.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L</span>
-                {tankerRemaining !== null && tankerRemaining !== 0 && (
-                  <span className="ml-1">
-                    · <span className="font-semibold">{tankerRemaining > 0 ? `${tankerRemaining.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L remaining` : `${Math.abs(tankerRemaining).toLocaleString('en-IN', { minimumFractionDigits: 1 })} L over`}</span>
-                  </span>
-                )}
-              </span>
-            </div>
+            <LiveFigures
+              label={t('header.tankerFigures')}
+              className="mt-2"
+              figures={[
+                { label: t('header.capacity'), value: <LitresText value={selectedTanker.capacityLitres} decimals={0} /> },
+                { label: t('header.entered'), value: <LitresText value={totalEnteredQty > 0 ? totalEnteredQty : null} decimals={1} /> },
+                {
+                  label: isOver ? t('header.over') : t('header.remaining'),
+                  value: <LitresText value={tankerRemaining === null ? null : Math.abs(tankerRemaining)} decimals={1}
+                    tone={tankerMismatch && isOver ? 'bad' : undefined} />,
+                  isResult: true,
+                },
+              ]}
+            />
           )}
-        </div>
+        </FormGridFullRow>
       )}
-      </div>
-    </div>
+    </FormGrid>
   )
 }

@@ -1,0 +1,67 @@
+{
+  "page": {
+    "title": "Expense Tracker",
+    "noPump": "No pump selected. Use the pump selector in the top navigation bar, or ask the Owner or Admin to assign you to a pump.",
+    "subtitle": "Record and review operational expenses at the pump",
+    "approvedTotal": "Approved Total",
+    "totalRecords": "Total Records",
+    "pendingCount_one": "{{count}} pending approval",
+    "pendingCount_other": "{{count}} pending approval"
+  },
+  "form": {
+    "title": "Record expense",
+    "subtitle": "Capture the category, amount, date, and description before review.",
+    "category": "Category",
+    "amount": "Amount",
+    "description": "Description",
+    "expenseDate": "Expense date",
+    "saveDraft": "Save as draft — submit for approval later",
+    "needAmount": "Amount",
+    "needDescription": "Description",
+    "recorded": "Expense recorded successfully",
+    "recordFailed": "Failed to record expense",
+    "descriptionRequired": "Description is required",
+    "amountPositive": "Amount must be greater than zero"
+  },
+  "review": {
+    "title": "Review expense",
+    "add": "Save expense",
+    "savedAs": "Saved as"
+  },
+  "list": {
+    "title": "All Expenses",
+    "filterByCategory": "Filter by category",
+    "allCategories": "All Categories",
+    "filterByStatus": "Filter by status",
+    "allStatuses": "All Statuses",
+    "statusDraft": "Draft",
+    "statusPendingApproval": "Pending Approval",
+    "statusApproved": "Approved",
+    "statusRejected": "Rejected",
+    "approvalHint": "Approve and reject actions appear only for expenses in <status>Pending Approval</status>.",
+    "emptyTitle": "No expenses recorded yet",
+    "emptyAccountant": "No records to display.",
+    "emptySubtitle": "Use Record expense to add your first one.",
+    "deleteExpense": "Delete expense",
+    "rejectTitle": "Reject Expense",
+    "rejectedWithNotes": "{{label}}: {{notes}}",
+    "filtersLabel": "Expense filters"
+  },
+  "toast": {
+    "submitted": "Expense submitted for approval",
+    "submitFailed": "Failed to submit expense",
+    "deleted": "Expense deleted",
+    "deleteFailed": "Failed to delete expense",
+    "approved": "Expense approved",
+    "rejected": "Expense rejected",
+    "updateFailed": "Failed to update expense"
+  },
+  "csv": {
+    "date": "Date",
+    "category": "Category",
+    "description": "Description",
+    "amount": "Amount",
+    "status": "Status",
+    "approvalNotes": "Approval notes"
+  }
+}

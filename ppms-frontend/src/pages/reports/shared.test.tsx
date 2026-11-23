@@ -20,8 +20,8 @@ describe('reports shared components', () => {
   })
 
   it('renders a summary card and an error box', () => {
-    render(<><SummaryCard label="Total" value="₹10.00" color="text-green-600" /><ErrorBox message="Failed" /></>)
-    expect(screen.getByText('₹10.00')).toHaveClass('text-green-600')
+    render(<><SummaryCard label="Total" value="₹10.00" color="text-ok" /><ErrorBox message="Failed" /></>)
+    expect(screen.getByText('₹10.00')).toHaveClass('text-ok')
     expect(screen.getByText('Failed')).toBeInTheDocument()
   })
 })

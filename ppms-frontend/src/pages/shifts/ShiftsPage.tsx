@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ChevronDown, Plus, History } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Plus, History, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { shiftApi } from '../../api/shiftApi'
 import { pumpApi } from '../../api/pumpApi'
 import { usePumpStore } from '../../store/usePumpStore'
@@ -12,43 +14,98 @@ import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
 import BackfillShiftModal from './BackfillShiftModal'
 import { SkeletonRows } from '../../components/Skeleton'
-import { Reveal } from '../../components/Reveal'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
-import { OpenNewShiftPrompt } from './active/OpenNewShiftPrompt'
 import { ShiftRow } from './active/ShiftRow'
 import { AllShiftsHistory } from './history/AllShiftsHistory'
 import { DayViewHistory } from './history/DayViewHistory'
 import { DiscrepanciesHistory } from './history/DiscrepanciesHistory'
 import { AddCreditEntryModal } from './modals/AddCreditEntryModal'
-import { ScrollRegion } from '../../components/ScrollRegion'
+import { DataTable } from '../../components/DataTable'
+import type { DataTableColumn } from '../../components/DataTable'
+import { StatusBadge } from '../../components/StatusBadge'
+import { Page } from '../../components/layout/Page'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { PageSection } from '../../components/layout/PageSection'
+import { PageTabs } from '../../components/layout/PageTabs'
+import { useUrlParam } from '../../components/layout/useUrlParam'
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+type HistoryTab = 'day' | 'all' | 'discrepancies'
+
+/** Parameters that belong to one history view and are dropped when switching view. */
+const HISTORY_VIEW_PARAMS = ['shift', 'from', 'to', 'fuel', 'type'] as const
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function dateParam(value: string | null): string | undefined {
+  return value && ISO_DATE.test(value) ? value : undefined
+}
+
+/**
+ * Shift history views kept in the address so other pages can link straight to them:
+ * ?shift=123, ?history=all&from=&to=&fuel=PETROL, ?history=discrepancies&from=&to=&type=SHORT.
+ */
+function useHistoryFilters() {
+  const [searchParams] = useSearchParams()
+  const shiftText = searchParams.get('shift')
+  const historyText = searchParams.get('history')
+  const tab: HistoryTab = shiftText !== null && /^\d+$/.test(shiftText) ? 'all'
+    : historyText === 'all' || historyText === 'discrepancies' ? historyText : 'day'
+  const typeText = searchParams.get('type')
+
+  return {
+    tab,
+    from: dateParam(searchParams.get('from')),
+    to: dateParam(searchParams.get('to')),
+    discrepancyType: typeText === 'SHORT' || typeText === 'OVER' ? typeText as 'SHORT' | 'OVER' : undefined,
+    linkedFromElsewhere: shiftText !== null || historyText !== null,
+  }
+}
+
+function activeShiftColumns(t: TFunction<['shifts', 'common']>): DataTableColumn<Shift>[] {
+  return [
+    { key: 'nozzle', header: t('page.columns.nozzle') },
+    { key: 'operator', header: t('page.columns.operator') },
+    { key: 'window', header: t('page.columns.window'), className: 'hidden md:table-cell' },
+    { key: 'started', header: t('page.columns.started'), className: 'hidden md:table-cell' },
+    { key: 'prices', header: t('page.columns.prices'), className: 'hidden md:table-cell' },
+    { key: 'status', header: t('page.columns.status') },
+    { key: 'actions', header: <span className="sr-only">{t('page.columns.actions')}</span> },
+  ]
+}
 
 export default function ShiftsPage() {
+  const { t } = useTranslation(['shifts', 'common'])
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const canOpenShift  = canPerformAction('shift:open', user?.role)
   const canCloseShift = canPerformAction('shift:close', user?.role)
+  const canViewDiscrepancies = canPerformAction('shift:view-discrepancies', user?.role)
+  const seesOnlyOwnShifts = user?.role === 'OPERATOR'
+  const historyTabIds: HistoryTab[] = canViewDiscrepancies ? ['day', 'all', 'discrepancies'] : ['day', 'all']
+  const historyTabs = historyTabIds.map((id) => ({ id, label: t(`page.tabs.${id}`) }))
 
-  const { selectedPumpId } = usePumpStore()
-  const [showOpenModal,     setShowOpenModal]     = useState(false)
+  const pumpId = usePumpStore((state) => state.selectedPumpId)
+  const openShiftAction = useUrlParam('action')
+  const showOpenModal = openShiftAction.value === 'open-shift' && canOpenShift
   const [showBackfillModal, setShowBackfillModal] = useState(false)
   const [shiftToClose,      setShiftToClose]      = useState<Shift | null>(null)
+  const [shiftToHandOver,   setShiftToHandOver]   = useState<Shift | null>(null)
   const [shiftIdForCredit,  setShiftIdForCredit]  = useState<number | null>(null)
-  const [historyOpen,    setHistoryOpen]    = useState(true)
-  const [historyTab,     setHistoryTab]     = useState<'day' | 'all' | 'discrepancies'>('day')
   const [closedShiftPrefill, setClosedShiftPrefill] = useState<{ duId: number; nozzleIds: number[] } | null>(null)
+  const historyFilters = useHistoryFilters()
+  const historyTab = historyFilters.tab === 'discrepancies' && !canViewDiscrepancies ? 'day' : historyFilters.tab
+  const historyRef = useRef<HTMLElement>(null)
+  const [linkedOnLoad] = useState(historyFilters.linkedFromElsewhere)
+
+  useEffect(() => {
+    if (linkedOnLoad) historyRef.current?.scrollIntoView?.({ block: 'start' })
+  }, [linkedOnLoad])
 
   const { data: rawPumps = [], isLoading: pumpsLoading } = useQuery({
     queryKey: ['myPumps'],
     queryFn:  pumpApi.getMyPumps,
     enabled:  isOwnerOrAdmin,
   })
-
-  // Sort alphabetically once
-  const sortedPumps = [...rawPumps].sort((a, b) => a.name.localeCompare(b.name))
-
-  const pumpId = selectedPumpId
 
   const { data: activeShifts = [], isLoading: activeLoading, isFetching: activeFetching, dataUpdatedAt: activeUpdatedAt } = useQuery({
     queryKey:      ['activeShifts', pumpId],
@@ -57,171 +114,132 @@ export default function ShiftsPage() {
     refetchInterval: 60_000,
   })
 
-
-  // ── Early exits ──────────────────────────────────────────────────────────
-
-  if (isOwnerOrAdmin && !pumpsLoading && sortedPumps.length === 0 && rawPumps.length === 0) {
+  if (isOwnerOrAdmin && !pumpsLoading && rawPumps.length === 0) {
     return (
-      <div className="ui-page ui-page--narrow">
+      <Page>
         <div className="ui-alert ui-alert-warning p-6 text-center">
-          <p className="text-amber-800 font-medium mb-2">No pumps set up yet</p>
-          <p className="text-amber-700 text-sm mb-4">
-            Create a pump location first, then add nozzles and set fuel prices.
+          <p className="text-warn-strong font-medium mb-2">{t('page.noPumpsTitle')}</p>
+          <p className="text-warn text-sm mb-4">
+            {t('page.noPumpsBody')}
           </p>
           <Link to="/dashboard/setup"
             className="ui-btn ui-btn-primary inline-flex">
-            Go to Setup
+            {t('page.goToSetup')}
           </Link>
         </div>
-      </div>
+      </Page>
     )
   }
 
   if (!isOwnerOrAdmin && !pumpId) {
     return (
-      <div className="ui-page ui-page--narrow">
+      <Page>
         <div className="ui-alert ui-alert-warning text-sm">
-          You are not assigned to any pump. Ask the Owner or Admin to assign you.
+          {t('common:notices.notAssigned')}
         </div>
-      </div>
+      </Page>
     )
   }
 
-  const selectedPump = sortedPumps.find((p) => p.id === pumpId)
+  const selectedPump = rawPumps.find((p) => p.id === pumpId)
   const shiftForCredit = activeShifts.find((shift) => shift.id === shiftIdForCredit) ?? null
+  const closeOpenShiftModal = () => {
+    openShiftAction.remove()
+    setClosedShiftPrefill(null)
+  }
 
   return (
-    <div className="ui-page ui-page--narrow space-y-6">
-
-      {/* Page title */}
-      <Reveal delay={60}>
-      <div className="ui-section-hero">
-        <div>
-          <p className="ui-section-kicker">Shift control</p>
-          <h1 className="ui-title-sm">Shifts</h1>
-          <p className="ui-subtitle">Open and close operator shifts, record meter readings and payment collection.</p>
-        </div>
-        <div className="ui-section-meta">
-          <div className="ui-section-meta-pill">
-            <span className="ui-section-meta-label">Open now</span>
-            <span className="ui-section-meta-value">{activeLoading ? '…' : activeShifts.length}</span>
-          </div>
-        </div>
-      </div>
-      </Reveal>
+    <Page>
+      <PageHeader
+        title={t('page.title')}
+        description={t('page.subtitle')}
+        badges={pumpId && !activeLoading && (
+          <StatusBadge tone={activeShifts.length > 0 ? 'ok' : 'neutral'} icon={Zap} label={t('page.openNowCount', { count: activeShifts.length })} />
+        )}
+        secondaryActions={isOwnerOrAdmin && pumpId && (
+          <button
+            type="button"
+            onClick={() => setShowBackfillModal(true)}
+            className="ui-btn ui-btn-secondary inline-flex items-center gap-1.5"
+            title={t('page.backfillHint')}
+          >
+            <History size={14} strokeWidth={2} aria-hidden="true" />
+            {t('page.backfillShift')}
+          </button>
+        )}
+        primaryAction={canOpenShift && pumpId && (
+          <button
+            type="button"
+            onClick={() => openShiftAction.set('open-shift')}
+            className="ui-btn ui-btn-primary inline-flex items-center gap-1.5"
+          >
+            <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
+            {t('page.openShift')}
+          </button>
+        )}
+      />
 
       {!pumpId ? (
-        <div className="ui-card text-center text-sm text-slate-500">
-          No pump selected. Use the pump selector in the top navigation bar.
+        <div className="ui-card text-center text-sm text-ink-3">
+          {t('common:notices.noPump')}
         </div>
       ) : (
         <>
-          {/* ── Active Shifts ──────────────────────────────────────────────── */}
-          <div className="ui-card overflow-hidden p-0">
-            <div className="ui-toolbar">
-              <div className="flex items-center gap-2.5">
-                <h2 className="ui-toolbar-title">Active Shifts</h2>
-                <RefreshIndicator isFetching={activeFetching} dataUpdatedAt={activeUpdatedAt ?? 0} />
-              </div>
-              {selectedPump && (
-                <p className="text-xs text-slate-500">{selectedPump.name}</p>
-              )}
-              <div className="ui-toolbar-actions ml-auto">
-                {isOwnerOrAdmin && (
-                  <button
-                    onClick={() => setShowBackfillModal(true)}
-                    className="ui-btn ui-btn-secondary inline-flex items-center gap-1.5"
-                    title="Enter historical shift data for past dates"
-                  >
-                    <History size={14} strokeWidth={2} />
-                    Backfill Shift
-                  </button>
-                )}
-                {canOpenShift && (
-                  <button
-                    onClick={() => setShowOpenModal(true)}
-                    className="ui-btn ui-btn-primary inline-flex items-center gap-1.5"
-                  >
-                    <Plus size={14} strokeWidth={2.5} />
-                    Open Shift
-                  </button>
-                )}
-              </div>
-            </div>
-
+          <PageSection
+            title={seesOnlyOwnShifts ? t('page.myActiveShifts') : t('page.activeShifts')}
+            titleMeta={<RefreshIndicator isFetching={activeFetching} dataUpdatedAt={activeUpdatedAt ?? 0} />}
+            actions={selectedPump && <span className="text-xs text-ink-3">{selectedPump.name}</span>}
+            flush
+          >
             {activeLoading ? (
               <div className="px-5 py-4"><SkeletonRows count={3} /></div>
             ) : activeShifts.length === 0 ? (
-              <div className="ui-empty p-6">
-                {canOpenShift ? 'No active shifts. Click "+ Open Shift" to start one.' : 'No active shifts.'}
+              <div className="ui-empty rounded-none border-0 p-6">
+                {canOpenShift
+                  ? t('page.emptyCanOpen')
+                  : seesOnlyOwnShifts
+                  ? t('page.emptyOperator')
+                  : t('page.empty')}
               </div>
             ) : (
-              <ScrollRegion label="Active shifts" className="overflow-x-auto">
-                <table className="ui-table-cards w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-xs text-slate-500">
-                      <th scope="col" className="text-left px-6 py-3 font-medium">Nozzle</th>
-                      <th scope="col" className="text-left px-6 py-3 font-medium">Operator</th>
-                      <th scope="col" className="text-left px-6 py-3 font-medium hidden md:table-cell">Window</th>
-                      <th scope="col" className="text-left px-6 py-3 font-medium hidden md:table-cell">Started</th>
-                      <th scope="col" className="text-left px-6 py-3 font-medium hidden md:table-cell">Prices (₹)</th>
-                      <th scope="col" className="text-left px-6 py-3 font-medium">Status</th>
-                      <th scope="col" className="px-6 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeShifts.map((shift) => (
-                      <ShiftRow
-                        key={shift.id}
-                        shift={shift}
-                        onClose={canCloseShift ? () => setShiftToClose(shift) : undefined}
-                        onAddCredit={() => setShiftIdForCredit(shift.id)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </ScrollRegion>
+              <DataTable
+                caption={t('page.activeShiftsCaption')}
+                captionHidden
+                columns={activeShiftColumns(t)}
+                rows={activeShifts}
+                rowKey={(shift) => shift.id}
+                cardsOnPhone
+                className="rounded-none border-0"
+                renderRow={(shift) => (
+                  <ShiftRow
+                    shift={shift}
+                    onClose={canCloseShift ? () => setShiftToClose(shift) : undefined}
+                    onHandOver={canCloseShift ? () => setShiftToHandOver(shift) : undefined}
+                    onAddCredit={() => setShiftIdForCredit(shift.id)}
+                  />
+                )}
+              />
             )}
-          </div>
+          </PageSection>
 
-          {/* ── Shift History ──────────────────────────────────────────────── */}
-          <div className="ui-card overflow-hidden p-0">
-            {/* Header / toggle */}
-            <button
-              onClick={() => setHistoryOpen((v) => !v)}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
-            >
-              <span className="text-base font-semibold text-slate-800">Shift History</span>
-              <ChevronDown size={14} strokeWidth={2} className={`ui-accordion-arrow ${historyOpen ? 'ui-accordion-arrow--open' : ''}`} />
-            </button>
-
-            {historyOpen && (
-              <div className="ui-accordion-content">
-                {/* Tab row */}
-                <div className="ui-tabbar">
-                  {(['day', 'all', 'discrepancies'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setHistoryTab(tab)}
-                      className={`ui-tabbar__button ${historyTab === tab ? 'ui-tabbar__button--active' : ''}`}
-                    >
-                      {tab === 'day' ? 'By Day' : tab === 'all' ? 'All Shifts' : 'Discrepancies'}
-                    </button>
-                  ))}
-                </div>
-
-                <div key={historyTab} className="ui-tab-content">
-                  {!pumpId ? null : historyTab === 'day' ? (
-                    <DayViewHistory pumpId={pumpId} />
-                  ) : historyTab === 'all' ? (
-                    <AllShiftsHistory pumpId={pumpId} />
-                  ) : (
-                    <DiscrepanciesHistory pumpId={pumpId} />
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <PageSection ref={historyRef} title={seesOnlyOwnShifts ? t('page.myShiftHistory') : t('page.shiftHistory')} flush>
+            <PageTabs label={t('page.historyViews')} tabs={historyTabs} activeTab={historyTab} param="history" resetParams={HISTORY_VIEW_PARAMS} />
+            <div key={historyTab} className="ui-tab-content">
+              {historyTab === 'day' ? (
+                <DayViewHistory pumpId={pumpId} />
+              ) : historyTab === 'discrepancies' ? (
+                <DiscrepanciesHistory
+                  key={`${historyFilters.from}|${historyFilters.to}|${historyFilters.discrepancyType}`}
+                  pumpId={pumpId}
+                  initialFrom={historyFilters.from}
+                  initialTo={historyFilters.to}
+                  initialType={historyFilters.discrepancyType}
+                />
+              ) : (
+                <AllShiftsHistory pumpId={pumpId} />
+              )}
+            </div>
+          </PageSection>
         </>
       )}
 
@@ -229,7 +247,7 @@ export default function ShiftsPage() {
         <OpenShiftModal
           pumpId={pumpId}
           activeShifts={activeShifts}
-          onClose={() => { setShowOpenModal(false); setClosedShiftPrefill(null) }}
+          onClose={closeOpenShiftModal}
           prefilledDuId={closedShiftPrefill?.duId}
           prefilledNozzleIds={closedShiftPrefill?.nozzleIds}
         />
@@ -244,13 +262,18 @@ export default function ShiftsPage() {
         <CloseShiftModal
           shift={shiftToClose}
           onClose={() => setShiftToClose(null)}
-          onShiftClosed={(duId, nozzleIds) => setClosedShiftPrefill({ duId, nozzleIds })}
+          onOpenNextShift={canOpenShift ? (duId, nozzleIds) => {
+            setShiftToClose(null)
+            setClosedShiftPrefill({ duId, nozzleIds })
+            openShiftAction.set('open-shift')
+          } : undefined}
         />
       )}
-      {closedShiftPrefill && !showOpenModal && (
-        <OpenNewShiftPrompt
-          onConfirm={() => setShowOpenModal(true)}
-          onDismiss={() => setClosedShiftPrefill(null)}
+      {shiftToHandOver && (
+        <CloseShiftModal
+          shift={shiftToHandOver}
+          onClose={() => setShiftToHandOver(null)}
+          handoverActiveShifts={activeShifts}
         />
       )}
       {shiftForCredit && (
@@ -259,6 +282,6 @@ export default function ShiftsPage() {
           onClose={() => setShiftIdForCredit(null)}
         />
       )}
-    </div>
+    </Page>
   )
 }

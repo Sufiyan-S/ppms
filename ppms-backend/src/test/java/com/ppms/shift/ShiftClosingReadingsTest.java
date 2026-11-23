@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ShiftClosingReadingsTest {
@@ -22,6 +23,7 @@ class ShiftClosingReadingsTest {
     private static final BigDecimal MAX_METER = new BigDecimal("999999.999");
 
     @Mock private ShiftFuelReadingRepository fuelReadingRepository;
+    @Mock private ShiftCreditEntryRepository creditEntryRepository;
     @InjectMocks private ShiftLifecycleSupportService lifecycleSupportService;
 
     @Test
@@ -78,6 +80,32 @@ class ShiftClosingReadingsTest {
                 1L, Map.of(NOZZLE_ID, MAX_METER), request, List.of(readingStartingAt("5000.000"))))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("only appear once");
+    }
+
+    @Test
+    void zeroCreditTotalIsRejectedWhileAnEntryRecordedDuringTheShiftIsActive() {
+        when(creditEntryRepository.findByShiftId(1L)).thenReturn(List.of(activeCreditEntry(7L, "250.00")));
+
+        assertThatThrownBy(() -> lifecycleSupportService.validateCloseCreditEntries(1L, BigDecimal.ZERO, List.of(), List.of()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("₹250.00 was already recorded during the shift");
+    }
+
+    @Test
+    void zeroCreditTotalIsAcceptedWhenTheOnlyEntryIsBeingReplacedByNothing() {
+        when(creditEntryRepository.findByShiftId(1L)).thenReturn(List.of(activeCreditEntry(7L, "250.00")));
+
+        assertThat(lifecycleSupportService.validateCloseCreditEntries(1L, BigDecimal.ZERO, List.of(), List.of(7L)))
+                .isEmpty();
+    }
+
+    private ShiftCreditEntry activeCreditEntry(Long id, String amount) {
+        return ShiftCreditEntry.builder()
+                .id(id)
+                .shiftId(1L)
+                .clientName("Fleet Co")
+                .amount(new BigDecimal(amount))
+                .build();
     }
 
     private ShiftFuelReading readingStartingAt(String start) {

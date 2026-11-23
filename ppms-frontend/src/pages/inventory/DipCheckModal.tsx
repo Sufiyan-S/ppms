@@ -1,32 +1,76 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
+import { AlertTriangle, Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { inventoryApi } from '../../api/inventoryApi'
 import { userApi } from '../../api/userApi'
-import type { TankStock } from '../../api/inventoryApi'
+import type { OpenShiftNozzle, TankStock } from '../../api/inventoryApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
-import { localDateInputValue } from '../../utils/date'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
 import { parseApiError } from '../../utils/apiError'
-import { FUEL_COLORS } from './inventoryFormat'
-import { IconButton } from '../../components/IconButton'
+import { NumericInput } from '../../components/NumericInput'
+import { FormField } from '../../components/FormField'
+import { LoadingButton } from '../../components/LoadingButton'
+import { LiveFigures } from '../../components/LiveFigures'
+import type { LiveFigure } from '../../components/LiveFigures'
+import { LitresText } from '../../components/AmountText'
+import { StatusBadge } from '../../components/StatusBadge'
+import { StillNeeded } from '../../components/StillNeeded'
+import { useToastStore } from '../../store/toastStore'
+import { formatNumberIn } from '../../i18n/format'
+import { codeLabel } from '../../constants/labels'
+import { FormGrid, FormGridFullRow } from '../../components/layout/FormGrid'
 
-// ── DIP Check Modal ────────────────────────────────────────────────────────────
+const ROLLOVER_START_FRACTION = 0.99
+
+/** Litres dispensed since the shift opened, following the server's meter rollover rule; null while unknown or invalid. */
+function soldSinceOpening(nozzle: OpenShiftNozzle, reading: string): number | null {
+  if (reading === '') return null
+  const current = Number(reading)
+  if (current >= nozzle.openingReading) return current - nozzle.openingReading
+  if (nozzle.openingReading >= nozzle.maxMeterValue * ROLLOVER_START_FRACTION) {
+    return nozzle.maxMeterValue - nozzle.openingReading + current
+  }
+  return null
+}
+
+function VarianceResult({ variance, tolerance }: { variance: number | null; tolerance: number }) {
+  const { t } = useTranslation(['inventory', 'common'])
+  if (variance === null) return <LitresText value={null} />
+  const badge = Math.abs(variance) < tolerance
+    ? <StatusBadge tone="ok" icon={Check} label={t('dipCheck.withinTolerance')} />
+    : variance > 0
+      ? <StatusBadge tone="warn" icon={AlertTriangle} label={t('dipCheck.surplus')} />
+      : <StatusBadge tone="bad" icon={AlertTriangle} label={t('dipCheck.shortage')} />
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
+      <LitresText value={variance} showSign decimals={1} />
+      {badge}
+    </span>
+  )
+}
 
 export function DipCheckModal({
   pumpId,
   tank,
+  tanks = [],
+  onTankChange,
   onClose,
 }: {
   pumpId: number
   tank: TankStock
+  /** With onTankChange, shows a tank picker when the pump has more than one tank. */
+  tanks?: TankStock[]
+  onTankChange?: (tankId: number) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation(['inventory', 'common'])
   const queryClient = useQueryClient()
-  const cols = FUEL_COLORS[tank.fuelType] ?? FUEL_COLORS.PETROL
+  const { addToast } = useToastStore()
+  const stillNeededId = useId()
 
   const [measured,        setMeasured]        = useState('')
-  const [date,            setDate]            = useState(localDateInputValue())
+  const [meterReadings,   setMeterReadings]   = useState<Record<number, string>>({})
   const [checkedByUserId, setCheckedByUserId] = useState<string>('')
   const [notes,           setNotes]           = useState('')
   const [error,           setError]           = useState<string | null>(null)
@@ -36,165 +80,171 @@ export function DipCheckModal({
     queryFn:  () => userApi.getStaff(pumpId),
   })
 
+  const { data: openShiftNozzles = [], isLoading: openShiftNozzlesLoading } = useQuery({
+    queryKey: ['openShiftNozzles', pumpId, tank.tankId],
+    queryFn:  () => inventoryApi.getOpenShiftNozzles(pumpId, tank.tankId),
+  })
+
   const mutation = useMutation({
     mutationFn: () =>
       inventoryApi.recordDipCheck(pumpId, {
         tankId:           tank.tankId,
         measuredQuantity: Number(measured),
-        checkedAt:        date,
         checkedByUserId:  checkedByUserId ? Number(checkedByUserId) : undefined,
         notes:            notes.trim() || undefined,
+        nozzleReadings:   openShiftNozzles.map(n => ({ nozzleId: n.nozzleId, meterReading: Number(meterReadings[n.nozzleId]) })),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tankStocks', pumpId] })
       queryClient.invalidateQueries({ queryKey: ['dipChecks', pumpId] })
+      addToast(t('dipCheck.saved', { tank: tank.tankIdentifier }), 'success')
       onClose()
     },
-    onError: (err) =>
-      setError(parseApiError(err, 'Failed to record DIP check')),
+    onError: (err) => {
+      setError(parseApiError(err, t('dipCheck.failed')))
+      queryClient.invalidateQueries({ queryKey: ['openShiftNozzles', pumpId, tank.tankId] })
+    },
   })
 
-  const variance = measured !== '' ? Number(measured) - tank.currentStock : null
+  const soldPerNozzle = openShiftNozzles.map(n => soldSinceOpening(n, meterReadings[n.nozzleId] ?? ''))
+  const soldKnown = soldPerNozzle.every(sold => sold !== null)
+  const soldOnOpenShifts = soldPerNozzle.reduce<number>((sum, sold) => sum + (sold ?? 0), 0)
+  const expectedStock = tank.currentStock - soldOnOpenShifts
+  const variance = measured !== '' && soldKnown ? Number(measured) - expectedStock : null
+
+  const missingReadingCount = openShiftNozzles.filter(n => (meterReadings[n.nozzleId] ?? '') === '').length
+  const stillNeeded = [
+    ...(measured === '' ? [t('dipCheck.stillNeeded.dipReading')] : []),
+    ...(missingReadingCount > 0 ? [t('dipCheck.stillNeeded.meterReadings', { count: missingReadingCount })] : []),
+  ]
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (!measured || !date) { setError('Measured quantity and date are required.'); return }
+    if (!measured) { setError(t('dipCheck.measuredRequired')); return }
+    if (missingReadingCount > 0) { setError(t('dipCheck.meterReadingsRequired')); return }
     mutation.mutate()
   }
 
+  const figures: LiveFigure[] = [
+    { label: t('dipCheck.figures.bookStock'), value: <LitresText value={tank.currentStock} decimals={1} /> },
+    ...(openShiftNozzles.length > 0 ? [
+      { label: t('dipCheck.figures.soldOnOpenShifts'), value: <LitresText value={soldKnown ? soldOnOpenShifts : null} decimals={1} /> },
+      { label: t('dipCheck.figures.expectedStock'), value: <LitresText value={soldKnown ? expectedStock : null} decimals={1} /> },
+    ] : []),
+    { label: t('dipCheck.figures.measured'), value: <LitresText value={measured === '' ? null : Number(measured)} decimals={1} /> },
+    { label: t('dipCheck.figures.variance'), value: <VarianceResult variance={variance} tolerance={tank.dipTolerance} />, isResult: true },
+  ]
+
   return (
-    <ModalPortal onClose={onClose} closeOnBackdropClick>
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal-panel w-full max-w-sm overflow-hidden">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--neutral">
-          <div className="ui-modal-heading">
-            <h2 className="ui-modal-title">DIP Check</h2>
-            <p className="ui-modal-subtitle">
-              {tank.tankIdentifier} — <span className={cols.text.replace('text-', 'text-')}>{tank.fuelType}</span>
-            </p>
-          </div>
-          <IconButton label="Close" icon="×" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close" />
+    <Modal
+      title={t('dipCheck.title')}
+      subtitle={`${tank.tankIdentifier} · ${codeLabel(tank.fuelType)}`}
+      tone="info"
+      size="md-wide"
+      onClose={onClose}
+      closeOnBackdropClick
+      fullScreenOnPhone={openShiftNozzles.length > 0}
+      canClose={!mutation.isPending}
+      onSubmit={handleSubmit}
+      bodyClassName="space-y-4"
+      footer={<>
+        <StillNeeded id={stillNeededId} items={openShiftNozzlesLoading ? [] : stillNeeded} />
+        <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+          {t('common:actions.cancel')}
+        </button>
+        <LoadingButton
+          type="submit"
+          isLoading={mutation.isPending}
+          loadingLabel={t('dipCheck.saving')}
+          disabled={openShiftNozzlesLoading || stillNeeded.length > 0}
+          aria-describedby={!openShiftNozzlesLoading && stillNeeded.length > 0 ? stillNeededId : undefined}
+          className="ui-btn-primary"
+        >
+          {t('dipCheck.save')}
+        </LoadingButton>
+      </>}
+    >
+      <FormGrid>
+        {onTankChange && tanks.length > 1 && (
+          <FormGridFullRow>
+            <span className="ui-label">{t('dipCheck.tank')}</span>
+            <SearchableSelect label={t('dipCheck.tank')}
+              value={String(tank.tankId)}
+              onChange={v => onTankChange(Number(v))}
+              options={tanks.map(option => ({ value: String(option.tankId), label: `${option.tankIdentifier} · ${codeLabel(option.fuelType)}` }))}
+            />
+          </FormGridFullRow>
+        )}
+
+        <FormField label={t('dipCheck.dipstickReading')} help={t('dipCheck.noBackdate')}>
+          <NumericInput
+            required
+            step="0.001"
+            min="0"
+            unit="L"
+            value={measured}
+            onChange={e => setMeasured(e.target.value)}
+            data-autofocus
+          />
+        </FormField>
+
+        <div>
+          <span className="ui-label">
+            {t('dipCheck.checkedBy')} <span className="text-ink-3">{t('common:fields.optionalSuffix')}</span>
+          </span>
+          <SearchableSelect label={t('dipCheck.checkedBy')}
+            value={checkedByUserId}
+            onChange={v => setCheckedByUserId(v)}
+            placeholder={t('dipCheck.selectOperator')}
+            options={staff.map(s => ({
+              value: String(s.id),
+              label: t('dipCheck.staffOption', { name: s.fullName, role: codeLabel(s.role) }),
+            }))}
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="ui-modal-body space-y-4">
-          {/* Current system stock */}
-          <div className="bg-slate-50 rounded-lg px-4 py-3 text-xs text-slate-500">
-            System stock right now:{' '}
-            <span className="font-bold text-slate-700">
-              {tank.currentStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-            </span>
-          </div>
+        {openShiftNozzlesLoading ? (
+          <FormGridFullRow><p className="text-xs text-ink-3">{t('dipCheck.checkingShifts')}</p></FormGridFullRow>
+        ) : openShiftNozzles.length > 0 && (
+          <fieldset className="ui-form-grid__full">
+            <legend className="text-sm font-semibold text-ink">{t('dipCheck.meterReadings')}</legend>
+            <p className="mt-1 mb-3 text-xs text-ink-3">{t('dipCheck.openShiftNote')}</p>
+            <FormGrid>
+              {openShiftNozzles.map(n => (
+                <FormField
+                  key={n.nozzleId}
+                  label={n.duName
+                    ? t('dipCheck.nozzleReadingWithDu', { number: n.nozzleNumber, du: n.duName })
+                    : t('dipCheck.nozzleReading', { number: n.nozzleNumber })}
+                  help={t('dipCheck.openedAt', { reading: formatNumberIn(n.openingReading, { minimumFractionDigits: 3 }) })}
+                >
+                  <NumericInput
+                    required
+                    step="0.001"
+                    min="0"
+                    unit="L"
+                    value={meterReadings[n.nozzleId] ?? ''}
+                    onChange={e => setMeterReadings(prev => ({ ...prev, [n.nozzleId]: e.target.value }))}
+                  />
+                </FormField>
+              ))}
+            </FormGrid>
+          </fieldset>
+        )}
 
-          {/* Measured quantity */}
-          <div>
-            <label className="block">
-              <span className="ui-label">
-              Dipstick Reading (Litres)
-            </span>
-              <input
-                required
-                type="number"
-                step="0.001"
-                min="0"
-                value={measured}
-                onChange={e => setMeasured(e.target.value)}
-                placeholder="Physically measured quantity"
-                className="text-sm"
-                data-autofocus
-              />
-            </label>
-          </div>
+        <FormGridFullRow>
+          <LiveFigures label={t('dipCheck.figures.label')} figures={figures} />
+        </FormGridFullRow>
 
-          {/* Live variance preview */}
-          {variance !== null && (
-            <div className={`rounded-lg px-4 py-2.5 text-xs flex items-center justify-between ${
-              Math.abs(variance) < tank.dipTolerance
-                ? 'bg-emerald-50 text-emerald-700'
-                : variance > 0
-                  ? 'bg-amber-50 text-amber-700'
-                  : 'bg-red-50 text-red-700'
-            }`}>
-              <span>
-                {Math.abs(variance) < tank.dipTolerance
-                  ? <span className="inline-flex items-center gap-1">Within tolerance<Check size={12} strokeWidth={2.5} /></span>
-                  : variance > 0
-                    ? 'Surplus detected'
-                    : 'Shortage detected'}
-              </span>
-              <span className="font-bold">
-                {variance > 0 ? '+' : ''}{variance.toFixed(1)} L variance
-              </span>
-            </div>
-          )}
+        <FormGridFullRow>
+          <FormField label={<>{t('common:fields.notes')} <span className="text-ink-3">{t('common:fields.optionalSuffix')}</span></>}>
+            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} />
+          </FormField>
+        </FormGridFullRow>
 
-          {/* Date */}
-          <div>
-            <label className="block">
-              <span className="ui-label">Check Date</span>
-              <input
-                required
-                type="date"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                className="text-sm"
-              />
-            </label>
-          </div>
-
-          {/* Operator */}
-          <div>
-            <span className="ui-label">
-              Checked By <span className="text-slate-500">(optional)</span>
-            </span>
-            <SearchableSelect label="Checked By"
-              value={checkedByUserId}
-              onChange={v => setCheckedByUserId(v)}
-              placeholder="— Select operator —"
-              options={staff.map(s => ({
-                value: String(s.id),
-                label: `${s.fullName} (${s.role.charAt(0) + s.role.slice(1).toLowerCase()})`,
-              }))}
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block">
-              <span className="ui-label">
-              Notes <span className="text-slate-500">(optional)</span>
-            </span>
-              <input
-                type="text"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="e.g. Reading taken at 6pm"
-                className="text-sm"
-              />
-            </label>
-          </div>
-
-          {error && <p role="alert" className="ui-error-text">{error}</p>}
-
-          <div className="ui-modal-footer -mx-6 -mb-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="ui-btn ui-btn-secondary flex-1"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="ui-btn ui-btn-primary flex-1 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400"
-            >
-              {mutation.isPending ? 'Saving...' : 'Save DIP Check'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-    </ModalPortal>
+        {error && <FormGridFullRow><p role="alert" className="ui-alert ui-alert-danger">{error}</p></FormGridFullRow>}
+      </FormGrid>
+    </Modal>
   )
 }

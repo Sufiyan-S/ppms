@@ -18,9 +18,13 @@ export interface NozzleReadingAdjustment {
 export interface FuelDipEntry {
   id: number
   pumpId: number
+  /** Null on entries recorded before drained fuel left tank stock. */
+  tankId: number | null
   fuelType: string
   litresRemoved: number
+  /** Average purchase cost per litre of the fuel drawn (selling price on older entries). */
   pricePerUnit: number
+  /** Purchase cost of the fuel lost (selling value on older entries). */
   monetaryLoss: number
   reason: string
   dipDate: string       // YYYY-MM-DD
@@ -43,10 +47,10 @@ export const dipApi = {
 
   // ── Fuel dip entries ──────────────────────────────────────────────────────
 
-  recordDip: (pumpId: number, fuelType: string, litresRemoved: number, reason: string, dipDate?: string) =>
+  recordDip: (pumpId: number, tankId: number, litresRemoved: number, reason: string, dipDate?: string) =>
     client.post<FuelDipEntry>(
       `/pumps/${pumpId}/fuel-dips`,
-      { fuelType, litresRemoved, reason, dipDate }
+      { tankId, litresRemoved, reason, dipDate }
     ).then(r => r.data),
 
   getDips: (pumpId: number) =>

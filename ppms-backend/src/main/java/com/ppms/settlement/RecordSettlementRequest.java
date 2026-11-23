@@ -3,6 +3,7 @@ package com.ppms.settlement;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
@@ -21,4 +22,6 @@ public class RecordSettlementRequest {
     @DecimalMin(value = "0.00", message = "amountReceived must be a non-negative number.")
     private BigDecimal amountReceived;
     private String notes;
+    @Size(max = 100, message = "bankReference must be at most 100 characters.")
+    private String bankReference;
 }

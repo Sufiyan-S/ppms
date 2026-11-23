@@ -1,17 +1,29 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { Check, X } from 'lucide-react'
+import { Check, Pencil, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { authApi } from '../../../api/authApi'
 import { useAuthStore } from '../../../store/authStore'
 import { userApi } from '../../../api/userApi'
 import { ChangePasswordModal } from '../../../components/ChangePasswordModal'
 import { useEscapeKey } from '../../../hooks/useEscapeKey'
+import { useDensity } from '../../../hooks/useDensity'
+import { IconButton } from '../../../components/IconButton'
+import type { Density } from '../../../utils/density'
 import { parseApiError } from '../../../utils/apiError'
+import { roleLabel } from '../../../constants/labels'
+import { LanguagePicker } from '../../../components/LanguagePicker'
+import { activeLanguage } from '../../../i18n'
+import type { AppLanguage } from '../../../i18n/languages'
+
+const DENSITIES: Density[] = ['comfortable', 'compact']
 
 export function UserProfileArea() {
+  const { t } = useTranslation(['nav', 'common'])
   const navigate = useNavigate()
   const { user, clearAuth, updateUser } = useAuthStore()
+  const [density, setDensity] = useDensity()
 
   // Inline name edit
   const [editingName, setEditingName] = useState(false)
@@ -19,6 +31,7 @@ export function UserProfileArea() {
   const [nameError, setNameError] = useState<string | null>(null)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [languageError, setLanguageError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const profileButtonRef = useRef<HTMLButtonElement>(null)
@@ -47,7 +60,22 @@ export function UserProfileArea() {
       setNameError(null)
     },
     onError: (err) => {
-      setNameError(parseApiError(err, 'Failed to save name'))
+      setNameError(parseApiError(err, t('profile.saveNameFailed')))
+    },
+  })
+
+  // The screen switches at once; the choice goes back if the server could not save it.
+  const languageMutation = useMutation({
+    mutationFn: (language: AppLanguage) => userApi.updateMyLanguage(language),
+    onMutate: (language) => {
+      const previousLanguage = user?.preferredLanguage
+      setLanguageError(null)
+      updateUser({ preferredLanguage: language })
+      return { previousLanguage }
+    },
+    onError: (err, _language, context) => {
+      updateUser({ preferredLanguage: context?.previousLanguage })
+      setLanguageError(parseApiError(err, t('common:language.saveFailed')))
     },
   })
 
@@ -70,7 +98,7 @@ export function UserProfileArea() {
 
   const saveName = () => {
     const trimmed = nameInput.trim()
-    if (!trimmed) { setNameError('Name cannot be blank'); return }
+    if (!trimmed) { setNameError(t('profile.nameBlank')); return }
     renameMutation.mutate(trimmed)
   }
 
@@ -89,81 +117,96 @@ export function UserProfileArea() {
     logoutMutation.mutate()
   }
 
+  const nameBlock = editingName ? (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1">
+        <input aria-label={t('profile.yourName')}
+          ref={nameInputRef}
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') saveName()
+            if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+          }}
+          disabled={renameMutation.isPending}
+          className="text-sm"
+        />
+        <IconButton label={t('profile.saveName')} onClick={saveName} disabled={renameMutation.isPending}
+          icon={<Check size={14} strokeWidth={2.5} />} />
+        <IconButton label={t('profile.cancelEditing')} onClick={cancelEdit} disabled={renameMutation.isPending}
+          icon={<X size={14} strokeWidth={2} />} />
+      </div>
+      {nameError && <p role="alert" className="ui-error-text">{nameError}</p>}
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={startEditing}
+      className="group flex w-full items-center gap-1 text-left text-sm font-semibold text-ink"
+      aria-label={t('profile.editName', { name: user?.fullName ?? '' })}
+      title={t('profile.editNameHint')}
+    >
+      <span className="truncate">{user?.fullName}</span>
+      <Pencil size={12} strokeWidth={2} aria-hidden="true" className="shrink-0 text-ink-3 group-hover:text-primary" />
+    </button>
+  )
+
   return (
     <>
-      <div className="text-right hidden sm:block">
-        {editingName ? (
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-1">
-              <input aria-label="Your name"
-                ref={nameInputRef}
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') cancelEdit() }}
-                disabled={renameMutation.isPending}
-                className="text-xs font-semibold bg-white/10 text-white border border-white/30 rounded px-2 py-0.5 w-36 focus:outline-none focus:border-blue-400"
-              />
-              <button
-                onClick={saveName}
-                disabled={renameMutation.isPending}
-                aria-label="Save name"
-                className="text-green-400 hover:text-green-300 p-0.5 disabled:opacity-50"
-                title="Save"
-              ><Check size={13} strokeWidth={2.5} /></button>
-              <button
-                onClick={cancelEdit}
-                disabled={renameMutation.isPending}
-                aria-label="Cancel editing"
-                className="text-slate-400 hover:text-slate-200 p-0.5 disabled:opacity-50"
-                title="Cancel"
-              ><X size={13} strokeWidth={2} /></button>
-            </div>
-            {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
-          </div>
-        ) : (
-          <button
-            onClick={startEditing}
-            className="group text-right"
-            aria-label={`Edit your name, ${user?.fullName ?? ''}`}
-            title="Click to edit your name"
-          >
-            <p className="text-xs font-semibold text-white leading-tight group-hover:text-blue-200 transition-colors">
-              {user?.fullName}
-              <span aria-hidden="true" className="ml-1 text-white/30 group-hover:text-blue-300 text-xs">✎</span>
-            </p>
-          </button>
-        )}
-        <p className="text-xs text-blue-300 leading-tight capitalize">{user?.role?.toLowerCase()}</p>
-      </div>
       <div className="relative" ref={profileMenuRef}>
         <button
           ref={profileButtonRef}
           onClick={() => setProfileMenuOpen((open) => !open)}
-          aria-label="Open profile menu"
+          aria-label={t('profile.openMenu')}
           aria-expanded={profileMenuOpen}
           aria-haspopup="true"
-          className="w-9 h-9 bg-blue-500/20 border border-blue-400/40 rounded-full flex items-center justify-center hover:bg-blue-500/30 transition-colors"
-          title="Open profile menu"
+          className="ui-dashboard-avatar"
+          title={t('profile.openMenu')}
         >
-          <span className="text-sm font-bold text-blue-200">
+          <span className="text-sm font-bold text-surface">
             {user?.fullName?.charAt(0).toUpperCase()}
           </span>
         </button>
 
         {profileMenuOpen && (
-          <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="ui-profile-menu">
+            <div className="border-b border-border px-4 py-3">
+              {nameBlock}
+              <p className="text-xs text-ink-3">{roleLabel(user?.role)}</p>
+            </div>
+            <LanguagePicker
+              value={activeLanguage()}
+              onChange={(language) => languageMutation.mutate(language)}
+              disabled={languageMutation.isPending}
+              error={languageError}
+              className="border-b border-border px-4 py-3"
+              selectClassName="text-sm"
+            />
+            <fieldset className="border-b border-border px-4 py-3">
+              <legend className="ui-label">{t('profile.density')}</legend>
+              <div className="flex flex-col gap-1">
+                {DENSITIES.map((option) => (
+                  <label key={option} className="flex min-h-8 items-center gap-2 text-sm text-ink">
+                    <input type="radio" name="ppms-density" value={option} checked={density === option}
+                      onChange={() => setDensity(option)} />
+                    {option === 'compact' ? t('profile.densityCompact') : t('profile.densityComfortable')}
+                  </label>
+                ))}
+              </div>
+              <p className="ui-help">{t('profile.densityHint')}</p>
+            </fieldset>
             <button
               onClick={openPasswordModal}
-              className="ui-btn ui-btn-ghost w-full justify-start rounded-none border-0 px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="ui-btn ui-btn-ghost w-full justify-start rounded-none border-0 px-4 py-3 text-left text-sm font-medium text-ink hover:bg-bg"
             >
-              Reset Password
+              {t('profile.changePassword')}
             </button>
             <button
               onClick={handleLogout}
               disabled={logoutMutation.isPending}
-              className="ui-btn ui-btn-ghost w-full justify-start rounded-none border-0 px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="ui-btn ui-btn-ghost w-full justify-start rounded-none border-0 px-4 py-3 text-left text-sm font-medium text-bad hover:bg-bad-bg disabled:opacity-50"
             >
-              {logoutMutation.isPending ? 'Logging out...' : 'Logout'}
+              {logoutMutation.isPending ? t('profile.loggingOut') : t('profile.logout')}
             </button>
           </div>
         )}

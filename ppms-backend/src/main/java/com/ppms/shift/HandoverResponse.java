@@ -15,6 +15,8 @@ public class HandoverResponse {
     String outgoingOperatorName;
     Long incomingOperatorId;
     String incomingOperatorName;
+    Long incomingShiftId;
+    String outgoingShiftStatus;
     boolean physicalCashVerified;
     boolean meterReadingsVerified;
     String notes;

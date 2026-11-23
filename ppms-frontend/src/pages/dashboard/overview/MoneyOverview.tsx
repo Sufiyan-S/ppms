@@ -1,36 +1,39 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Banknote, CreditCard, ClipboardCheck, Landmark, type LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cashApi } from '../../../api/cashApi'
 import { creditApi } from '../../../api/creditApi'
 import { expenseApi } from '../../../api/expenseApi'
 import { paymentSettlementApi } from '../../../api/paymentSettlementApi'
 import { Reveal } from '../../../components/Reveal'
-import { canPerformAction } from '../../../permissions/permissions'
+import { canAccessPage, canPerformAction } from '../../../permissions/permissions'
 import { useAuthStore } from '../../../store/authStore'
-import { formatCurrency } from '../../../utils/format'
+import { MoneyText } from '../../../components/AmountText'
 
 function MoneyTile({ to, icon: Icon, label, value, note }: {
   to: string
   icon: LucideIcon
   label: string
-  value: string | undefined
+  value: ReactNode
   note: string
 }) {
   return (
-    <Link to={to} className="ui-dashboard-module block px-4 py-3.5 transition-shadow hover:shadow-md">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <Link to={to} className="ui-dashboard-module block px-4 py-3.5 transition-shadow hover:shadow-raised">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink-3">
         <Icon size={14} strokeWidth={2} aria-hidden="true" />
         <span>{label}</span>
       </div>
-      <p className="mt-2 text-xl font-bold tabular-nums text-slate-900">{value ?? '—'}</p>
-      <p className="mt-1 text-xs text-slate-500">{note}</p>
+      <p className="mt-2 text-xl font-bold tabular-nums text-ink">{value ?? '—'}</p>
+      <p className="mt-1 text-xs text-ink-3">{note}</p>
     </Link>
   )
 }
 
 /** The money figures an owner or manager checks first, each linking to the page where it is handled. */
 export function MoneyOverview({ pumpId }: { pumpId: number }) {
+  const { t } = useTranslation('dashboard')
   const role = useAuthStore((state) => state.user?.role)
   const canApprovePayments = canPerformAction('credit:approve-payment', role)
 
@@ -64,16 +67,17 @@ export function MoneyOverview({ pumpId }: { pumpId: number }) {
 
   return (
     <Reveal delay={335}>
-      <section aria-label="Money at a glance" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MoneyTile to="/dashboard/cash" icon={Banknote} label="Cash in drawer"
-          value={cash ? formatCurrency(cash.currentBalance) : undefined} note="Current drawer balance" />
-        <MoneyTile to="/dashboard/credit" icon={CreditCard} label="Credit outstanding"
-          value={creditOutstanding != null ? formatCurrency(creditOutstanding) : undefined} note="Owed by credit clients" />
-        <MoneyTile to="/dashboard/expenses" icon={ClipboardCheck} label="Waiting for approval"
-          value={waitingCount != null ? String(waitingCount) : undefined}
-          note={canApprovePayments ? 'Expenses and credit payments' : 'Expenses'} />
-        <MoneyTile to="/dashboard/settlements" icon={Landmark} label="Not yet settled"
-          value={wallet ? formatCurrency(wallet.totalPending) : undefined} note="UPI, card and fleet card" />
+      <section aria-label={t('money.label')} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MoneyTile to="/dashboard/cash" icon={Banknote} label={t('money.cashInDrawer')}
+          value={cash ? <MoneyText value={cash.currentBalance} /> : undefined} note={t('money.cashNote')} />
+        <MoneyTile to="/dashboard/credit" icon={CreditCard} label={t('money.creditOutstanding')}
+          value={creditOutstanding != null ? <MoneyText value={creditOutstanding} /> : undefined} note={t('money.creditNote')} />
+        <MoneyTile to={canAccessPage('approvals', role) ? '/dashboard/approvals' : '/dashboard/expenses'}
+          icon={ClipboardCheck} label={t('money.waitingForApproval')}
+          value={waitingCount}
+          note={canApprovePayments ? t('money.waitingNoteWithPayments') : t('money.waitingNote')} />
+        <MoneyTile to="/dashboard/settlements" icon={Landmark} label={t('money.notSettled')}
+          value={wallet ? <MoneyText value={wallet.totalPending} /> : undefined} note={t('money.notSettledNote')} />
       </section>
     </Reveal>
   )

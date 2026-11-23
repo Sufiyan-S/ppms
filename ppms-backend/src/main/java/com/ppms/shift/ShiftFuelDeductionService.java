@@ -2,6 +2,7 @@ package com.ppms.shift;
 
 import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.fuel.FuelType;
 import com.ppms.inventory.InventoryLot;
 import com.ppms.inventory.InventoryLotRepository;
@@ -81,7 +82,9 @@ public class ShiftFuelDeductionService {
                 .map(InventoryLot::getRemainingQuantity)
                 .reduce(ZERO, BigDecimal::add);
         if (unitsToDeduct.compareTo(totalAvailable) > 0) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.INSUFFICIENT_FUEL_STOCK,
+                    Map.of("litresSold", unitsToDeduct.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                            "litresAvailable", totalAvailable.setScale(2, RoundingMode.HALF_UP).toPlainString()),
                     "Insufficient fuel stock: shift recorded " + unitsToDeduct.setScale(2, RoundingMode.HALF_UP) +
                     " L sold but only " + totalAvailable.setScale(2, RoundingMode.HALF_UP) +
                     " L is available in inventory. Please verify the meter readings or record a tanker delivery first.");

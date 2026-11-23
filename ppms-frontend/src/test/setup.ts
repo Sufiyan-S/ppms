@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { initI18n } from '../i18n'
+
+// Tests render the real English resources, so text and role-name queries match what English users see.
+await initI18n('en')
 
 // jsdom does not implement scrolling.
 Element.prototype.scrollIntoView = function scrollIntoView() {}

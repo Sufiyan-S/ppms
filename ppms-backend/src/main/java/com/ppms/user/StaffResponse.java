@@ -15,7 +15,8 @@ public record StaffResponse(
         String status,
         BigDecimal dailyRate,
         BigDecimal shift1HourlyRate,
-        BigDecimal standardHourlyRate
+        BigDecimal standardHourlyRate,
+        String preferredLanguage
 ) {
     private static final Set<UserRole> ROLES_SEEING_CONTACT_AND_PAY =
             Set.of(UserRole.SUPER_ADMIN, UserRole.OWNER, UserRole.ADMIN);
@@ -26,7 +27,7 @@ public record StaffResponse(
             return full;
         }
         return new StaffResponse(full.id(), full.employeeId(), full.fullName(), null, full.gender(),
-                full.nightShiftConsent(), full.role(), full.assignedPumpId(), full.status(), null, null, null);
+                full.nightShiftConsent(), full.role(), full.assignedPumpId(), full.status(), null, null, null, full.preferredLanguage());
     }
 
     static StaffResponse from(User u) {
@@ -42,7 +43,8 @@ public record StaffResponse(
                 u.getStatus().name(),
                 u.getDailyRate(),
                 u.getShift1HourlyRate(),
-                u.getStandardHourlyRate()
+                u.getStandardHourlyRate(),
+                u.getPreferredLanguage()
         );
     }
 }

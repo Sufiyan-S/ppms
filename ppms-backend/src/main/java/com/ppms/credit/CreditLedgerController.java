@@ -4,7 +4,10 @@ import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.text.ServerTextCodes;
 import com.ppms.pump.PumpLocation;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.user.User;
@@ -39,6 +42,8 @@ public class CreditLedgerController {
     private final CreditInterestService interestService;
     private final CreditInterestRunService interestRunService;
     private final CreditLedgerService ledgerService;
+    private final CreditPaymentApprovalService paymentApprovalService;
+    private final CreditAgingService agingService;
     private final CreditLedgerQueryService queryService;
     private final CreditStatementRenderer statementRenderer;
     private final PumpLocationRepository pumpLocationRepository;
@@ -52,6 +57,16 @@ public class CreditLedgerController {
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<CreditClientResponse>> getLedgerSummary(@PathVariable Long pumpId) {
         return ResponseEntity.ok(queryService.getLedgerSummary(pumpId));
+    }
+
+    /**
+     * GET /api/pumps/{pumpId}/credit-ledger/aging
+     * Each account's balance split by age (0–30, 31–60, 61–90, 90+ days), with days overdue and credit status.
+     */
+    @GetMapping("/aging")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<CreditAgingResponse> getAging(@PathVariable Long pumpId) {
+        return ResponseEntity.ok(agingService.agingOfPump(pumpId));
     }
 
     /**
@@ -155,23 +170,33 @@ public class CreditLedgerController {
 
     /**
      * PATCH /api/pumps/{pumpId}/credit-ledger/clients/{clientId}/interest-settings
-     * Updates monthly interest rate and grace days for a client. Owner/Admin/Manager.
+     * Updates monthly interest rate and grace days for a client. Owner/Admin.
      */
     @PatchMapping("/clients/{clientId}/interest-settings")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<CreditClientResponse> updateInterestSettings(
             @PathVariable Long pumpId,
             @PathVariable Long clientId,
-            @Valid @RequestBody UpdateInterestSettingsRequest request) {
+            @Valid @RequestBody UpdateInterestSettingsRequest request,
+            @AuthenticationPrincipal User currentUser) {
 
         CreditClient client = clientAccessService.requireClientForPump(pumpId, clientId);
 
+        BigDecimal oldRate = client.getMonthlyInterestRate();
+        Integer oldGraceDays = client.getInterestGraceDays();
         client.setMonthlyInterestRate(request.monthlyInterestRate().setScale(2, RoundingMode.HALF_UP));
         client.setInterestGraceDays(request.interestGraceDays());
         client = ledgerService.saveClient(client);
 
         log.info("Interest settings updated: pump={}, client={}, rate={}%, graceDays={}",
                 pumpId, clientId, client.getMonthlyInterestRate(), client.getInterestGraceDays());
+
+        auditService.log(pumpId, AuditAction.INTEREST_SETTINGS_CHANGED,
+                "CreditClient", clientId.toString(),
+                "Interest settings for " + client.getName() + " changed: rate " + oldRate + "% → "
+                        + client.getMonthlyInterestRate() + "%/month, grace days " + oldGraceDays + " → "
+                        + client.getInterestGraceDays(),
+                currentUser);
 
         return ResponseEntity.ok(queryService.toClientResponse(client));
     }
@@ -198,7 +223,9 @@ public class CreditLedgerController {
                         "periodTo", charge.getPeriodTo().toString()
                 )))
                 .orElseGet(() -> ResponseEntity.ok(Map.of("applied", false,
-                        "reason", "No eligible interest period — client may have no balance, no rate configured, or interest was already applied recently.")));
+                        "reason", "No eligible interest period — client may have no balance, no rate configured, or interest was already applied recently.",
+                        "reasonCode", ServerTextCodes.INTEREST_NOT_DUE,
+                        "reasonParams", Map.of())));
     }
 
     /**
@@ -240,18 +267,25 @@ public class CreditLedgerController {
     }
 
     /**
-     * DELETE /api/pumps/{pumpId}/credit-ledger/{clientId}/interest/{chargeId}
-     * Permanently removes an interest charge from the ledger. Owner/Admin/Manager.
+     * PATCH /api/pumps/{pumpId}/credit-ledger/{clientId}/interest/{chargeId}/waive
+     * Waives an interest charge with a reason; the charge stays on the ledger but is no longer owed. Owner/Admin.
      */
-    @DeleteMapping("/{clientId}/interest/{chargeId}")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public ResponseEntity<Void> deleteInterestCharge(
+    @PatchMapping("/{clientId}/interest/{chargeId}/waive")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    public ResponseEntity<Void> waiveInterestCharge(
             @PathVariable Long pumpId,
             @PathVariable Long clientId,
             @PathVariable Long chargeId,
+            @Valid @RequestBody WaiveInterestChargeRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        ledgerService.deleteInterestCharge(pumpId, clientId, chargeId, currentUser);
+        CreditInterestCharge charge = ledgerService.waiveInterestCharge(
+                pumpId, clientId, chargeId, request.reason(), currentUser);
+        auditService.log(pumpId, AuditAction.INTEREST_CHARGE_WAIVED,
+                "CreditInterestCharge", chargeId.toString(),
+                "Interest ₹" + charge.getAmount() + " for " + charge.getPeriodFrom() + " to " + charge.getPeriodTo()
+                        + " waived for clientId=" + clientId + ", reason=" + charge.getVoidReason(),
+                currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -268,6 +302,10 @@ public class CreditLedgerController {
             @AuthenticationPrincipal User currentUser) {
 
         ledgerService.reassignCreditEntry(pumpId, entryId, request, currentUser);
+        auditService.log(pumpId, AuditAction.CREDIT_ENTRY_REASSIGNED,
+                "ShiftCreditEntry", entryId.toString(),
+                "Credit entry moved to clientId=" + request.getToClientId() + " reason=" + request.getReason().trim(),
+                currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -303,7 +341,8 @@ public class CreditLedgerController {
      *   toDate   (ISO date, e.g. 2024-12-31) — filter transactions up to this date
      *
      * The statement includes: pump header, client details, transaction table with running
-     * balance, and the current outstanding balance as a footer summary.
+     * balance, and the current outstanding balance as a footer summary. A parent account's statement
+     * also lists its sub-accounts' transactions, each labelled with the sub-account, and the group outstanding.
      */
     @GetMapping(value = "/{clientId}/statement", produces = MediaType.TEXT_HTML_VALUE)
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'ACCOUNTANT')")
@@ -316,16 +355,10 @@ public class CreditLedgerController {
         CreditClient client = clientAccessService.requireClientForPump(pumpId, clientId);
 
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
-        BigDecimal outstanding = interestService.computeOutstanding(clientId);
-        String html = statementRenderer.render(
-                pump,
-                client,
-                queryService.getStatementTransactions(clientId, fromDate, toDate),
-                outstanding,
-                fromDate,
-                toDate);
+        String html = statementRenderer.render(pump, client, queryService.getStatement(client, fromDate, toDate),
+                fromDate, toDate);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
@@ -361,24 +394,20 @@ public class CreditLedgerController {
 
         String statusStr = body.get("status");
         if (statusStr == null) {
-            throw new BusinessException("status is required (APPROVED or REJECTED)");
+            throw new BusinessException(ErrorCodes.APPROVAL_STATUS_REQUIRED,
+                    Map.of(),
+                    "status is required (APPROVED or REJECTED)");
         }
 
         com.ppms.expense.ExpenseApprovalStatus newStatus = switch (statusStr.toUpperCase()) {
             case "APPROVED" -> com.ppms.expense.ExpenseApprovalStatus.APPROVED;
             case "REJECTED" -> com.ppms.expense.ExpenseApprovalStatus.REJECTED;
-            default -> throw new BusinessException("Invalid status. Allowed: APPROVED, REJECTED");
+            default -> throw new BusinessException(ErrorCodes.APPROVAL_STATUS_INVALID,
+                    Map.of(),
+                    "Invalid status. Allowed: APPROVED, REJECTED");
         };
 
-        CreditPayment saved = ledgerService.approvePayment(pumpId, paymentId, newStatus, currentUser);
-
-        log.info("Credit payment {}: paymentId={} pump={} amount={} by={}",
-                newStatus, paymentId, pumpId, saved.getAmount(), currentUser.getId());
-
-        auditService.log(pumpId, AuditAction.CREDIT_PAYMENT_RECEIVED,
-                "CreditPayment", paymentId.toString(),
-                "Payment " + newStatus + ": ₹" + saved.getAmount() + " for clientId=" + saved.getClientId(),
-                currentUser);
+        CreditPayment saved = paymentApprovalService.review(pumpId, paymentId, newStatus, body.get("reason"), currentUser);
         String recordedByName = ledgerService.resolveRecordedByName(saved.getRecordedById());
         return ResponseEntity.ok(queryService.toPaymentResponse(saved, recordedByName));
     }

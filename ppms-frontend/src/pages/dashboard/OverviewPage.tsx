@@ -1,7 +1,8 @@
 import { lazy, Suspense, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Fuel, AlertTriangle, Zap, IndianRupee, Gauge } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { AlertTriangle, Zap, IndianRupee, Gauge } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { pumpApi } from '../../api/pumpApi'
 import { shiftApi } from '../../api/shiftApi'
@@ -11,21 +12,33 @@ import { localDateInputValue } from '../../utils/date'
 import { SkeletonStat } from '../../components/Skeleton'
 import { Reveal } from '../../components/Reveal'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
-import { MAX_CHART_DAYS, fmtAmt, isPriceStale } from './overview/overviewFormat'
+import { StatusBadge } from '../../components/StatusBadge'
+import { MAX_CHART_DAYS } from './overview/overviewFormat'
+import { isPriceStale } from '../../utils/fuelPrices'
 import { MoneyOverview } from './overview/MoneyOverview'
 import { TankStockOverview } from './overview/TankStockOverview'
 import { ShiftStatusRow } from './overview/ShiftStatusRow'
 import { StatCard } from './overview/StatCard'
 import { AllPumpsOverview, OverviewScopeToggle } from './overview/AllPumpsOverview'
-import { codeLabel, roleLabel } from '../../constants/labels'
+import { ManagerHeader, ManagerQuickActions, OpenShiftsLive } from './overview/ManagerHome'
+import { Page } from '../../components/layout/Page'
+import { PageSection } from '../../components/layout/PageSection'
+import { DashboardColumns, KpiRow } from '../../components/layout/DashboardGrid'
+import { AttentionInbox } from './overview/AttentionInbox'
+import { OverviewHeader } from './overview/OverviewHeader'
+import { codeLabel } from '../../constants/labels'
 
 const RevenueTrendChart = lazy(() => import('./overview/RevenueTrendChart').then((module) => ({ default: module.RevenueTrendChart })))
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
+  const { t } = useTranslation(['dashboard', 'common'])
   const { user } = useAuthStore()
   const { selectedPumpId } = usePumpStore()
+  const isManager = user?.role === 'MANAGER'
+  // An accountant's home is the inbox alone; shift, tank and cash figures are not theirs to open
+  const isAccountant = user?.role === 'ACCOUNTANT'
 
   const { data: pumps = [] } = useQuery({
     queryKey: ['myPumps'],
@@ -38,9 +51,9 @@ export default function OverviewPage() {
   const allPumpsView = showAllPumps && pumps.length >= 2
 
   const pumpId = allPumpsView ? null : selectedPumpId
-  const pumpIds: number[] = pumpId ? [pumpId] : []
+  const pumpIds: number[] = pumpId && !isAccountant ? [pumpId] : []
   const selectedPump = pumps.find(p => p.id === selectedPumpId)
-  const focusName = allPumpsView ? 'All pumps' : selectedPump?.name
+  const focusName = allPumpsView ? t('common:pumpScope.allPumps') : selectedPump?.name
 
   // Active shifts for the selected pump
   const activeShiftQueries = useQueries({
@@ -48,7 +61,8 @@ export default function OverviewPage() {
       queryKey:        ['activeShifts', id] as const,
       queryFn:         () => shiftApi.getActiveShifts(id),
       enabled:         !!id,
-      refetchInterval: 60_000,
+      refetchInterval: isManager ? 15_000 : 60_000,
+      refetchIntervalInBackground: false,
     })),
   })
 
@@ -75,7 +89,7 @@ export default function OverviewPage() {
   const { data: historyShifts = [] } = useQuery({
     queryKey: ['shiftHistory', pumpId, 'overview', chartFrom],
     queryFn:  () => shiftApi.getShiftHistory(pumpId!, { from: chartFrom }),
-    enabled:  !!pumpId,
+    enabled:  !!pumpId && !isAccountant,
   })
 
   // ── Derived stats ────────────────────────────────────────────────────────────
@@ -84,7 +98,7 @@ export default function OverviewPage() {
   const activeCount     = allActiveShifts.length
 
   const allTanks       = tankStockQueries.flatMap(q => q.data ?? [])
-  const lowStockTanks  = allTanks.filter(t => t.lowStock)
+  const lowStockTanks  = allTanks.filter(tank => tank.lowStock)
 
   const todayStr = localDateInputValue()
   const todayRevenue = historyShifts
@@ -106,164 +120,151 @@ export default function OverviewPage() {
     (max, q) => Math.max(max, q.dataUpdatedAt ?? 0), 0
   )
 
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const closedShiftCountToday = historyShifts.filter(s => s.shiftDate === todayStr).length
 
+  const liveShifts = isManager ? (
+    !statsLoading && <OpenShiftsLive shifts={allActiveShifts} isFetching={activeShiftsFetching} dataUpdatedAt={activeShiftsUpdatedAt} />
+  ) : (
+    !statsLoading && allActiveShifts.length > 0 && (
+      <Reveal delay={195}>
+        <PageSection
+          title={t('overview.liveShifts')}
+          titleMeta={<RefreshIndicator isFetching={activeShiftsFetching} dataUpdatedAt={activeShiftsUpdatedAt} />}
+          flush
+        >
+          <div className="divide-y divide-border">
+            {allActiveShifts.map(shift => (
+              <ShiftStatusRow key={shift.id} shift={shift} />
+            ))}
+          </div>
+        </PageSection>
+      </Reveal>
+    )
+  )
+
   return (
-    <div className="ui-page ui-page--narrow space-y-5">
-
-      {/* ── Live data error banner ── */}
-      {anyQueryError && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
-          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-          </svg>
-          Some live data could not be loaded. Figures shown may be incomplete — refresh to try again.
-        </div>
-      )}
-
-      {/* ── Welcome header (above the fold, so not faded in) ── */}
-      <div className="ui-dashboard-hero">
-        <div className="ui-dashboard-hero-copy">
-          <div className="ui-dashboard-chip">
-            <Fuel size={11} strokeWidth={2.2} />
-            <span>Live operations snapshot</span>
-          </div>
-          <div>
-            <p className="ui-dashboard-hero-kicker">{greeting}</p>
-            <h1 className="ui-dashboard-hero-title">{user?.fullName}</h1>
-            <p className="ui-dashboard-hero-subtitle">
-              {roleLabel(user?.role)} · {focusName ?? 'No pump selected'}
-            </p>
-          </div>
-        </div>
-        <div className="ui-dashboard-hero-meta">
-          <div className="ui-dashboard-meta-card">
-            <span className="ui-dashboard-meta-label">Pump Focus</span>
-            <span className="ui-dashboard-meta-value">{focusName ?? 'Select a pump'}</span>
-            {!allPumpsView && (
-              <span className="ui-dashboard-meta-help">
-                {activeCount > 0
-                  ? `${activeCount} active shift${activeCount !== 1 ? 's' : ''} in progress`
-                  : 'No active shift at the moment'}
-              </span>
-            )}
-          </div>
+    <Page>
+      {isManager ? (
+        <>
+          <ManagerHeader pumpName={selectedPump?.name} />
+          {pumpId && <ManagerQuickActions pumpId={pumpId} activeShifts={allActiveShifts} tanks={allTanks} />}
+        </>
+      ) : (
+        <OverviewHeader focusName={focusName}>
           <OverviewScopeToggle
             pumpCount={pumps.length}
             selectedPumpName={selectedPump?.name}
             showAllPumps={allPumpsView}
             onShowAllPumpsChange={setShowAllPumps}
           />
-        </div>
-      </div>
+        </OverviewHeader>
+      )}
 
-      {allPumpsView ? (
-        <AllPumpsOverview onPumpSelected={() => setShowAllPumps(false)} />
+      {/* ── Live data error banner ── */}
+      {anyQueryError && (
+        <div className="flex items-center gap-2 rounded-control border border-warn bg-warn-bg px-4 py-2.5 text-xs text-warn">
+          <AlertTriangle size={16} strokeWidth={2} className="shrink-0" aria-hidden="true" />
+          {t('overview.loadError')}
+        </div>
+      )}
+
+      {isAccountant ? (
+        <AttentionInbox pumpId={pumpId} allPumps={allPumpsView} />
+      ) : allPumpsView ? (
+        <AllPumpsOverview
+          onPumpSelected={() => setShowAllPumps(false)}
+          attention={<AttentionInbox pumpId={null} allPumps />}
+        />
       ) : (
         <>
           {/* ── Stale fuel price alert ── */}
-          {priceIsStale && selectedPump && (
+          {isManager && priceIsStale && selectedPump && (
             <Link to="/dashboard/setup" className="block">
-            <div className="ui-alert ui-alert-danger flex items-center gap-3 hover:bg-red-100 transition-colors">
-                <AlertTriangle size={18} className="text-red-500 flex-shrink-0" strokeWidth={2} />
+            <div className="ui-alert ui-alert-danger flex items-center gap-3 hover:bg-bad-bg transition-colors">
+                <AlertTriangle size={18} className="text-bad flex-shrink-0" strokeWidth={2} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-red-700">Fuel prices not updated today</p>
-                  <p className="text-xs text-red-500 mt-0.5 truncate">
-                    {selectedPump.name} — tap here to update prices in Setup
+                  <p className="text-sm font-semibold text-bad">{t('overview.stalePrices.title')}</p>
+                  <p className="text-xs text-bad mt-0.5 truncate">
+                    {t('overview.stalePrices.body', { pump: selectedPump.name })}
                   </p>
                 </div>
-                <span className="text-xs text-red-400 font-medium flex-shrink-0">Update →</span>
+                <span className="text-xs text-bad font-medium flex-shrink-0">{t('overview.stalePrices.action')}</span>
               </div>
             </Link>
           )}
 
           {/* ── Live stat cards ── */}
           <Reveal delay={150}>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {statsLoading ? (
-              <>
-                <SkeletonStat />
-                <SkeletonStat />
-                <SkeletonStat />
-              </>
-            ) : (
-              <>
-                <StatCard
-                  label="Active Shifts"
-                  value={activeCount}
-                  sub={activeCount === 0 ? 'No open shifts' : `at ${selectedPump?.name ?? 'selected pump'}`}
-                  color="bg-emerald-500"
-                  icon={Zap}
-                />
-                <StatCard
-                  label="Today's Revenue"
-                  value={todayRevenue}
-                  format={fmtAmt}
-                  sub={`${closedShiftCountToday} closed shift${closedShiftCountToday !== 1 ? 's' : ''} today`}
-                  color="bg-blue-500"
-                  icon={IndianRupee}
-                />
-                <StatCard
-                  label="Low Stock Tanks"
-                  value={lowStockTanks.length}
-                  sub={lowStockTanks.length === 0 ? 'All tanks OK' : 'Need attention'}
-                  color={lowStockTanks.length > 0 ? 'bg-red-500' : 'bg-slate-400'}
-                  icon={Gauge}
-                  alert={lowStockTanks.length > 0}
-                />
-              </>
-            )}
-          </div>
+            <KpiRow label={t('stats.label')} columns={3}>
+              {statsLoading ? (
+                <>
+                  <SkeletonStat />
+                  <SkeletonStat />
+                  <SkeletonStat />
+                </>
+              ) : (
+                <>
+                  <StatCard
+                    label={t('stats.activeShifts')}
+                    value={activeCount}
+                    sub={activeCount === 0 ? t('stats.noOpenShifts') : t('stats.atPump', { pump: selectedPump?.name ?? t('stats.selectedPump') })}
+                    color="bg-ok"
+                    icon={Zap}
+                    to="/dashboard/shifts"
+                  />
+                  <StatCard
+                    label={t('stats.todaysRevenue')}
+                    value={todayRevenue}
+                    money
+                    sub={t('stats.closedToday', { count: closedShiftCountToday })}
+                    color="bg-primary"
+                    icon={IndianRupee}
+                    to="/dashboard/shifts?history=all"
+                  />
+                  <StatCard
+                    label={t('stats.lowStockTanks')}
+                    value={lowStockTanks.length}
+                    sub={lowStockTanks.length === 0 ? t('stats.allTanksOk') : t('stats.needAttention')}
+                    color={lowStockTanks.length > 0 ? 'bg-bad' : 'bg-ink-3'}
+                    icon={Gauge}
+                    alert={lowStockTanks.length > 0}
+                    to="/dashboard/inventory"
+                  />
+                </>
+              )}
+            </KpiRow>
           </Reveal>
 
           {pumpId && <MoneyOverview pumpId={pumpId} />}
 
+          {/* ── Attention inbox beside the live shift board ── */}
+          <DashboardColumns>
+            {!isManager && <AttentionInbox pumpId={pumpId} allPumps={false} />}
+            {liveShifts}
+          </DashboardColumns>
+
           {/* ── Low stock details (shown only when alert) ── */}
           {lowStockTanks.length > 0 && (
             <div className="ui-alert ui-alert-danger">
-              <p className="text-xs font-semibold text-red-700 mb-2">Tanks needing a delivery:</p>
+              <p className="text-xs font-semibold text-bad mb-2">{t('overview.lowStock.title')}</p>
               <div className="flex flex-wrap gap-2">
-                {lowStockTanks.map(t => (
-                  <span key={t.tankId}
-                    className="text-xs bg-white border border-red-200 text-red-700 px-3 py-1 rounded-full font-medium">
-                    {t.tankIdentifier} ({codeLabel(t.fuelType)}) — {t.stockPercentage.toFixed(1)}% full
-                  </span>
+                {lowStockTanks.map(tank => (
+                  <StatusBadge key={tank.tankId} tone="bad" icon={Gauge}
+                    label={t('overview.lowStock.tank', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType), percent: tank.stockPercentage.toFixed(1) })} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* ── Live shift board ── */}
-          {!statsLoading && allActiveShifts.length > 0 && (
-            <Reveal delay={195}>
-            <div className="ui-card p-0 overflow-hidden">
-              <div className="ui-toolbar">
-                <div className="flex items-center gap-2.5">
-                  <p className="ui-toolbar-title">Live Shifts</p>
-                  <RefreshIndicator isFetching={activeShiftsFetching} dataUpdatedAt={activeShiftsUpdatedAt} />
-                </div>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {allActiveShifts.map(shift => (
-                  <ShiftStatusRow key={shift.id} shift={shift} />
-                ))}
-              </div>
-            </div>
-            </Reveal>
-          )}
-
-          {/* ── Revenue trend chart ── */}
-          <Suspense fallback={<div className="ui-card h-80" aria-busy="true" aria-label="Loading revenue chart" />}>
-            <RevenueTrendChart historyShifts={historyShifts} />
-          </Suspense>
-
-          {/* ── Tank stock summary ── */}
-          <TankStockOverview tanks={allTanks} />
+          {/* ── Revenue trend beside tank stock ── */}
+          <DashboardColumns>
+            <Suspense fallback={<div className="ui-card h-80" aria-busy="true" aria-label={t('overview.loadingChart')} />}>
+              <RevenueTrendChart historyShifts={historyShifts} />
+            </Suspense>
+            <TankStockOverview tanks={allTanks} />
+          </DashboardColumns>
         </>
       )}
-
-    </div>
+    </Page>
   )
 }

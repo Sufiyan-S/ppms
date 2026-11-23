@@ -1,8 +1,10 @@
 package com.ppms.common.time;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 
 import java.time.LocalDate;
+import java.util.Map;
 
 /** Fills in the missing side of an optional from/to date filter with dates Postgres can store. */
 public final class DateRangeBounds {
@@ -24,7 +26,9 @@ public final class DateRangeBounds {
 
     public static void requireStartNotAfterEnd(LocalDate from, LocalDate to) {
         if (from.isAfter(to)) {
-            throw new BusinessException("'from' date must not be after 'to' date");
+            throw new BusinessException(ErrorCodes.DATE_RANGE_START_AFTER_END,
+                    Map.of(),
+                    "'from' date must not be after 'to' date");
         }
     }
 }

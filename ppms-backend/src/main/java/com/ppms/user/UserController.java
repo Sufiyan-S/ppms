@@ -59,13 +59,41 @@ public class UserController {
         return ResponseEntity.ok(userService.updateMyProfile(request, currentUser));
     }
 
+    /** Any signed-in user may choose the language their screens are shown in. */
+    @PatchMapping("/me/language")
+    public ResponseEntity<StaffResponse> updateMyLanguage(
+            @Valid @RequestBody UpdateLanguageRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(userService.updateMyLanguage(request.getLanguage(), currentUser));
+    }
+
     @PatchMapping("/{userId}/status")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'OWNER')")
     public ResponseEntity<StaffResponse> updateUserStatus(
             @PathVariable Long userId,
-            @RequestParam UserStatus status,
+            @Valid @RequestBody UpdateUserStatusRequest request,
             @AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(userService.updateUserStatus(userId, status, currentUser));
+        return ResponseEntity.ok(userService.updateUserStatus(userId, request.getStatus(), currentUser));
+    }
+
+    /** Moves a staff member to another pump of the same owner; they are signed out so their next session loads it. */
+    @PatchMapping("/{userId}/assigned-pump")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<StaffResponse> moveToPump(
+            @PathVariable Long userId,
+            @Valid @RequestBody MoveToPumpRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(userService.moveToPump(userId, request.getPumpId(), currentUser));
+    }
+
+    @PostMapping("/{userId}/reset-password")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'OWNER', 'ADMIN')")
+    public ResponseEntity<Void> resetPassword(
+            @PathVariable Long userId,
+            @Valid @RequestBody ResetPasswordRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        userService.resetPassword(userId, request, currentUser);
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{userId}/pay-rates")

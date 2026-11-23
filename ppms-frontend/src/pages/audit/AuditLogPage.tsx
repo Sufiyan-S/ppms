@@ -1,62 +1,41 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { Trans, useTranslation } from 'react-i18next'
 import { auditApi } from '../../api/auditApi'
+import type { AuditAction, AuditLog } from '../../api/auditApi'
 import { usePumpStore } from '../../store/usePumpStore'
-import type { AuditAction } from '../../api/auditApi'
 import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
-import { Reveal } from '../../components/Reveal'
+import { Page } from '../../components/layout/Page'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { PageSection } from '../../components/layout/PageSection'
+import { FilterBar } from '../../components/layout/FilterBar'
+import { DatePresetChips } from '../../components/DatePresetChips'
+import { CsvExportButton } from '../../components/CsvExportButton'
+import { useDateRangeParams } from '../../hooks/useDateRangeParams'
 import { formatIstDateTime, localDateInputValue } from '../../utils/date'
-import { codeLabel } from '../../constants/labels'
-
-const ACTION_STYLES: Partial<Record<AuditAction, string>> = {
-  // User management
-  USER_CREATED:               'bg-blue-100 text-blue-700',
-  USER_DEACTIVATED:           'bg-red-100 text-red-700',
-  USER_STATUS_CHANGED:        'bg-amber-100 text-amber-700',
-  // Authentication
-  LOGIN:                      'bg-slate-100 text-slate-600',
-  LOGIN_FAILED:               'bg-red-100 text-red-700',
-  TOKEN_REVOKED:              'bg-slate-100 text-slate-600',
-  // Fuel pricing
-  FUEL_PRICE_UPDATED:         'bg-purple-100 text-purple-700',
-  // Shift lifecycle
-  SHIFT_OPENED:               'bg-sky-100 text-sky-700',
-  SHIFT_CLOSED:               'bg-emerald-100 text-emerald-700',
-  DISCREPANCY_RESOLVED:       'bg-amber-100 text-amber-700',
-  // Credit
-  CREDIT_ENTRY_VOIDED:        'bg-red-100 text-red-700',
-  CREDIT_LIMIT_CHANGED:       'bg-orange-100 text-orange-700',
-  CREDIT_PAYMENT_RECEIVED:    'bg-teal-100 text-teal-700',
-  INTEREST_APPLIED:           'bg-orange-100 text-orange-700',
-  CREDIT_CLIENT_CREATED:      'bg-blue-100 text-blue-700',
-  CREDIT_CLIENT_DELETED:      'bg-red-100 text-red-700',
-  CREDIT_ENTRY_REASSIGNED:    'bg-amber-100 text-amber-700',
-  // Inventory
-  DELIVERY_RECORDED:          'bg-indigo-100 text-indigo-700',
-  DIP_CHECK_RECORDED:         'bg-indigo-100 text-indigo-700',
-  // Documents / Expenses
-  DOCUMENT_ADDED:             'bg-slate-100 text-slate-700',
-  EXPENSE_RECORDED:           'bg-rose-100 text-rose-700',
-  // Payroll
-  PAYROLL_APPROVED:           'bg-emerald-100 text-emerald-700',
-  // Pump management
-  PUMP_CREATED:               'bg-blue-100 text-blue-700',
-  PUMP_DELETED:               'bg-red-100 text-red-700',
-  NOZZLE_ADDED:               'bg-blue-100 text-blue-700',
-  TANK_ADDED:                 'bg-blue-100 text-blue-700',
-  // Ancillary
-  ANCILLARY_SALE_RECORDED:    'bg-teal-100 text-teal-700',
-  ANCILLARY_DELIVERY_RECORDED:'bg-indigo-100 text-indigo-700',
-  // Operations
-  HANDOVER_COMPLETED:         'bg-emerald-100 text-emerald-700',
-  PUMP_CLOSURE_ADDED:         'bg-slate-100 text-slate-700',
-  BANK_STATEMENT_IMPORTED:    'bg-indigo-100 text-indigo-700',
-  SUPPLIER_PAYMENT_RECORDED:  'bg-teal-100 text-teal-700',
-  PUMP_CONFIG_UPDATED:        'bg-purple-100 text-purple-700',
-}
+import { csvFilename } from '../../utils/csv'
+import type { CsvColumn } from '../../utils/csv'
+import { auditEntityLabel, auditEntityUrl } from '../../utils/drillDown'
+import { StatusBadge } from '../../components/StatusBadge'
+import { AUDIT_ACTION_TONES, auditActionLabel } from './auditActions'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
+const EXPORT_PAGE_SIZE = 200
+const EXPORT_MAX_PAGES = 25
+
+// CSV headers stay in English: the files are shared with accountants.
+const CSV_COLUMNS: CsvColumn<AuditLog>[] = [
+  { header: 'When', value: (log) => formatIstDateTime(log.createdAt, {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }) },
+  { header: 'Action', value: (log) => auditActionLabel(log.action) },
+  { header: 'By', value: (log) => log.actorName },
+  { header: 'Description', value: (log) => log.description },
+  { header: 'Entity', value: (log) => log.entityType },
+  { header: 'Entity ID', value: (log) => log.entityId },
+]
 
 function fmtDateTime(d: string) {
   return formatIstDateTime(d, {
@@ -65,23 +44,41 @@ function fmtDateTime(d: string) {
   })
 }
 
+function actionOptions(): [AuditAction, string][] {
+  return (Object.keys(AUDIT_ACTION_TONES) as AuditAction[])
+    .map((action): [AuditAction, string] => [action, auditActionLabel(action)])
+    .sort(([, a], [, b]) => a.localeCompare(b))
+}
+
 export default function AuditLogPage() {
-  const [from, setFrom]       = useState(() => localDateInputValue(-1))
-  const [to, setTo]           = useState(() => localDateInputValue())
+  const { t } = useTranslation(['audit', 'common'])
+  const [range, setRange] = useDateRangeParams(() => ({ from: localDateInputValue(-1), to: localDateInputValue() }))
+  const { from, to } = range
+  const [action, setAction]       = useState<AuditAction | ''>('')
+  const [actorId, setActorId]     = useState<number | null>(null)
+  const [showSignIns, setShowSignIns] = useState(false)
   const [page, setPage]       = useState(0)
   const [pageSize, setPageSize] = useState(10)
 
   const { selectedPumpId: pumpId } = usePumpStore()
 
+  const filters = {
+    from: from || undefined,
+    to: to || undefined,
+    action: action || undefined,
+    actorId: actorId ?? undefined,
+    hideSignIns: !showSignIns,
+  }
+
   const { data, isLoading } = useQuery({
-    queryKey:  ['auditLogs', pumpId, page, pageSize, from, to],
-    queryFn:   () => auditApi.getAuditLogs({
-      pumpId: pumpId!,
-      page,
-      size: pageSize,
-      from: from || undefined,
-      to:   to   || undefined,
-    }),
+    queryKey:  ['auditLogs', pumpId, page, pageSize, filters],
+    queryFn:   () => auditApi.getAuditLogs({ pumpId: pumpId!, page, size: pageSize, ...filters }),
+    enabled: !!pumpId,
+  })
+
+  const { data: actors = [] } = useQuery({
+    queryKey: ['auditActors', pumpId],
+    queryFn: () => auditApi.getActors(pumpId!),
     enabled: !!pumpId,
   })
 
@@ -89,14 +86,10 @@ export default function AuditLogPage() {
   const totalPages   = data?.page?.totalPages   ?? 0
   const totalEvents  = data?.page?.totalElements ?? 0
   const currentPage  = data?.page?.number       ?? page
+  const hasFilters   = !!(from || to || action || actorId)
 
-  function handleFromChange(value: string) {
-    setFrom(value)
-    setPage(0)
-  }
-
-  function handleToChange(value: string) {
-    setTo(value)
+  function applyRange(next: { from: string; to: string }) {
+    setRange(next)
     setPage(0)
   }
 
@@ -106,119 +99,145 @@ export default function AuditLogPage() {
   }
 
   function clearFilters() {
-    setFrom('')
-    setTo('')
+    setRange({ from: '', to: '' })
+    setAction('')
+    setActorId(null)
     setPage(0)
+  }
+
+  const loadAllEvents = async (): Promise<AuditLog[]> => {
+    const all: AuditLog[] = []
+    for (let exportPage = 0; exportPage < EXPORT_MAX_PAGES; exportPage++) {
+      const result = await auditApi.getAuditLogs({ pumpId: pumpId!, page: exportPage, size: EXPORT_PAGE_SIZE, ...filters })
+      all.push(...result.content)
+      if (exportPage + 1 >= result.page.totalPages) break
+    }
+    return all
   }
 
   const rangeStart = totalEvents === 0 ? 0 : currentPage * pageSize + 1
   const rangeEnd   = Math.min((currentPage + 1) * pageSize, totalEvents)
 
   return (
-    <div className="ui-page ui-page--narrow space-y-5">
+    <Page>
+      <PageHeader
+        title={t('page.title')}
+        description={t('page.subtitle')}
+        secondaryActions={
+          <CsvExportButton
+            filename={csvFilename('audit', from && to ? { from, to } : undefined)}
+            columns={CSV_COLUMNS}
+            rows={loadAllEvents}
+            disabled={totalEvents === 0}
+          />
+        }
+      />
 
-      {/* ── Header ── */}
-      <Reveal delay={60}>
-      <div className="ui-page-header">
-        <div>
-        <h1 className="ui-title-sm">Audit Log</h1>
-        <p className="ui-subtitle">
-          Full history of all sensitive operations — who did what and when
-        </p>
-        </div>
-      </div>
-      </Reveal>
-
-      {/* ── Filters row ── */}
-      <Reveal delay={130}>
-      <div className="ui-card ui-form-shell [grid-template-columns:repeat(3,minmax(0,1fr))_auto] items-end">
-        <div className="flex flex-col gap-1">
-          <label className="block">
-            <span className="ui-label mb-0">From</span>
-            <input
-              type="date"
-              value={from}
-              onChange={e => handleFromChange(e.target.value)}
-              max={to || undefined}
-              className="text-sm"
-            />
-          </label>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="block">
-            <span className="ui-label mb-0">To</span>
-            <input
-              type="date"
-              value={to}
-              onChange={e => handleToChange(e.target.value)}
-              min={from || undefined}
-              className="text-sm"
-            />
-          </label>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="block">
-            <span className="ui-label mb-0">Per page</span>
-            <select
-              value={pageSize}
-              onChange={e => handlePageSizeChange(Number(e.target.value))}
-              className="text-sm bg-white"
-            >
-              {PAGE_SIZE_OPTIONS.map(n => (
-                <option key={n} value={n}>{n} / page</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <button
-          onClick={clearFilters}
-          className={`ui-btn ui-btn-ghost text-xs ${(from || to) ? '' : 'invisible'}`}
-        >
-          Clear filter
-        </button>
-      </div>
-      </Reveal>
-
-      {/* ── Log list ── */}
-      <Reveal delay={200}>
-      <div className="ui-card p-0 overflow-hidden">
-        <div className="ui-toolbar">
-          <p className="ui-toolbar-title">
-            {from || to ? 'Filtered Events' : 'All Events'} ({isLoading ? '…' : totalEvents})
-          </p>
-          {!isLoading && totalPages > 0 && (
-            <p className="ui-toolbar-note">
-              Page {currentPage + 1} of {totalPages}
-            </p>
-          )}
-        </div>
+      <PageSection
+        title={<>{hasFilters ? t('page.filteredEvents') : t('page.allEvents')} ({isLoading ? '…' : totalEvents})</>}
+        titleMeta={!isLoading && totalPages > 0 && (
+          <span className="text-xs text-ink-3">
+            {t('common:pagination.pageOf', { page: currentPage + 1, total: totalPages })}
+          </span>
+        )}
+        flush
+      >
+        <FilterBar label={t('page.filtersLabel')} onClearFilters={clearFilters} hasActiveFilters={hasFilters}>
+          <div className="ui-filter-group w-full">
+            <div className="basis-full"><DatePresetChips range={range} onSelect={applyRange} /></div>
+            <label className="block">
+              <span className="ui-label mb-0">{t('common:fields.from')}</span>
+              <input
+                type="date"
+                value={from}
+                onChange={e => applyRange({ from: e.target.value, to })}
+                max={to || undefined}
+                className="text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="ui-label mb-0">{t('common:fields.to')}</span>
+              <input
+                type="date"
+                value={to}
+                onChange={e => applyRange({ from, to: e.target.value })}
+                min={from || undefined}
+                className="text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="ui-label mb-0">{t('page.action')}</span>
+              <select
+                value={action}
+                onChange={e => { setAction(e.target.value as AuditAction | ''); setPage(0) }}
+                className="text-sm"
+              >
+                <option value="">{t('page.allActions')}</option>
+                {actionOptions().map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block min-w-40">
+              <span className="ui-label mb-0">{t('page.user')}</span>
+              <select
+                value={actorId ?? ''}
+                onChange={e => { setActorId(e.target.value ? Number(e.target.value) : null); setPage(0) }}
+                className="text-sm"
+              >
+                <option value="">{t('page.everyone')}</option>
+                {actors.map(actor => (
+                  <option key={actor.actorId} value={actor.actorId}>{actor.actorName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-flex min-h-10 items-center gap-2 text-sm text-ink-2">
+              <input
+                type="checkbox"
+                checked={showSignIns}
+                onChange={e => { setShowSignIns(e.target.checked); setPage(0) }}
+              />
+              {t('page.showSignIns')}
+            </label>
+          </div>
+        </FilterBar>
 
         {isLoading ? (
           <div className="px-5 py-4"><SkeletonRows count={5} /></div>
         ) : logs.length === 0 ? (
           <p className="ui-empty px-5 py-6">
-            No audit events found{from || to ? ' for the selected date range' : ''}.
+            {hasFilters ? t('page.noEventsForFilters') : t('page.noEvents')}
           </p>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {logs.map(log => (
-              <div key={log.id} className="px-5 py-3">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACTION_STYLES[log.action] ?? 'bg-slate-100 text-slate-600'}`}>
-                      {codeLabel(log.action)}
-                    </span>
-                    <span className="text-xs text-slate-500">by <span className="font-medium text-slate-700">{log.actorName}</span></span>
+          <ul className="divide-y divide-border">
+            {logs.map(log => {
+              const entityUrl = auditEntityUrl(log.entityType, log.entityId)
+              return (
+                <li key={log.id} className="px-(--density-card-pad) py-(--density-row-y)">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusBadge
+                        tone={AUDIT_ACTION_TONES[log.action] ?? 'neutral'}
+                        label={auditActionLabel(log.action)}
+                      />
+                      <span className="text-xs text-ink-3">
+                        <Trans t={t} i18nKey="page.by" values={{ name: log.actorName }} components={{ name: <span className="font-medium text-ink" /> }} />
+                      </span>
+                    </div>
+                    <p className="text-xs text-ink-3 flex-shrink-0">{fmtDateTime(log.createdAt)}</p>
                   </div>
-                  <p className="text-xs text-slate-500 flex-shrink-0">{fmtDateTime(log.createdAt)}</p>
-                </div>
-                <p className="text-sm text-slate-700">{log.description}</p>
-                {log.entityId && (
-                  <p className="text-xs text-slate-500 mt-0.5">{log.entityType} #{log.entityId}</p>
-                )}
-              </div>
-            ))}
-          </div>
+                  <p className="text-sm text-ink">{log.description}</p>
+                  {log.entityId && (
+                    <p className="text-xs text-ink-3 mt-0.5">
+                      {entityUrl
+                        ? <Link to={entityUrl} className="ui-link">{auditEntityLabel(log.entityType, log.entityId)}</Link>
+                        : auditEntityLabel(log.entityType, log.entityId)}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         )}
 
         {/* ── Pagination controls — always shown when there's data ── */}
@@ -239,14 +258,14 @@ export default function AuditLogPage() {
               pageSizeOptions={PAGE_SIZE_OPTIONS}
             />
             <div className="pt-2 text-center">
-              <span className="text-xs text-slate-500">
-                Showing {rangeStart}–{rangeEnd} of {totalEvents} events
+              <span className="text-xs text-ink-3">
+                {t('page.showing', { from: rangeStart, to: rangeEnd, total: totalEvents })}
               </span>
             </div>
           </div>
         )}
-      </div>
-      </Reveal>
-    </div>
+      </PageSection>
+    </Page>
   )
 }
+

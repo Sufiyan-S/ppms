@@ -44,4 +44,8 @@ public class CreateUserRequest {
     private String employeeId;
 
     private LocalDate dateOfJoining;
+
+    // Optional; English when left out
+    @Pattern(regexp = UserLanguage.PATTERN, message = UserLanguage.MESSAGE)
+    private String preferredLanguage;
 }

@@ -16,7 +16,7 @@ function renderAs(role: UserRole) {
   const isOwnerOrAdmin = role === 'OWNER' || role === 'ADMIN'
   renderWithProviders(
     <ProductsTab pumpId={1} products={[product]} loading={false} isOwnerOrAdmin={isOwnerOrAdmin}
-      isManagerOrAbove={isOwnerOrAdmin || role === 'MANAGER'} onRefresh={vi.fn()} />,
+      isManagerOrAbove={isOwnerOrAdmin || role === 'MANAGER'} isAddingProduct={false} onAddProductClosed={vi.fn()} onRefresh={vi.fn()} />,
   )
 }
 

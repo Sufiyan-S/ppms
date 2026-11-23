@@ -27,7 +27,7 @@ describe('GstDetailsContent', () => {
     await user.type(screen.getByLabelText('Legal name (as registered)'), 'Lakshmi Fuels Pvt Ltd')
     await user.type(screen.getByLabelText('State'), 'Maharashtra')
     await user.type(screen.getByLabelText('Invoice prefix'), 'pmp3')
-    await user.click(screen.getByRole('button', { name: 'Save GST Details' }))
+    await user.click(screen.getByRole('button', { name: 'Save GST details' }))
 
     expect(pumpApi.updatePumpSettings).toHaveBeenCalledWith(3, {
       gstin: '27AAAPL1234C1ZV', legalName: 'Lakshmi Fuels Pvt Ltd', stateName: 'Maharashtra', invoicePrefix: 'PMP3',
@@ -41,7 +41,7 @@ describe('GstDetailsContent', () => {
     renderWithProviders(<GstDetailsContent pump={pump} onUpdated={vi.fn()} />)
 
     await user.type(screen.getByLabelText('GSTIN'), '27ABC')
-    await user.click(screen.getByRole('button', { name: 'Save GST Details' }))
+    await user.click(screen.getByRole('button', { name: 'Save GST details' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('GSTIN must be 15 characters')
     expect(pumpApi.updatePumpSettings).not.toHaveBeenCalled()

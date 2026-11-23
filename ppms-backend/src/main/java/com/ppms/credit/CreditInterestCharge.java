@@ -15,7 +15,7 @@ import java.time.OffsetDateTime;
  *
  * Interest charges are debit entries in the ledger — they increase the outstanding balance,
  * just like credit sales do. Stored separately from shift_credit_entries so they can be
- * identified, audited, and reversed independently.
+ * identified, audited, and waived independently.
  */
 @Entity
 @Table(name = "credit_interest_charges")
@@ -60,13 +60,23 @@ public class CreditInterestCharge {
     @Column(name = "period_to", nullable = false)
     private LocalDate periodTo;
 
-    /** MANUAL = owner triggered via API; MONTHLY_SCHEDULED = automated cron on 1st of month. */
+    /** MANUAL = owner triggered via API; WEEKLY/MONTHLY_SCHEDULED = automated run; RECALCULATED = re-charged after a backdated change. */
     @Column(name = "source", nullable = false)
     private String source;
 
     /** User who triggered the charge. Null for scheduled runs. */
     @Column(name = "applied_by_user_id")
     private Long appliedByUserId;
+
+    /** Set when an owner or admin waives the charge; a waived charge stays listed but is no longer owed. */
+    @Column(name = "voided_at")
+    private OffsetDateTime voidedAt;
+
+    @Column(name = "voided_by")
+    private Long voidedBy;
+
+    @Column(name = "void_reason")
+    private String voidReason;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

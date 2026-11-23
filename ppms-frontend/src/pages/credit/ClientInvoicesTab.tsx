@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { creditApi } from '../../api/creditApi'
 import type { CreditInvoice, InvoicePeriod } from '../../api/creditApi'
 import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
 import { EmptyState } from '../../components/EmptyState'
-import { Spinner } from '../../components/Spinner'
+import { LoadingButton } from '../../components/LoadingButton'
+import { FormGrid } from '../../components/layout/FormGrid'
+import { StatusBadge } from '../../components/StatusBadge'
+import { invoiceStatusBadge } from '../../components/statusBadges'
+import { MoneyText } from '../../components/AmountText'
 import { useToastStore } from '../../store/toastStore'
 import { parseApiError } from '../../utils/apiError'
 import { formatIstDate } from '../../utils/date'
-import { formatCurrency } from '../../utils/format'
 import { CancelInvoiceModal } from './modals/CancelInvoiceModal'
-
-// ─── Client Invoices Tab ─────────────────────────────────────────────────────
+import { InvoiceDetailsPanel } from './InvoiceDetailsPanel'
+import { useUrlParam } from '../../components/layout/useUrlParam'
 
 interface ClientInvoicesTabProps {
   pumpId: number
@@ -23,9 +27,11 @@ interface ClientInvoicesTabProps {
 const shortDate = (date: string) => formatIstDate(date, { day: '2-digit', month: 'short', year: 'numeric' })
 
 export function ClientInvoicesTab({ pumpId, clientId, canIssueInvoices }: ClientInvoicesTabProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
   const [cancelling, setCancelling] = useState<CreditInvoice | null>(null)
+  const openInvoice = useUrlParam('invoice')
 
   const { data: defaultPeriod } = useQuery({
     queryKey: ['credit-invoice-default-period', pumpId, clientId],
@@ -38,10 +44,20 @@ export function ClientInvoicesTab({ pumpId, clientId, canIssueInvoices }: Client
     queryFn: () => creditApi.listInvoices(pumpId, clientId, page, pageSize),
   })
 
+  const shownInvoice = invoices?.content.find(invoice => String(invoice.id) === openInvoice.value)
+  const startCancel = (invoice: CreditInvoice) => {
+    openInvoice.remove()
+    setCancelling(invoice)
+  }
+
   return (
     <div className="space-y-4">
       {cancelling && (
         <CancelInvoiceModal invoice={cancelling} pumpId={pumpId} onClose={() => setCancelling(null)} />
+      )}
+      {shownInvoice && (
+        <InvoiceDetailsPanel pumpId={pumpId} invoice={shownInvoice} canCancel={canIssueInvoices}
+          onCancel={startCancel} onClose={openInvoice.remove} />
       )}
 
       {canIssueInvoices && defaultPeriod && (
@@ -52,47 +68,49 @@ export function ClientInvoicesTab({ pumpId, clientId, canIssueInvoices }: Client
       {isLoading ? (
         <SkeletonRows count={3} />
       ) : isError ? (
-        <p role="alert" className="ui-alert ui-alert-danger text-sm">Could not load invoices. Please try again.</p>
+        <p role="alert" className="ui-alert ui-alert-danger text-sm">{t('invoices.loadFailed')}</p>
       ) : !invoices || invoices.content.length === 0 ? (
-        <EmptyState icon="transactions" title="No invoices yet"
-          subtitle={canIssueInvoices ? 'Generate one for a billing period above.' : undefined} />
+        <EmptyState icon="transactions" title={t('invoices.empty')}
+          subtitle={canIssueInvoices ? t('invoices.emptyHint') : undefined} />
       ) : (
         <>
-          <ul className="space-y-2" aria-label="Invoices">
+          <ul className="space-y-2" aria-label={t('invoices.listLabel')}>
             {invoices.content.map(invoice => (
               <li key={invoice.id} className="ui-card-plain px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-800">{invoice.invoiceNumber}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                      invoice.status === 'CANCELLED' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
-                    }`}>
-                      {invoice.status === 'CANCELLED' ? 'Cancelled' : 'Issued'}
-                    </span>
+                    <button type="button" onClick={() => openInvoice.set(String(invoice.id))}
+                      aria-label={t('invoicePanel.openLabel', { number: invoice.invoiceNumber })}
+                      className="ui-link text-sm font-semibold">
+                      {invoice.invoiceNumber}
+                    </button>
+                    <StatusBadge {...invoiceStatusBadge(invoice.status)} />
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {shortDate(invoice.periodFrom)} – {shortDate(invoice.periodTo)} · issued {shortDate(invoice.issuedOn)}
+                  <p className="text-xs text-ink-3 mt-0.5">
+                    {t('invoices.periodIssued', {
+                      from: shortDate(invoice.periodFrom), to: shortDate(invoice.periodTo), issued: shortDate(invoice.issuedOn),
+                    })}
                   </p>
                   {invoice.cancelReason && (
-                    <p className="text-xs text-red-700 mt-0.5">Reason: {invoice.cancelReason}</p>
+                    <p className="text-xs text-bad mt-0.5">{t('invoices.cancelReason', { reason: invoice.cancelReason })}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold text-slate-800">{formatCurrency(invoice.grandTotal)}</span>
+                  <MoneyText value={invoice.grandTotal} className="text-sm font-bold text-ink" />
                   <a
                     href={creditApi.invoicePrintUrl(pumpId, invoice.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs"
-                    aria-label={`View or print invoice ${invoice.invoiceNumber}`}
+                    aria-label={t('invoices.viewPrintLabel', { number: invoice.invoiceNumber })}
                   >
-                    View / Print
+                    {t('invoices.viewPrint')}
                   </a>
                   {canIssueInvoices && invoice.status === 'ISSUED' && (
-                    <button type="button" onClick={() => setCancelling(invoice)}
-                      className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-red-600 border border-red-200"
-                      aria-label={`Cancel invoice ${invoice.invoiceNumber}`}>
-                      Cancel
+                    <button type="button" onClick={() => startCancel(invoice)}
+                      className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-bad border border-bad/30"
+                      aria-label={t('invoices.cancelLabel', { number: invoice.invoiceNumber })}>
+                      {t('common:actions.cancel')}
                     </button>
                   )}
                 </div>
@@ -118,6 +136,7 @@ interface GenerateInvoiceFormProps {
 }
 
 function GenerateInvoiceForm({ pumpId, clientId, defaultPeriod, onGenerated }: GenerateInvoiceFormProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
   const { addToast } = useToastStore()
   const [periodFrom, setPeriodFrom] = useState(defaultPeriod.periodFrom)
@@ -129,42 +148,42 @@ function GenerateInvoiceForm({ pumpId, clientId, defaultPeriod, onGenerated }: G
     onSuccess: (invoice) => {
       setError(null)
       qc.invalidateQueries({ queryKey: ['credit-invoices', pumpId] })
-      addToast(`Invoice ${invoice.invoiceNumber} issued`, 'success')
+      addToast(t('invoices.issued', { number: invoice.invoiceNumber }), 'success')
       onGenerated()
     },
-    onError: (err) => setError(parseApiError(err, 'Failed to generate invoice')),
+    onError: (err) => setError(parseApiError(err, t('invoices.generateFailed'))),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!periodFrom || !periodTo) { setError('Choose both dates of the period.'); return }
-    if (periodFrom > periodTo) { setError('The period start must be on or before its end.'); return }
+    if (!periodFrom || !periodTo) { setError(t('invoices.bothDatesRequired')); return }
+    if (periodFrom > periodTo) { setError(t('invoices.startAfterEnd')); return }
     setError(null)
     mutation.mutate()
   }
 
   return (
-    <form onSubmit={handleSubmit} className="ui-card-plain px-4 py-3 space-y-3" aria-label="Generate invoice">
-      <p className="text-sm font-semibold text-slate-700">Generate invoice</p>
-      <p className="text-xs text-slate-500">
-        Bills every credit sale in the period that is not already on an invoice. Interest is not included.
+    <form onSubmit={handleSubmit} className="ui-card-plain px-4 py-3 space-y-3" aria-label={t('invoices.generateHeading')}>
+      <h3 className="text-sm font-semibold text-ink">{t('invoices.generateHeading')}</h3>
+      <p className="text-xs text-ink-3">
+        {t('invoices.generateHelp')}
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <FormGrid>
         <label className="block">
-          <span className="ui-label">From</span>
+          <span className="ui-label">{t('common:fields.from')}</span>
           <input type="date" value={periodFrom} max={periodTo || undefined}
-            onChange={e => setPeriodFrom(e.target.value)} className="text-sm" />
+            onChange={e => setPeriodFrom(e.target.value)} />
         </label>
         <label className="block">
-          <span className="ui-label">To</span>
+          <span className="ui-label">{t('common:fields.to')}</span>
           <input type="date" value={periodTo} min={periodFrom || undefined}
-            onChange={e => setPeriodTo(e.target.value)} className="text-sm" />
+            onChange={e => setPeriodTo(e.target.value)} />
         </label>
-      </div>
+      </FormGrid>
       {error && <p role="alert" className="ui-error-text">{error}</p>}
-      <button type="submit" disabled={mutation.isPending} className="ui-btn ui-btn-primary">
-        {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Generating…</span> : 'Generate Invoice'}
-      </button>
+      <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('common:actions.generating')} className="ui-btn-primary">
+        {t('invoices.generateButton')}
+      </LoadingButton>
     </form>
   )
 }

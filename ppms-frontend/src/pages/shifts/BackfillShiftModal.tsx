@@ -1,5 +1,10 @@
+import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DiscardChangesDialog } from '../../components/DiscardChangesDialog'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
+import { LoadingButton } from '../../components/LoadingButton'
+import { StillNeeded } from '../../components/StillNeeded'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import type { BackfillShiftModalProps } from './backfill/backfillHelpers'
 import { useBackfillForm } from './backfill/useBackfillForm'
 import { ShiftDetailsSection } from './backfill/ShiftDetailsSection'
@@ -9,89 +14,93 @@ import { MeterReadingsSection } from './backfill/MeterReadingsSection'
 import { CreditSalesSection } from './backfill/CreditSalesSection'
 import { PaymentSection } from './backfill/PaymentSection'
 import { DiscrepancyReasonSection } from './backfill/DiscrepancyReasonSection'
-import { IconButton } from '../../components/IconButton'
+import { BackfillSummary } from './backfill/BackfillSummary'
+import { Section } from './close/CloseShiftFields'
 
-// ── Component ─────────────────────────────────────────────────────────────────
+/** From this width the live summary sits beside the form, as on Close shift. */
+const SIDE_SUMMARY_QUERY = '(min-width: 900px)'
 
 export default function BackfillShiftModal({ pumpId, onClose }: BackfillShiftModalProps) {
+  const { t } = useTranslation(['shifts', 'common'])
   const form = useBackfillForm({ pumpId, onClose })
   const { error, handleSubmit, isPending, requestClose, isConfirming, discard, keepEditing, canSubmit } = form
+  const stillNeededId = useId()
+  const summaryBesideForm = useMediaQuery(SIDE_SUMMARY_QUERY)
+
+  const stillNeeded = [
+    !form.shiftDate && t('backfill.stillNeeded.date'),
+    !form.shiftDefinitionId && t('backfill.stillNeeded.window'),
+    !form.operatorId && t('backfill.stillNeeded.operator'),
+    !form.selectedDU && t('backfill.stillNeeded.du'),
+    form.selectedNozzleIds.size === 0 && t('backfill.stillNeeded.nozzle'),
+  ].filter((item): item is string => typeof item === 'string')
 
   return (
-    <ModalPortal onClose={isPending ? undefined : requestClose} closeOnBackdropClick>
-      <div className="ui-modal-backdrop">
-        <div
-          className="ui-modal-panel w-full max-w-xl"
-        >
-          {/* ── Header ──────────────────────────────────────────────────── */}
-          <div
-            className="ui-modal-header ui-modal-header--themed"
-            style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)' }}
-          >
-            <div className="ui-modal-heading">
-              <h2 className="ui-modal-title">Backfill Historical Shift</h2>
-              <p className="ui-modal-subtitle">
-                Record past shift data (up to 365 days back). Tanker deliveries for the shift date must be logged first — the system will block submission if stock is insufficient.
-              </p>
-            </div>
-            <IconButton label="Close" icon="×" onClick={requestClose} className="ui-btn ui-btn-ghost ui-modal-close" disabled={isPending} />
-          </div>
-
-          {/* ── Scrollable form ──────────────────────────────────────────── */}
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            <div className="ui-modal-body space-y-4">
-
-              {/* ── Shift Details ──────────────────────────────────────── */}
+    <>
+      <Modal
+        title={t('backfill.title')}
+        subtitle={t('backfill.subtitle')}
+        tone="info"
+        size="full"
+        fullScreenOnPhone
+        onClose={requestClose}
+        canClose={!isPending}
+        closeOnBackdropClick
+        onSubmit={handleSubmit}
+        footer={
+          <>
+            <StillNeeded id={stillNeededId} items={stillNeeded} />
+            <button type="button" onClick={requestClose} disabled={isPending} className="ui-btn ui-btn-secondary">
+              {t('common:actions.cancel')}
+            </button>
+            <LoadingButton
+              type="submit"
+              disabled={!canSubmit}
+              aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+              isLoading={isPending}
+              loadingLabel={t('common:actions.saving')}
+              className="ui-btn-primary"
+            >
+              {t('backfill.save')}
+            </LoadingButton>
+          </>
+        }
+      >
+        <div className={summaryBesideForm ? 'ui-close-layout' : undefined}>
+          <div className="min-w-0 space-y-6">
+            <p className="ui-help mt-0">{t('backfill.deliveriesFirst')}</p>
+            <Section label="1" title={t('backfill.details.title')}>
               <ShiftDetailsSection form={form} />
-
-
-              {/* ── Staff & Nozzles ────────────────────────────────────── */}
-              <StaffNozzlesSection form={form} />
-
-
-              {/* ── Fuel Rates ─────────────────────────────────────────── */}
-              <FuelRatesSection form={form} />
-
-
-              {/* ── Meter Readings ─────────────────────────────────────── */}
-              <MeterReadingsSection form={form} />
-
-
-              {/* ── Credit Sales ───────────────────────────────────────── */}
+            </Section>
+            <Section label="2" title={t('backfill.meter.title')}>
+              <div className="space-y-4">
+                <StaffNozzlesSection form={form} />
+                <FuelRatesSection form={form} />
+                <MeterReadingsSection form={form} />
+              </div>
+            </Section>
+            <Section label="3" title={t('backfill.credit.title')} optional>
               <CreditSalesSection form={form} />
-
-
-              {/* ── Payment Collection ─────────────────────────────────── */}
-              <PaymentSection form={form} />
-
-
-              {/* ── Discrepancy reason ──────────────────────────────────── */}
-              <DiscrepancyReasonSection form={form} />
-
-
-              {error && (
-                <div role="alert" className="ui-alert ui-alert-error text-sm">{error}</div>
-              )}
-            </div>
-
-            {/* ── Footer ────────────────────────────────────────────────── */}
-            <div className="ui-modal-footer">
-              <button type="button" onClick={requestClose} disabled={isPending} className="ui-btn ui-btn-ghost">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending || !canSubmit}
-                className="ui-btn ui-btn-primary disabled:opacity-40"
-                style={!isPending ? { background: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)', border: 'none' } : {}}
-              >
-                {isPending ? 'Saving…' : 'Save Historical Shift'}
-              </button>
-            </div>
-          </form>
+            </Section>
+            <Section label="4" title={t('backfill.payment.title')}>
+              <div className="space-y-4">
+                <PaymentSection form={form} />
+                {!summaryBesideForm && <BackfillSummary form={form} />}
+                <DiscrepancyReasonSection form={form} />
+              </div>
+            </Section>
+            {error && (
+              <p role="alert" className="ui-alert ui-alert-danger">{error}</p>
+            )}
+          </div>
+          {summaryBesideForm && (
+            <aside className="sticky top-0">
+              <BackfillSummary form={form} />
+            </aside>
+          )}
         </div>
-      </div>
-      {isConfirming && <DiscardChangesDialog onDiscard={discard} onKeepEditing={keepEditing} />}
-    </ModalPortal>
+      </Modal>
+      {isConfirming && <DiscardChangesDialog formName={t('backfill.title')} onDiscard={discard} onKeepEditing={keepEditing} />}
+    </>
   )
 }

@@ -129,6 +129,7 @@ export interface RecordAncillarySaleRequest {
   /** MRP entered by operator at point of sale — inclusive of all taxes, no GST added on top. */
   sellingPricePerUnit: number
   paymentMode: AncillaryPaymentMode
+  /** Required when paymentMode is CREDIT: the credit client the sale is charged to */
   clientId?: number
   clientName?: string
   billNo?: string
@@ -146,7 +147,8 @@ export interface BackfillSaleRequest {
   saleDate: string
   quantityUnits: number
   paymentMode: AncillaryPaymentMode
-  /** Required when paymentMode is CREDIT */
+  /** Required when paymentMode is CREDIT: the credit client the sale is charged to */
+  clientId?: number
   clientName?: string
   billNo?: string
   notes?: string

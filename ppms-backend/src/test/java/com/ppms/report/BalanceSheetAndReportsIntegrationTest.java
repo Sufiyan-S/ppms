@@ -103,6 +103,50 @@ class BalanceSheetAndReportsIntegrationTest extends ApiIntegrationTest {
         assertThat(savedSheetCount()).isEqualTo(2);
     }
 
+    @Test
+    void todaysSheetAndYesterdaysSheetEachCoverOnlyTheirOwnDaysShifts() throws Exception {
+        String yesterday = TestDates.today().minusDays(1).toString();
+        long yesterdaysShiftId = json(perform(post("/api/pumps/{pumpId}/shifts/backfill", setup.pumpId()), setup.owner(),
+                backfillRequest(yesterday)).andExpect(status().is2xxSuccessful())).get("id").asLong();
+
+        JsonNode todaysSheet = generate("DAY", null);
+        JsonNode yesterdaysSheet = generate("DAY", null, yesterday);
+
+        assertThat(shiftIdsOf(todaysSheet)).containsExactly(shiftId);
+        assertThat(todaysSheet.get("totalLitresSold").decimalValue()).isEqualByComparingTo("20");
+        assertThat(todaysSheet.get("periodLabel").asText()).startsWith("Day End · " + today + " (up to ");
+        assertThat(shiftIdsOf(yesterdaysSheet)).containsExactly(yesterdaysShiftId);
+        assertThat(yesterdaysSheet.get("totalLitresSold").decimalValue()).isEqualByComparingTo("10");
+        assertThat(yesterdaysSheet.get("periodLabel").asText()).isEqualTo("Day End · " + yesterday);
+        assertThat(yesterdaysSheet.get("periodLabelCode").asText()).isEqualTo("PERIOD_DAY_END");
+        assertThat(yesterdaysSheet.get("periodLabelParams").get("date").asText()).isEqualTo(yesterday);
+        assertThat(todaysSheet.get("periodLabelCode").asText()).isEqualTo("PERIOD_DAY_END_UP_TO");
+        assertThat(todaysSheet.get("periodLabelParams").has("time")).isTrue();
+    }
+
+    private static List<Long> shiftIdsOf(JsonNode sheet) {
+        List<Long> ids = new ArrayList<>();
+        sheet.get("shiftLines").forEach(line -> ids.add(line.get("shiftId").asLong()));
+        return ids;
+    }
+
+    private Map<String, Object> backfillRequest(String shiftDate) {
+        Map<String, Object> request = new HashMap<>();
+        request.put("shiftDefinitionId", setup.allDayShift().getId());
+        request.put("shiftDate", shiftDate);
+        request.put("duId", setup.du().getId());
+        request.put("operatorId", setup.operator().getId());
+        request.put("nozzleReadings", List.of(Map.of("nozzleId", setup.nozzle().getId(),
+                "openingReading", new BigDecimal("1000.000"), "closingReading", new BigDecimal("1010.000"))));
+        request.put("cashCollected", new BigDecimal("1000.00"));
+        request.put("upiCollected", BigDecimal.ZERO);
+        request.put("cardCollected", BigDecimal.ZERO);
+        request.put("fleetCardCollected", BigDecimal.ZERO);
+        request.put("creditTotal", BigDecimal.ZERO);
+        request.put("fuelRateOverrides", Map.of("PETROL", new BigDecimal("100.00")));
+        return request;
+    }
+
     private long savedSheetCount() throws Exception {
         return json(perform(get("/api/pumps/{pumpId}/balance-sheets", setup.pumpId()), setup.owner())
                 .andExpect(status().isOk())).get("totalElements").asLong();
@@ -114,6 +158,40 @@ class BalanceSheetAndReportsIntegrationTest extends ApiIntegrationTest {
                 .param("from", today).param("to", today), setup.manager()).andExpect(status().isOk()));
 
         assertThat(report.toString()).contains("2000");
+    }
+
+    @Test
+    void profitAndLossShowsOneLotLineWhenSeveralShiftsDrawFromTheSameLot() throws Exception {
+        String yesterday = TestDates.today().minusDays(1).toString();
+        perform(post("/api/pumps/{pumpId}/shifts/backfill", setup.pumpId()), setup.owner(), backfillRequest(yesterday))
+                .andExpect(status().is2xxSuccessful());
+
+        JsonNode report = json(perform(get("/api/pumps/{pumpId}/reports/profit-loss", setup.pumpId())
+                .param("from", yesterday).param("to", today), setup.manager()).andExpect(status().isOk()));
+
+        JsonNode lotLines = report.get("byFuelType").get(0).get("lotCostLines");
+        assertThat(lotLines).hasSize(1);
+        assertThat(lotLines.get(0).get("quantityConsumed").decimalValue()).isEqualByComparingTo("30");
+        assertThat(lotLines.get(0).get("lotCost").decimalValue()).isEqualByComparingTo("2700.00");
+    }
+
+    @Test
+    void profitAndLossSplitsRevenueAndCostOfGoodsByShiftDay() throws Exception {
+        String yesterday = TestDates.today().minusDays(1).toString();
+        perform(post("/api/pumps/{pumpId}/shifts/backfill", setup.pumpId()), setup.owner(), backfillRequest(yesterday))
+                .andExpect(status().is2xxSuccessful());
+
+        JsonNode report = json(perform(get("/api/pumps/{pumpId}/reports/profit-loss", setup.pumpId())
+                .param("from", yesterday).param("to", today), setup.manager()).andExpect(status().isOk()));
+
+        JsonNode days = report.get("byDay");
+        assertThat(days).hasSize(2);
+        assertThat(days.get(0).get("date").asText()).isEqualTo(yesterday);
+        assertThat(days.get(1).get("date").asText()).isEqualTo(today);
+        BigDecimal revenue = days.get(0).get("revenue").decimalValue().add(days.get(1).get("revenue").decimalValue());
+        BigDecimal profit = days.get(0).get("grossProfit").decimalValue().add(days.get(1).get("grossProfit").decimalValue());
+        assertThat(revenue).isEqualByComparingTo(report.get("totalRevenue").decimalValue());
+        assertThat(profit).isEqualByComparingTo(report.get("grossProfit").decimalValue());
     }
 
     @Test
@@ -204,9 +282,13 @@ class BalanceSheetAndReportsIntegrationTest extends ApiIntegrationTest {
     }
 
     private JsonNode generate(String type, Long shiftDefinitionId) throws Exception {
+        return generate(type, shiftDefinitionId, today);
+    }
+
+    private JsonNode generate(String type, Long shiftDefinitionId, String reportDate) throws Exception {
         Map<String, Object> request = new HashMap<>();
         request.put("reportType", type);
-        request.put("reportDate", today);
+        request.put("reportDate", reportDate);
         request.put("shiftDefinitionId", shiftDefinitionId);
         return json(perform(post("/api/pumps/{pumpId}/balance-sheets/generate", setup.pumpId()), setup.manager(), request)
                 .andExpect(status().is2xxSuccessful()));

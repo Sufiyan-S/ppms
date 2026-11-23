@@ -37,6 +37,10 @@ public class LotConsumption {
     @Column(name = "dip_correction_id")
     private Long dipCorrectionId;
 
+    // Populated when source_type = MAINTENANCE_REMOVAL
+    @Column(name = "fuel_dip_entry_id")
+    private Long fuelDipEntryId;
+
     @Column(name = "quantity_consumed", nullable = false)
     private BigDecimal quantityConsumed;
 

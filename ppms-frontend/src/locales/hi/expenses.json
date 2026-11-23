@@ -1,0 +1,67 @@
+{
+  "page": {
+    "title": "खर्च हिसाब",
+    "noPump": "कोई पंप नहीं चुना गया। ऊपर की पट्टी में पंप चुनें, या मालिक या एडमिन से आपको किसी पंप पर जोड़ने को कहें।",
+    "subtitle": "पंप के रोज़ के खर्च दर्ज करें और देखें",
+    "approvedTotal": "मंज़ूर कुल",
+    "totalRecords": "कुल रिकॉर्ड",
+    "pendingCount_one": "{{count}} मंज़ूरी बाकी",
+    "pendingCount_other": "{{count}} मंज़ूरी बाकी"
+  },
+  "form": {
+    "title": "खर्च दर्ज करें",
+    "subtitle": "जाँच से पहले श्रेणी, राशि, तारीख और विवरण भरें।",
+    "category": "श्रेणी",
+    "amount": "राशि",
+    "description": "विवरण",
+    "expenseDate": "खर्च की तारीख",
+    "saveDraft": "ड्राफ्ट के रूप में सेव करें — मंज़ूरी के लिए बाद में भेजें",
+    "needAmount": "राशि",
+    "needDescription": "विवरण",
+    "recorded": "खर्च दर्ज हो गया",
+    "recordFailed": "खर्च दर्ज नहीं हो सका",
+    "descriptionRequired": "विवरण लिखना ज़रूरी है",
+    "amountPositive": "राशि शून्य से ज़्यादा होनी चाहिए"
+  },
+  "review": {
+    "title": "खर्च जाँचें",
+    "add": "खर्च सेव करें",
+    "savedAs": "इस रूप में सेव"
+  },
+  "list": {
+    "title": "सभी खर्च",
+    "filterByCategory": "श्रेणी से छाँटें",
+    "allCategories": "सभी श्रेणियाँ",
+    "filterByStatus": "स्थिति से छाँटें",
+    "allStatuses": "सभी स्थितियाँ",
+    "statusDraft": "ड्राफ्ट",
+    "statusPendingApproval": "मंज़ूरी बाकी",
+    "statusApproved": "मंज़ूर",
+    "statusRejected": "अस्वीकृत",
+    "approvalHint": "मंज़ूर और अस्वीकार के बटन सिर्फ़ <status>मंज़ूरी बाकी</status> वाले खर्चों पर दिखते हैं।",
+    "emptyTitle": "अभी तक कोई खर्च दर्ज नहीं",
+    "emptyAccountant": "दिखाने के लिए कोई रिकॉर्ड नहीं।",
+    "emptySubtitle": "पहला खर्च जोड़ने के लिए \"खर्च दर्ज करें\" दबाएँ।",
+    "deleteExpense": "खर्च हटाएँ",
+    "rejectTitle": "खर्च अस्वीकार करें",
+    "rejectedWithNotes": "{{label}}: {{notes}}",
+    "filtersLabel": "खर्च के फ़िल्टर"
+  },
+  "toast": {
+    "submitted": "खर्च मंज़ूरी के लिए भेजा गया",
+    "submitFailed": "खर्च भेजा नहीं जा सका",
+    "deleted": "खर्च हटाया गया",
+    "deleteFailed": "खर्च हटाया नहीं जा सका",
+    "approved": "खर्च मंज़ूर हुआ",
+    "rejected": "खर्च अस्वीकृत हुआ",
+    "updateFailed": "खर्च अपडेट नहीं हो सका"
+  },
+  "csv": {
+    "date": "तारीख",
+    "category": "श्रेणी",
+    "description": "विवरण",
+    "amount": "राशि",
+    "status": "स्थिति",
+    "approvalNotes": "मंज़ूरी टिप्पणी"
+  }
+}

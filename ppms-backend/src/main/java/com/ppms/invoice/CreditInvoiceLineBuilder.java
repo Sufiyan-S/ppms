@@ -7,7 +7,6 @@ import com.ppms.shift.ShiftCreditEntry;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -21,12 +20,12 @@ final class CreditInvoiceLineBuilder {
     private CreditInvoiceLineBuilder() {
     }
 
-    static List<CreditInvoiceLine> fuelLines(List<ShiftCreditEntry> entries, ZoneId businessZone) {
+    static List<CreditInvoiceLine> fuelLines(List<ShiftCreditEntry> entries) {
         return entries.stream()
                 .map(entry -> CreditInvoiceLine.builder()
                         .lineType(InvoiceLineType.FUEL)
                         .sourceId(entry.getId())
-                        .saleDate(entry.getCreatedAt().atZoneSameInstant(businessZone).toLocalDate())
+                        .saleDate(entry.getSaleDate())
                         .billNo(entry.getBillNo())
                         .description(fuelDescription(entry))
                         .vehicleRegistration(entry.getVehicleRegistration())
@@ -40,7 +39,7 @@ final class CreditInvoiceLineBuilder {
 
     /**
      * Counter sales are rung up at a tax-inclusive price and usually store no GST amount; then the GST
-     * is taken out of the price paid at the product's rate, so the invoice total still equals what was charged.
+     * is taken out of the price paid at the rate stored on the sale, so the invoice total still equals what was charged.
      */
     static List<CreditInvoiceLine> ancillaryLines(List<AncillarySale> sales, Map<Long, AncillaryProduct> productsById,
                                                   boolean sameState) {
@@ -50,7 +49,7 @@ final class CreditInvoiceLineBuilder {
     }
 
     private static CreditInvoiceLine ancillaryLine(AncillarySale sale, AncillaryProduct product, boolean sameState) {
-        BigDecimal gstRate = product.getGstRatePercent().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal gstRate = sale.getGstRatePercent().setScale(2, RoundingMode.HALF_UP);
         BigDecimal taxableValue;
         BigDecimal gstAmount;
         if (sale.getGstAmount().signum() > 0) {

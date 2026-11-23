@@ -11,10 +11,6 @@ export function safeParse(v: string): number {
   return isFinite(n) && n >= 0 ? n : 0
 }
 
-export function fmt(n: number): string {
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 // ── Credit entry row state ────────────────────────────────────────────────────
 
 export interface CreditRow {

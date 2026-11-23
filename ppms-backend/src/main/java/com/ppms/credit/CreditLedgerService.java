@@ -1,5 +1,8 @@
 package com.ppms.credit;
 
+import java.util.Map;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
@@ -55,10 +58,10 @@ public class CreditLedgerService {
                                        RecordPaymentRequest request, User currentUser) {
 
         CreditClient client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found"));
 
         if (!client.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Client not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Client not found");
         }
 
         creditAccountPolicyService.lockLimitHolder(client);
@@ -66,7 +69,8 @@ public class CreditLedgerService {
         BigDecimal payable = payableAmount(client);
         BigDecimal paymentAmount = request.getAmount().setScale(2, RoundingMode.HALF_UP);
         if (paymentAmount.compareTo(payable) > 0) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.CREDIT_PAYMENT_EXCEEDS_PAYABLE,
+                    Map.of("amount", paymentAmount.toPlainString(), "payable", payable.toPlainString()),
                     "Payment amount (" + paymentAmount + ") exceeds the amount still payable (" + payable + "), "
                             + "which is the outstanding balance less payments awaiting approval. "
                             + "You cannot over-pay a credit account.");
@@ -90,6 +94,10 @@ public class CreditLedgerService {
                 .build();
 
         payment = paymentRepository.save(payment);
+        if (approvalStatus == ExpenseApprovalStatus.APPROVED) {
+            interestService.recalculateChargedInterestFrom(clientId, payment.getPaidAt(),
+                    "Recalculated after payment dated " + payment.getPaidAt(), currentUser);
+        }
 
         log.info("Credit payment recorded: pump={}, client={}, amount={}, mode={}, status={}, by={}",
                 pumpId, clientId, payment.getAmount(), payment.getPaymentMode(),
@@ -103,31 +111,49 @@ public class CreditLedgerService {
     }
 
     /**
-     * Permanently removes an interest charge from the ledger.
-     * Outstanding balance recalculates automatically on the next fetch since
-     * computeOutstanding() sums directly from the DB.
+     * Waives an interest charge: the row stays on the ledger with who waived it and why, but no longer
+     * counts as owed. Waiving the latest charge lets its period be charged again by the next interest run.
      */
     @Transactional
-    public void deleteInterestCharge(Long pumpId, Long clientId, Long chargeId, User currentUser) {
-
-        CreditInterestCharge charge = interestChargeRepository.findById(chargeId)
-                .orElseThrow(() -> new ResourceNotFoundException("Interest charge not found"));
-
-        if (!charge.getClientId().equals(clientId)) {
-            throw new BusinessException("Interest charge does not belong to this client");
+    public CreditInterestCharge waiveInterestCharge(Long pumpId, Long clientId, Long chargeId,
+                                                    String reason, User currentUser) {
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException(ErrorCodes.INTEREST_WAIVER_REASON_REQUIRED,
+                    Map.of(),
+                    "A reason is required to waive an interest charge.");
         }
 
+        CreditInterestCharge charge = interestChargeRepository.findById(chargeId)
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.INTEREST_CHARGE,
+                        "Interest charge not found"));
+
         if (!charge.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Interest charge not found");
+            throw new ResourceNotFoundException(EntityType.INTEREST_CHARGE, "Interest charge not found");
+        }
+
+        if (!charge.getClientId().equals(clientId)) {
+            throw new BusinessException(ErrorCodes.INTEREST_CHARGE_OTHER_CLIENT,
+                    Map.of(),
+                    "Interest charge does not belong to this client");
         }
 
         creditAccountPolicyService.lockLimitHolderOfClient(clientId);
 
-        interestChargeRepository.deleteById(chargeId);
+        if (charge.getVoidedAt() != null) {
+            throw new BusinessException(ErrorCodes.INTEREST_CHARGE_ALREADY_WAIVED,
+                    Map.of(),
+                    "This interest charge has already been waived.");
+        }
 
-        log.info("Interest charge deleted: pump={}, client={}, chargeId={}, amount={}, period={}/{}, deletedBy={}",
+        charge.setVoidedAt(businessClock.now());
+        charge.setVoidedBy(currentUser.getId());
+        charge.setVoidReason(reason.trim());
+        charge = interestChargeRepository.save(charge);
+
+        log.info("Interest charge waived: pump={}, client={}, chargeId={}, amount={}, period={}/{}, waivedBy={}",
                 pumpId, clientId, chargeId, charge.getAmount(),
                 charge.getPeriodFrom(), charge.getPeriodTo(), currentUser.getId());
+        return charge;
     }
 
     /**
@@ -138,28 +164,36 @@ public class CreditLedgerService {
                                     ReassignCreditEntryRequest request, User currentUser) {
 
         ShiftCreditEntry entry = creditEntryRepository.findByIdForUpdate(entryId)
-                .orElseThrow(() -> new ResourceNotFoundException("Credit entry not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_ENTRY, "Credit entry not found"));
 
         Shift shift = shiftRepository.findById(entry.getShiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT, "Shift not found"));
         if (!shift.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Credit entry not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_ENTRY, "Credit entry not found");
         }
         invoicedSaleGuard.requireFuelEntriesNotInvoiced(List.of(entryId));
 
         CreditClient toClient = clientRepository.findById(request.getToClientId())
-                .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT,
+                        "Target credit client not found"));
         if (!toClient.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Target client not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Target client not found");
         }
 
         if (entry.getClientId() != null && entry.getClientId().equals(request.getToClientId())) {
-            throw new BusinessException("Entry is already assigned to this account");
+            throw new BusinessException(ErrorCodes.CREDIT_ENTRY_ALREADY_ON_ACCOUNT,
+                    Map.of(),
+                    "Entry is already assigned to this account");
         }
 
         Long fromClientId = entry.getClientId(); // null when entry was never linked to a client
         validateGroupMove(pumpId, fromClientId, request.getToClientId());
-        creditAccountPolicyService.lockLimitHolder(toClient);
+        if (fromClientId == null && "ACTIVE".equals(entry.getVoidStatus())) {
+            // Linking an old free-text entry adds debt to the client, so it must pass the same checks as a new sale.
+            creditAccountPolicyService.validateCreditSaleAllowed(pumpId, toClient, entry.getAmount());
+        } else {
+            creditAccountPolicyService.lockLimitHolder(toClient);
+        }
 
         // A first assignment has no previous client, and from_client_id cannot be null, so only moves are recorded.
         if (fromClientId != null) {
@@ -188,19 +222,23 @@ public class CreditLedgerService {
                                       ReassignCreditEntryRequest request, User currentUser) {
 
         CreditPayment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Credit payment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_PAYMENT,
+                        "Credit payment not found"));
 
         if (!payment.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Credit payment not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_PAYMENT, "Credit payment not found");
         }
 
         if (payment.getClientId().equals(request.getToClientId())) {
-            throw new BusinessException("Payment is already assigned to this account");
+            throw new BusinessException(ErrorCodes.CREDIT_PAYMENT_ALREADY_ON_ACCOUNT,
+                    Map.of(),
+                    "Payment is already assigned to this account");
         }
 
         validateGroupMove(pumpId, payment.getClientId(), request.getToClientId());
         CreditClient toClient = clientRepository.findById(request.getToClientId())
-                .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT,
+                        "Target credit client not found"));
         creditAccountPolicyService.lockLimitHolder(toClient);
 
         Long fromClientId = payment.getClientId();
@@ -215,26 +253,31 @@ public class CreditLedgerService {
     public CreditPayment approvePayment(Long pumpId, Long paymentId,
                                         ExpenseApprovalStatus newStatus, User currentUser) {
         Long clientId = paymentRepository.findClientIdByIdAndPumpId(paymentId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PAYMENT, "Payment not found"));
         CreditClient client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found"));
         creditAccountPolicyService.lockLimitHolder(client);
 
         CreditPayment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PAYMENT, "Payment not found"));
 
         if (payment.getPaymentApprovalStatus() != ExpenseApprovalStatus.PENDING_APPROVAL) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.CREDIT_PAYMENT_NOT_PENDING,
+                    Map.of("statusCode", payment.getPaymentApprovalStatus().name()),
                     "Payment is already " + payment.getPaymentApprovalStatus() + " — only PENDING_APPROVAL payments can be acted on");
         }
         if (payment.getRecordedById().equals(currentUser.getId())) {
-            throw new BusinessException("You recorded this payment, so another Owner or Admin must approve or reject it.");
+            throw new BusinessException(ErrorCodes.CREDIT_PAYMENT_SELF_APPROVAL,
+                    Map.of(),
+                    "You recorded this payment, so another Owner or Admin must approve or reject it.");
         }
 
         if (newStatus == ExpenseApprovalStatus.APPROVED) {
             BigDecimal payableIncludingThisPayment = payableAmount(client).add(payment.getAmount());
             if (payment.getAmount().compareTo(payableIncludingThisPayment) > 0) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.CREDIT_PAYMENT_APPROVAL_EXCEEDS_PAYABLE,
+                        Map.of("amount", payment.getAmount().toPlainString(),
+                               "payable", payableIncludingThisPayment.toPlainString()),
                         "Approving this payment (" + payment.getAmount() + ") would exceed the amount still payable ("
                                 + payableIncludingThisPayment + "). Reject it or record a smaller payment.");
             }
@@ -243,7 +286,12 @@ public class CreditLedgerService {
         payment.setPaymentApprovalStatus(newStatus);
         payment.setApprovedByUserId(currentUser.getId());
         payment.setApprovedAt(businessClock.now());
-        return paymentRepository.save(payment);
+        payment = paymentRepository.save(payment);
+        if (newStatus == ExpenseApprovalStatus.APPROVED) {
+            interestService.recalculateChargedInterestFrom(payment.getClientId(), payment.getPaidAt(),
+                    "Recalculated after approving payment dated " + payment.getPaidAt(), currentUser);
+        }
+        return payment;
     }
 
     /**
@@ -278,19 +326,23 @@ public class CreditLedgerService {
         }
 
         CreditClient fromClient = clientRepository.findById(fromClientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Source credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT,
+                        "Source credit client not found"));
         CreditClient toClient = clientRepository.findById(toClientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Target credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT,
+                        "Target credit client not found"));
 
         if (!fromClient.getPumpId().equals(pumpId) || !toClient.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Credit client not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found");
         }
 
         Long fromGroupRoot = fromClient.getParentClientId() != null ? fromClient.getParentClientId() : fromClient.getId();
         Long toGroupRoot = toClient.getParentClientId() != null ? toClient.getParentClientId() : toClient.getId();
 
         if (!fromGroupRoot.equals(toGroupRoot)) {
-            throw new BusinessException("Transactions can only be moved within the same parent / sub-account group");
+            throw new BusinessException(ErrorCodes.CREDIT_MOVE_OUTSIDE_GROUP,
+                    Map.of(),
+                    "Transactions can only be moved within the same parent / sub-account group");
         }
     }
 }

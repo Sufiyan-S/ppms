@@ -10,12 +10,18 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Each read endpoint: the permitted role gets 200, a role outside its rule gets 403, another pump's owner gets 403. */
+/**
+ * Each read endpoint: the permitted role gets 200, a role outside its rule gets 403, another pump's owner gets 403.
+ * Each write endpoint listed: a role outside its rule and another pump's owner get 403.
+ */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EndpointAccessMatrixIntegrationTest extends ApiIntegrationTest {
 
@@ -35,6 +41,7 @@ class EndpointAccessMatrixIntegrationTest extends ApiIntegrationTest {
         return Stream.of(
                 Arguments.of("/api/pumps/{pumpId}/credit-ledger", "ACCOUNTANT", "OPERATOR"),
                 Arguments.of("/api/pumps/{pumpId}/credit-clients", "MANAGER", null),
+                Arguments.of("/api/pumps/{pumpId}/credit-clients/credit-standing", "OPERATOR", null),
                 Arguments.of("/api/pumps/{pumpId}/credit-ledger/payments/pending", "MANAGER", "ACCOUNTANT"),
                 Arguments.of("/api/pumps/{pumpId}/credit-invoices", "ACCOUNTANT", "OPERATOR"),
                 Arguments.of("/api/pumps/{pumpId}/fuel-prices/current", "OPERATOR", null),
@@ -43,6 +50,10 @@ class EndpointAccessMatrixIntegrationTest extends ApiIntegrationTest {
                 Arguments.of("/api/pumps/{pumpId}/settlements/wallet", "MANAGER", "OPERATOR"),
                 Arguments.of("/api/pumps/{pumpId}/settlement-configs", "MANAGER", "ACCOUNTANT"),
                 Arguments.of("/api/pumps/{pumpId}/notifications", "OPERATOR", null),
+                Arguments.of("/api/pumps/{pumpId}/notifications/history", "ACCOUNTANT", null),
+                Arguments.of("/api/pumps/{pumpId}/settlements/pending-by-age", "MANAGER", "ACCOUNTANT"),
+                Arguments.of("/api/pumps/{pumpId}/setup-checklist", "ADMIN", "MANAGER"),
+                Arguments.of("/api/pumps/{pumpId}/audit-logs/actors", "OWNER", "ACCOUNTANT"),
                 Arguments.of("/api/pumps/{pumpId}/handovers", "MANAGER", "OPERATOR"),
                 Arguments.of("/api/pumps/{pumpId}/cash-events", "MANAGER", "OPERATOR"),
                 Arguments.of("/api/pumps/{pumpId}/shift-plans/planned-operators?shiftDefinitionId={definitionId}&date=" + TODAY, "MANAGER", "OPERATOR"),
@@ -62,6 +73,9 @@ class EndpointAccessMatrixIntegrationTest extends ApiIntegrationTest {
                 Arguments.of("/api/pumps/{pumpId}/ancillary/products", "OPERATOR", "ACCOUNTANT"),
                 Arguments.of("/api/pumps/{pumpId}/shifts/active", "OPERATOR", null),
                 Arguments.of("/api/pumps/{pumpId}/shifts/history", "MANAGER", null),
+                Arguments.of("/api/pumps/{pumpId}/shifts/history", "OPERATOR", null),
+                Arguments.of("/api/pumps/{pumpId}/fuel-transactions", "ACCOUNTANT", null),
+                Arguments.of("/api/pumps/{pumpId}/fuel-transactions", "OPERATOR", null),
                 Arguments.of("/api/pumps/{pumpId}/dus", "MANAGER", null),
                 Arguments.of("/api/pumps/{pumpId}/shift-definitions", "MANAGER", null),
                 Arguments.of("/api/inventory/{pumpId}/tanks", "MANAGER", "OPERATOR"),
@@ -88,6 +102,29 @@ class EndpointAccessMatrixIntegrationTest extends ApiIntegrationTest {
     @MethodSource("readEndpoints")
     void ownerOfAnotherPumpIsRefused(String path, String allowedRole, String deniedRole) throws Exception {
         perform(request(path, setup), otherPump.owner()).andExpect(status().isForbidden());
+    }
+
+    static Stream<Arguments> writeEndpoints() {
+        return Stream.of(
+                Arguments.of("/api/pumps/{pumpId}/credit-clients/1/extensions/1/revoke", Map.of("reason", "Matrix"), "MANAGER"),
+                Arguments.of("/api/pumps/{pumpId}/bank-reconciliation/lines/1", Map.of("status", "IGNORED"), "MANAGER"));
+    }
+
+    @ParameterizedTest(name = "{0} refuses {2}")
+    @MethodSource("writeEndpoints")
+    void roleOutsideTheWriteRuleIsRefused(String path, Map<String, Object> body, String deniedRole) throws Exception {
+        perform(write(path, setup), staff(deniedRole), body).andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest(name = "{0} refuses another pump's owner")
+    @MethodSource("writeEndpoints")
+    void ownerOfAnotherPumpCannotWrite(String path, Map<String, Object> body, String deniedRole) throws Exception {
+        perform(write(path, setup), otherPump.owner(), body).andExpect(status().isForbidden());
+    }
+
+    private MockHttpServletRequestBuilder write(String path, PumpSetup pump) {
+        String resolved = path.replace("{pumpId}", pump.pumpId().toString());
+        return path.endsWith("/revoke") ? post(resolved) : patch(resolved);
     }
 
     private MockHttpServletRequestBuilder request(String path, PumpSetup pump) {

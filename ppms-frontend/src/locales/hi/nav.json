@@ -1,0 +1,129 @@
+{
+  "items": {
+    "myShift": "मेरी शिफ्ट",
+    "overview": "सारांश",
+    "approvals": "मंज़ूरियाँ",
+    "shifts": "शिफ्ट",
+    "shiftPlanning": "शिफ्ट योजना",
+    "inventory": "स्टॉक",
+    "credit": "क्रेडिट",
+    "expenses": "खर्च",
+    "documents": "दस्तावेज़",
+    "cashDrawer": "कैश ड्रॉअर",
+    "calibration": "कैलिब्रेशन",
+    "payroll": "वेतन",
+    "products": "उत्पाद",
+    "auditLog": "ऑडिट लॉग",
+    "settlements": "सेटलमेंट",
+    "balanceSheets": "बैलेंस शीट",
+    "reports": "रिपोर्ट",
+    "setup": "सेटअप",
+    "notifications": "सूचनाएँ"
+  },
+  "bottomTabs": {
+    "label": "जल्दी पहुँच",
+    "myShift": "मेरी शिफ्ट",
+    "overview": "होम",
+    "shifts": "शिफ्ट",
+    "shiftPlanning": "योजना",
+    "inventory": "स्टॉक",
+    "credit": "क्रेडिट",
+    "expenses": "खर्च",
+    "cashDrawer": "नकद",
+    "reports": "रिपोर्ट",
+    "more": "और"
+  },
+  "pageTitles": {
+    "notifications": "सूचनाएँ",
+    "login": "साइन इन",
+    "forgotPassword": "पासवर्ड भूल गए",
+    "resetPassword": "पासवर्ड रीसेट",
+    "changePassword": "पासवर्ड बदलें",
+    "superAdmin": "सुपर एडमिन",
+    "creditBalance": "क्रेडिट बकाया"
+  },
+  "sidebar": {
+    "label": "मुख्य",
+    "title": "मेनू",
+    "closeMenu": "मेनू बंद करें",
+    "currentPump": "मौजूदा पंप",
+    "collapse": "साइडबार छोटा करें"
+  },
+  "topbar": {
+    "skipToContent": "मुख्य सामग्री पर जाएँ",
+    "currentTime": "अभी का समय: {{value}}",
+    "shift": {
+      "name": "{{name}} शिफ्ट",
+      "endsIn": "{{value}} में खत्म",
+      "hours": "{{hours}} घं",
+      "minutes": "{{minutes}} मि",
+      "hoursMinutes": "{{hours}} घं {{minutes}} मि",
+      "open_one": "{{count}} चालू",
+      "open_other": "{{count}} चालू",
+      "summary": "अभी की शिफ्ट: {{name}}, {{value}} में खत्म होगी। शिफ्ट देखें।",
+      "openSummary_one": "{{count}} शिफ्ट चालू है।",
+      "openSummary_other": "{{count}} शिफ्ट चालू हैं।"
+    }
+  },
+  "pumpSwitcher": {
+    "switchTo": "{{name}} पर जाएँ"
+  },
+  "suspended": {
+    "yourPumpTitle": "आपका पंप निलंबित है",
+    "yourPumpBody": "पंप दोबारा चालू होने तक इसका डेटा देखा या बदला नहीं जा सकता। कृपया पंप मालिक से संपर्क करें।",
+    "thisPumpTitle": "यह पंप निलंबित है",
+    "thisPumpBody": "पंप दोबारा चालू होने तक इसका डेटा देखा या बदला नहीं जा सकता।",
+    "chooseAnotherPump": " पेज के ऊपर से दूसरा पंप चुनें, या इसे दोबारा चालू कराने के लिए PPMS सहायता से संपर्क करें।",
+    "contactOwnerOrSupport": " कृपया पंप मालिक या PPMS सहायता से संपर्क करें।"
+  },
+  "profile": {
+    "yourName": "आपका नाम",
+    "saveName": "नाम सेव करें",
+    "cancelEditing": "बदलाव रद्द करें",
+    "editName": "अपना नाम बदलें, {{name}}",
+    "editNameHint": "नाम बदलने के लिए क्लिक करें",
+    "nameBlank": "नाम ख़ाली नहीं हो सकता",
+    "saveNameFailed": "नाम सेव नहीं हो सका",
+    "openMenu": "प्रोफ़ाइल मेनू खोलें",
+    "changePassword": "पासवर्ड बदलें",
+    "logout": "लॉग आउट",
+    "loggingOut": "लॉग आउट हो रहा है...",
+    "density": "घनत्व",
+    "densityComfortable": "आरामदायक",
+    "densityCompact": "सघन",
+    "densityHint": "सघन में बड़ी स्क्रीन पर ज़्यादा पंक्तियाँ दिखती हैं। फ़ोन पर आरामदायक ही रहता है।"
+  },
+  "groups": {
+    "operations": "कामकाज",
+    "money": "पैसा",
+    "reports": "रिपोर्ट",
+    "admin": "एडमिन"
+  },
+  "palette": {
+    "open": "यहाँ जाएँ…",
+    "shortcutOther": "Ctrl K",
+    "shortcutMac": "⌘K",
+    "title": "किसी पेज या काम पर जाएँ",
+    "searchLabel": "पेज और काम खोजें",
+    "placeholder": "पेज या काम का नाम लिखें…",
+    "resultsLabel": "पेज और काम",
+    "pages": "पेज",
+    "noResults": "कोई पेज या काम नहीं मिला।",
+    "keyboardHint": "↑ ↓ से चुनें · Enter से खोलें · Esc से बंद करें",
+    "actions": {
+      "label": "झटपट काम",
+      "openShift": "शिफ्ट शुरू करें",
+      "recordDelivery": "डिलीवरी दर्ज करें",
+      "recordPayment": "भुगतान दर्ज करें",
+      "addExpense": "खर्च जोड़ें",
+      "cashEntry": "नकद एंट्री दर्ज करें",
+      "dipCheck": "डिप जाँच दर्ज करें",
+      "recordSettlement": "सेटलमेंट दर्ज करें",
+      "sellProduct": "उत्पाद बेचें",
+      "generateSheet": "बैलेंस शीट बनाएँ",
+      "generatePayroll": "वेतन बनाएँ",
+      "setFuelPrices": "ईंधन के दाम तय करें",
+      "addStaff": "स्टाफ़ जोड़ें"
+    }
+  }
+}

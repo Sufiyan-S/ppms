@@ -1,39 +1,48 @@
 import { z } from 'zod'
+import type { TFunction } from 'i18next'
 
 // ── Validation schemas ────────────────────────────────────────────────────────
 
-export const addPumpSchema = z.object({
-  pumpName:      z.string().min(1, 'Pump name is required'),
-  pumpAddress:   z.string().min(1, 'Pump address is required'),
-  maxDuCount: z.coerce.number().int().min(1, 'Must be at least 1').max(20, 'Cannot exceed 20'),
-})
+type SuperAdminT = TFunction<'superadmin'>
 
-export type AddPumpFormData = z.infer<typeof addPumpSchema>
+export function addPumpSchema(t: SuperAdminT) {
+  return z.object({
+    pumpName:      z.string().min(1, t('validation.pumpNameRequired')),
+    pumpAddress:   z.string().min(1, t('validation.pumpAddressRequired')),
+    maxDuCount: z.coerce.number().int().min(1, t('validation.atLeastOne')).max(20, t('validation.atMostTwenty')),
+  })
+}
 
-export type AddPumpFormInput = z.input<typeof addPumpSchema>
+export type AddPumpFormData = z.infer<ReturnType<typeof addPumpSchema>>
 
-export const editPumpSchema = z.object({
-  pumpName:    z.string().min(1, 'Pump name is required'),
-  pumpAddress: z.string().min(1, 'Pump address is required'),
-})
+export type AddPumpFormInput = z.input<ReturnType<typeof addPumpSchema>>
 
-export type EditPumpFormData = z.infer<typeof editPumpSchema>
+export function editPumpSchema(t: SuperAdminT) {
+  return z.object({
+    pumpName:    z.string().min(1, t('validation.pumpNameRequired')),
+    pumpAddress: z.string().min(1, t('validation.pumpAddressRequired')),
+  })
+}
 
-export type EditPumpFormInput = z.input<typeof editPumpSchema>
+export type EditPumpFormData = z.infer<ReturnType<typeof editPumpSchema>>
 
-export const onboardSchema = z.object({
-  fullName: z.string().min(1, 'Full name is required'),
-  phoneNumber: z.string().length(10, 'Phone number must be exactly 10 digits').regex(/^\d+$/, 'Must be digits only'),
-  password: z.string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
-    .regex(/\d/, 'Must contain at least one digit'),
-  pumpName: z.string().min(1, 'Pump name is required'),
-  pumpAddress: z.string().min(1, 'Pump address is required'),
-  maxDuCount: z.coerce.number().int().min(1, 'Must be at least 1 DU').max(20, 'Cannot exceed 20 DUs'),
-})
+export type EditPumpFormInput = z.input<ReturnType<typeof editPumpSchema>>
 
-export type OnboardFormData = z.infer<typeof onboardSchema>
+export function onboardSchema(t: SuperAdminT) {
+  return z.object({
+    fullName: z.string().min(1, t('validation.fullNameRequired')),
+    phoneNumber: z.string().length(10, t('validation.phoneLength')).regex(/^\d+$/, t('validation.digitsOnly')),
+    password: z.string()
+      .min(8, t('validation.passwordLength'))
+      .regex(/[A-Z]/, t('validation.passwordUppercase'))
+      .regex(/[a-z]/, t('validation.passwordLowercase'))
+      .regex(/\d/, t('validation.passwordDigit')),
+    pumpName: z.string().min(1, t('validation.pumpNameRequired')),
+    pumpAddress: z.string().min(1, t('validation.pumpAddressRequired')),
+    maxDuCount: z.coerce.number().int().min(1, t('validation.atLeastOneDu')).max(20, t('validation.atMostTwentyDus')),
+  })
+}
 
-export type OnboardFormInput = z.input<typeof onboardSchema>
+export type OnboardFormData = z.infer<ReturnType<typeof onboardSchema>>
+
+export type OnboardFormInput = z.input<ReturnType<typeof onboardSchema>>

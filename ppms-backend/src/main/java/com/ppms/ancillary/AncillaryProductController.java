@@ -298,7 +298,7 @@ public class AncillaryProductController {
             @Valid @RequestBody UpdateLotRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        AncillaryInventoryWorkflowService.LotCorrectionResult result = workflowService.updateLot(pumpId, lotId, request);
+        AncillaryInventoryWorkflowService.LotCorrectionResult result = workflowService.updateLot(pumpId, lotId, request, currentUser);
         AncillaryStockLot lot = result.getLot();
 
         log.info("Ancillary lot corrected: pump={}, lotId={}, remainingQty={}, costPrice={}, by={}",

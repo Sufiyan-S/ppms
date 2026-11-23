@@ -1,8 +1,11 @@
+import { AlertTriangle, Clock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { formatNumberIn } from '../../i18n/format'
 import type { TankStock } from '../../api/inventoryApi'
 import { FUEL_COLORS } from './inventoryFormat'
 import { codeLabel } from '../../constants/labels'
-
-// ── Tank stock bar ─────────────────────────────────────────────────────────────
+import { StatusBadge } from '../../components/StatusBadge'
+import { LitresText } from '../../components/AmountText'
 
 export function TankStockBar({
   tank,
@@ -19,85 +22,86 @@ export function TankStockBar({
   onDipCheck?: () => void
   onViewLots: () => void
 }) {
+  const { t } = useTranslation('inventory')
   const pct  = Math.min(100, Math.max(0, tank.stockPercentage))
   const cols = FUEL_COLORS[tank.fuelType] ?? FUEL_COLORS.PETROL
   const isLow = tank.lowStock
 
-  // Human-readable time since last DIP (e.g. "8 h ago", "3 d ago")
   function timeSinceDip(d: Date) {
     const diffMs = now - d.getTime()
     const h = Math.floor(diffMs / (1000 * 60 * 60))
-    if (h < 24) return `${h} h ago`
-    return `${Math.floor(h / 24)} d ago`
+    if (h < 24) return t('tank.hoursAgo', { value: h })
+    return t('tank.daysAgo', { value: Math.floor(h / 24) })
   }
 
   return (
-    <div className={`px-5 py-4 ${dipOverdue ? 'bg-red-50/40' : ''}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cols.badge}`}>
+    <article
+      aria-label={t('tank.cardLabel', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType) })}
+      className={`ui-card-plain flex h-full flex-col gap-3 p-(--density-card-pad) ${dipOverdue ? 'border-bad' : ''}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-badge ${cols.badge}`}>
             {codeLabel(tank.fuelType)}
           </span>
-          <span className="text-sm font-semibold text-slate-700">{tank.tankIdentifier}</span>
+          <span className="truncate text-sm font-semibold text-ink">{tank.tankIdentifier}</span>
+        </div>
+        <span className={`text-sm font-semibold tabular-nums ${isLow ? 'text-bad' : 'text-ink-2'}`}>
+          {pct.toFixed(1)}%
+        </span>
+      </div>
+
+      {(isLow || dipOverdue) && (
+        <div className="flex flex-wrap gap-1.5">
           {isLow && (
-            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium animate-pulse">
-              LOW STOCK
-            </span>
+            <StatusBadge tone="bad" icon={AlertTriangle} label={t('tank.lowStock')} className="animate-pulse" />
           )}
           {dipOverdue && (
-            <span className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-lg font-medium">
-              DIP OVERDUE {lastDipAt ? `· last ${timeSinceDip(lastDipAt)}` : '· never checked'}
-            </span>
+            <StatusBadge
+              tone="bad"
+              icon={Clock}
+              label={lastDipAt ? t('tank.dipOverdueLast', { ago: timeSinceDip(lastDipAt) }) : t('tank.dipOverdueNever')}
+            />
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-medium ${isLow ? 'text-red-600' : 'text-slate-500'}`}>
-            {pct.toFixed(1)}%
+      )}
+
+      <div>
+        <div className="w-full h-4 bg-surface-sunken rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ease-out ${
+              isLow ? 'bg-bad animate-pulse' : cols.bar
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-2 mt-1.5 text-xs text-ink-3">
+          <span>
+            <LitresText value={tank.currentStock} className={`font-semibold ${isLow ? 'text-bad' : 'text-ink'}`} />
+            {' '}{t('tank.remaining')}
           </span>
+          <span>{t('tank.capacity', { value: formatNumberIn(tank.capacity, { minimumFractionDigits: 0 }) })}</span>
+        </div>
+      </div>
+
+      <div className="mt-auto flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onViewLots}
+          className="ui-btn ui-btn-secondary ui-btn-compact"
+        >
+          {t('tank.viewLots')}
+        </button>
+        {onDipCheck && (
           <button
-            onClick={onViewLots}
+            type="button"
+            onClick={onDipCheck}
             className="ui-btn ui-btn-secondary ui-btn-compact"
           >
-            View Lots
+            {t('tank.dipCheck')}
           </button>
-          {onDipCheck && (
-            <button
-              onClick={onDipCheck}
-              className="ui-btn ui-btn-secondary ui-btn-compact"
-            >
-              DIP Check
-            </button>
-          )}
-        </div>
+        )}
       </div>
-
-      {/* Animated stock bar */}
-      <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ease-out ${
-            isLow ? 'bg-red-500 animate-pulse' : cols.bar
-          }`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
-        <span>
-          <span className={`font-semibold ${isLow ? 'text-red-600' : 'text-slate-700'}`}>
-            {tank.currentStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-          </span>
-          {' '}remaining
-        </span>
-        <span>Capacity: {tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L</span>
-      </div>
-    </div>
+    </article>
   )
 }
-
-// ── Fuel Lots Dialog ──────────────────────────────────────────────────────────
-/**
- * Read-only dialog showing ACTIVE FIFO inventory lots for a specific tank.
- * Columns: In Date, Invoice (Bill No), Cost Price/L, Remaining (L), Original (L).
- * DIP-adjustment lots are labelled "DIP Adj." in the Invoice column and show 0 cost.
- * No edit — view only.
- */

@@ -1,0 +1,111 @@
+{
+  "header": {
+    "portal": "सुपर ॲडमिन पोर्टल",
+    "tagline": "प्लॅटफॉर्म व्यवस्थापन — नवीन पंप मालक जोडा",
+    "role": "सुपर ॲडमिन",
+    "openProfileMenu": "प्रोफाइल मेन्यू उघडा",
+    "resetPassword": "पासवर्ड बदला",
+    "loggingOut": "लॉग आउट होत आहे…",
+    "logout": "लॉग आउट",
+    "passwordUpdated": "पासवर्ड बदलला. कृपया नवीन पासवर्डने लॉग इन करा."
+  },
+  "page": {
+    "title": "प्लॅटफॉर्म व्यवस्थापन",
+    "pumpOwners": "पंप मालक",
+    "pumps": "पंप",
+    "staffMembers": "कर्मचारी",
+    "copiedCredentials": "PPMS लॉग इन माहिती\nफोन: {{phone}}\nपासवर्ड: {{password}}\nपंप: {{pump}}",
+    "description": "पंप मालक जोडा आणि त्यांचे पंप व सेटअप सांभाळा.",
+    "totalsLabel": "प्लॅटफॉर्मचे एकूण आकडे"
+  },
+  "created": {
+    "title": "मालकाचे खाते तयार झाले — ही लॉग इन माहिती त्यांना द्या",
+    "body": "{{name}} आता लॉग इन करून आपला पंप सेट करू शकतात.",
+    "phone": "फोन",
+    "password": "पासवर्ड",
+    "hidePassword": "पासवर्ड लपवा",
+    "revealPassword": "पासवर्ड दाखवा",
+    "hide": "लपवा",
+    "show": "दाखवा",
+    "pump": "पंप",
+    "employeeId": "कर्मचारी ID",
+    "copy": "कॉपी करा"
+  },
+  "fields": {
+    "pumpName": "पंपाचे नाव",
+    "pumpAddress": "पंपाचा पत्ता",
+    "maxDuCount": "जास्तीत जास्त DU संख्या",
+    "maxDuHelp": "1 ते 20"
+  },
+  "onboard": {
+    "title": "नवीन मालक जोडा",
+    "subtitle": "मालकाचे खाते आणि त्यांचा पहिला पंप तयार करते.",
+    "ownerDetails": "मालकाची माहिती",
+    "fullName": "पूर्ण नाव",
+    "phoneNumber": "फोन नंबर",
+    "initialPassword": "सुरुवातीचा पासवर्ड",
+    "pumpDetails": "पंपाची माहिती",
+    "creating": "तयार होत आहे…",
+    "submit": "मालक जोडा",
+    "failed": "मालक तयार झाला नाही. कृपया पुन्हा प्रयत्न करा.",
+    "backToOwners": "मालकांकडे परत",
+    "phoneHelp": "10 अंकी मोबाइल नंबर"
+  },
+  "owners": {
+    "title": "जोडलेले मालक",
+    "subtitle": "प्लॅटफॉर्मवरील सध्याचे सर्व पंप मालक.",
+    "count_one": "{{count}} मालक",
+    "count_other": "{{count}} मालक",
+    "empty": "अजून कोणताही मालक नाही.",
+    "emptyHint": "पहिला पंप मालक जोडण्यासाठी \"नवीन मालक जोडा\" निवडा.",
+    "statusActive": "सक्रिय",
+    "statusInactive": "निष्क्रिय",
+    "pumpCount_one": "{{count}} पंप",
+    "pumpCount_other": "{{count}} पंप",
+    "disabledCount": "· {{value}} बंद",
+    "resetPassword": "पासवर्ड रीसेट करा",
+    "addPump": "पंप जोडा",
+    "noPumps": "अजून कोणताही पंप जोडलेला नाही.",
+    "idLabel": "ID:",
+    "joined": "{{date}} रोजी जोडले",
+    "updatePumpFailed": "पंप बदलता आला नाही. कृपया पुन्हा प्रयत्न करा.",
+    "listLabel": "मालक",
+    "detailLabel": "मालकाचा तपशील",
+    "selectOwner": "पंप आणि सेटअपची प्रगती पाहण्यासाठी एक मालक निवडा.",
+    "notFound": "हा मालक यादीत नाही.",
+    "pumpsTitle": "पंप",
+    "setupDone": "{{total}} पैकी {{done}} पंप सेट"
+  },
+  "addPump": {
+    "title": "{{name}} यांच्यासाठी नवीन पंप जोडा",
+    "copy": "या मालकाखाली आणखी एक पंप जोडते.",
+    "adding": "जोडत आहे…",
+    "submit": "पंप जोडा",
+    "failed": "पंप जोडता आला नाही. कृपया पुन्हा प्रयत्न करा."
+  },
+  "pump": {
+    "disabled": "बंद",
+    "staff": "{{value}} कर्मचारी",
+    "setup": "सेटअप {{required}} पैकी {{done}} पूर्ण",
+    "saveChanges": "बदल सेव्ह करा",
+    "editTitle": "{{name}} बदला",
+    "disableTitle": "{{name}} बंद करायचा?",
+    "disableConsequence": "पुन्हा सुरू करेपर्यंत मालक आणि कर्मचारी हा पंप वापरू शकणार नाहीत. शिफ्ट चालू असताना हे करता येत नाही.",
+    "disableConfirm": "पंप बंद करा"
+  },
+  "validation": {
+    "pumpNameRequired": "पंपाचे नाव आवश्यक आहे",
+    "pumpAddressRequired": "पंपाचा पत्ता आवश्यक आहे",
+    "atLeastOne": "किमान 1 असावे",
+    "atMostTwenty": "20 पेक्षा जास्त असू शकत नाही",
+    "fullNameRequired": "पूर्ण नाव आवश्यक आहे",
+    "phoneLength": "फोन नंबर बरोबर 10 अंकी असावा",
+    "digitsOnly": "फक्त अंक टाका",
+    "passwordLength": "पासवर्ड किमान 8 अक्षरांचा असावा",
+    "passwordUppercase": "किमान एक मोठे अक्षर (A–Z) असावे",
+    "passwordLowercase": "किमान एक लहान अक्षर (a–z) असावे",
+    "passwordDigit": "किमान एक अंक असावा",
+    "atLeastOneDu": "किमान 1 DU असावे",
+    "atMostTwentyDus": "20 पेक्षा जास्त DU असू शकत नाहीत"
+  }
+}

@@ -1,9 +1,16 @@
 package com.ppms.credit;
 
+import com.ppms.ancillary.AncillaryProduct;
+import com.ppms.ancillary.AncillaryProductQueryService;
+import com.ppms.ancillary.AncillaryProductRepository;
+import com.ppms.ancillary.AncillarySale;
+import com.ppms.ancillary.AncillarySaleRepository;
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.common.text.ServerTextCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.expense.ExpenseApprovalStatus;
 import com.ppms.shift.ShiftCreditEntryRepository;
+import com.ppms.transaction.TransactionPaymentMode;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,9 +22,11 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,8 +34,16 @@ import java.util.stream.Collectors;
 public class CreditLedgerQueryService {
 
     private static final String ACTIVE = "ACTIVE";
+    private static final String WAIVED = "WAIVED";
+    private static final String COUNTER_SALE = "COUNTER_SALE";
+    private static final Comparator<CreditTransactionResponse> OLDEST_FIRST =
+            Comparator.comparing(CreditTransactionResponse::getBusinessDate)
+                    .thenComparing(CreditTransactionResponse::getOccurredAt)
+                    .thenComparing(CreditTransactionResponse::getType)
+                    .thenComparing(CreditTransactionResponse::getReferenceId);
     private static final Comparator<CreditTransactionResponse> NEWEST_FIRST =
-            Comparator.comparing(CreditTransactionResponse::getOccurredAt).reversed()
+            Comparator.comparing(CreditTransactionResponse::getBusinessDate).reversed()
+                    .thenComparing(Comparator.comparing(CreditTransactionResponse::getOccurredAt).reversed())
                     .thenComparing(CreditTransactionResponse::getType)
                     .thenComparing(CreditTransactionResponse::getReferenceId);
 
@@ -34,6 +51,8 @@ public class CreditLedgerQueryService {
     private final CreditPaymentRepository paymentRepository;
     private final CreditInterestChargeRepository interestChargeRepository;
     private final ShiftCreditEntryRepository creditEntryRepository;
+    private final AncillarySaleRepository ancillarySaleRepository;
+    private final AncillaryProductRepository ancillaryProductRepository;
     private final CreditInterestService interestService;
     private final UserRepository userRepository;
     private final BusinessClock businessClock;
@@ -108,8 +127,37 @@ public class CreditLedgerQueryService {
         return transactions;
     }
 
-    public List<CreditTransactionResponse> getStatementTransactions(Long clientId, LocalDate fromDate, LocalDate toDate) {
-        return buildTransactionList(clientId).stream()
+    public CreditStatement getStatement(CreditClient client, LocalDate fromDate, LocalDate toDate) {
+        List<CreditClient> subAccounts = client.getParentClientId() == null
+                ? clientRepository.findByParentClientId(client.getId())
+                : List.of();
+        if (subAccounts.isEmpty()) {
+            return new CreditStatement(filterByDate(buildTransactionList(client.getId()), fromDate, toDate),
+                    interestService.computeOutstanding(client.getId()), List.of());
+        }
+
+        List<CreditClient> group = new ArrayList<>();
+        group.add(client);
+        group.addAll(subAccounts);
+        List<CreditTransactionResponse> transactions = new ArrayList<>();
+        for (CreditClient account : group) {
+            List<CreditTransactionResponse> accountRows = collectTransactions(account.getId());
+            accountRows.forEach(row -> {
+                row.setClientId(account.getId());
+                row.setClientName(account.getName());
+            });
+            transactions.addAll(accountRows);
+        }
+        transactions.sort(OLDEST_FIRST);
+        applyRunningBalance(transactions);
+        return new CreditStatement(filterByDate(transactions, fromDate, toDate),
+                interestService.computeOutstandingWithChildren(client.getId()),
+                subAccounts.stream().map(CreditClient::getName).toList());
+    }
+
+    private static List<CreditTransactionResponse> filterByDate(List<CreditTransactionResponse> transactions,
+                                                                LocalDate fromDate, LocalDate toDate) {
+        return transactions.stream()
                 .filter(tx -> fromDate == null || !tx.getBusinessDate().isBefore(fromDate))
                 .filter(tx -> toDate == null || !tx.getBusinessDate().isAfter(toDate))
                 .toList();
@@ -151,6 +199,13 @@ public class CreditLedgerQueryService {
      * exact same ordering and running-balance rules.
      */
     private List<CreditTransactionResponse> buildTransactionList(Long clientId) {
+        List<CreditTransactionResponse> transactions = collectTransactions(clientId);
+        transactions.sort(OLDEST_FIRST);
+        applyRunningBalance(transactions);
+        return transactions;
+    }
+
+    private List<CreditTransactionResponse> collectTransactions(Long clientId) {
         List<CreditTransactionResponse> transactions = new ArrayList<>();
 
         creditEntryRepository.findByClientIdOrderByCreatedAtDesc(clientId)
@@ -161,10 +216,27 @@ public class CreditLedgerQueryService {
                         .detail(sale.getFuelType())
                         .amount(sale.getAmount().setScale(2, RoundingMode.HALF_UP))
                         .occurredAt(sale.getCreatedAt())
-                        .businessDate(businessDateOf(sale.getCreatedAt()))
+                        .businessDate(sale.getSaleDate())
                         .status(sale.getVoidStatus())
                         .countedInBalance(ACTIVE.equals(sale.getVoidStatus()))
                         .build()));
+
+        List<AncillarySale> counterSales = ancillarySaleRepository.findByClientIdsAndPaymentMode(
+                List.of(clientId), TransactionPaymentMode.CREDIT);
+        Map<Long, AncillaryProduct> productsById = ancillaryProductRepository.findAllById(counterSales.stream()
+                        .map(AncillarySale::getProductId)
+                        .collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(AncillaryProduct::getId, Function.identity()));
+        counterSales.forEach(sale -> transactions.add(CreditTransactionResponse.builder()
+                .type(COUNTER_SALE)
+                .referenceId(sale.getId())
+                .reference(counterSaleLabel(sale, productsById.get(sale.getProductId())))
+                .amount(sale.getTotalWithGst().setScale(2, RoundingMode.HALF_UP))
+                .occurredAt(sale.getCreatedAt())
+                .businessDate(sale.getSaleDate())
+                .status(ACTIVE)
+                .countedInBalance(true)
+                .build()));
 
         List<CreditPayment> payments = paymentRepository.findByClientIdOrderByPaidAtDesc(clientId);
         Map<Long, String> paymentUserNames = loadUserNames(payments.stream()
@@ -188,23 +260,28 @@ public class CreditLedgerQueryService {
         interestChargeRepository.findByClientIdOrderByCreatedAtDesc(clientId)
                 .forEach(charge -> {
                     String label = String.format("%d days @ %.2f%%/month", charge.getDaysApplied(), charge.getRateApplied());
+                    Map<String, Object> labelParams = new LinkedHashMap<>();
+                    labelParams.put("days", charge.getDaysApplied());
+                    labelParams.put("rate", charge.getRateApplied().setScale(2, RoundingMode.HALF_UP));
                     transactions.add(CreditTransactionResponse.builder()
                             .type("INTEREST")
                             .referenceId(charge.getId())
                             .reference(label)
+                            .referenceCode(ServerTextCodes.INTEREST_CHARGE_DETAILS)
+                            .referenceParams(labelParams)
                             .detail(String.format("%s – %s", charge.getPeriodFrom(), charge.getPeriodTo()))
                             .amount(charge.getAmount().setScale(2, RoundingMode.HALF_UP))
                             .occurredAt(charge.getCreatedAt())
                             .businessDate(businessDateOf(charge.getCreatedAt()))
-                            .status(ACTIVE)
-                            .countedInBalance(true)
+                            .status(charge.getVoidedAt() == null ? ACTIVE : WAIVED)
+                            .countedInBalance(charge.getVoidedAt() == null)
                             .build());
                 });
+        return transactions;
+    }
 
-        transactions.sort(Comparator.comparing(CreditTransactionResponse::getOccurredAt)
-                .thenComparing(CreditTransactionResponse::getType)
-                .thenComparing(CreditTransactionResponse::getReferenceId));
-
+    /** Expects the rows oldest first; rows not counted in the balance carry the balance before them. */
+    private static void applyRunningBalance(List<CreditTransactionResponse> transactions) {
         BigDecimal runningBalance = BigDecimal.ZERO;
         for (CreditTransactionResponse transaction : transactions) {
             if (!transaction.isCountedInBalance()) {
@@ -218,8 +295,14 @@ public class CreditLedgerQueryService {
             }
             transaction.setRunningBalance(runningBalance.setScale(2, RoundingMode.HALF_UP));
         }
+    }
 
-        return transactions;
+    private static String counterSaleLabel(AncillarySale sale, AncillaryProduct product) {
+        String productName = product != null ? AncillaryProductQueryService.buildDisplayName(product) : "Product";
+        String label = productName + " × " + sale.getQuantityUnits();
+        return sale.getBillNo() != null && !sale.getBillNo().isBlank()
+                ? label + " (Bill " + sale.getBillNo() + ")"
+                : label;
     }
 
     private CreditClientResponse toClientResponse(CreditClient client,

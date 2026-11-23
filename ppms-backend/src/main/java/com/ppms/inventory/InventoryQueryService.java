@@ -2,6 +2,7 @@ package com.ppms.inventory;
 
 import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.TankStatus;
 import com.ppms.pump.UndergroundTank;
@@ -32,6 +33,7 @@ public class InventoryQueryService {
     private final DipCheckRepository dipCheckRepository;
     private final UserRepository userRepository;
     private final InventoryResponseAssembler responseAssembler;
+    private final OpenShiftMeterService openShiftMeterService;
 
     public List<TankStockResponse> getTankStocks(Long pumpId) {
         return tankRepository.findByPumpId(pumpId).stream()
@@ -52,6 +54,31 @@ public class InventoryQueryService {
         return PagedResponse.of(deliveries.map(delivery -> responseAssembler.toDeliveryResponse(
                 delivery, tankById.get(delivery.getTankId()),
                 userNameById.getOrDefault(delivery.getLoggedByUserId(), "Unknown"))));
+    }
+
+    /** Every tank line of the most recently entered invoice — the only one that may be deleted. Empty when none exist. */
+    public List<TankerDeliveryResponse> getLatestInvoiceLines(Long pumpId) {
+        List<TankerDelivery> lines = tankerDeliveryRepository.findTopByPumpIdOrderByCreatedAtDesc(pumpId)
+                .map(latest -> tankerDeliveryRepository.findByPumpIdAndInvoiceReference(pumpId, latest.getInvoiceReference()))
+                .orElse(List.of());
+
+        Map<Long, UndergroundTank> tankById = findTanksById(
+                lines.stream().map(TankerDelivery::getTankId).collect(Collectors.toSet()));
+        Map<Long, String> userNameById = findUserNamesById(
+                lines.stream().map(TankerDelivery::getLoggedByUserId).collect(Collectors.toSet()));
+        return lines.stream()
+                .map(delivery -> responseAssembler.toDeliveryResponse(
+                        delivery, tankById.get(delivery.getTankId()),
+                        userNameById.getOrDefault(delivery.getLoggedByUserId(), "Unknown")))
+                .toList();
+    }
+
+    /** Nozzles on shifts still open that draw from the tank; a dip check on it needs their current meter readings. */
+    public List<OpenShiftNozzleResponse> getOpenShiftNozzles(Long pumpId, Long tankId) {
+        UndergroundTank tank = tankRepository.findById(tankId)
+                .filter(found -> found.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANK, "Tank not found"));
+        return openShiftMeterService.findOpenShiftNozzles(tank);
     }
 
     public PagedResponse<DipCheckResponse> getDipChecks(Long pumpId, int page, int size) {
@@ -79,9 +106,9 @@ public class InventoryQueryService {
     /** Active FIFO lots of one tank, oldest first, with each delivery's invoice reference. */
     public List<InventoryLotDetailResponse> getActiveTankLots(Long pumpId, Long tankId) {
         UndergroundTank tank = tankRepository.findById(tankId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tank not found: " + tankId));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANK, "Tank not found: " + tankId));
         if (!tank.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Tank not found");
+            throw new ResourceNotFoundException(EntityType.TANK, "Tank not found");
         }
 
         List<InventoryLot> lots = inventoryLotRepository.findActiveLotsByTankForDisplay(tankId);

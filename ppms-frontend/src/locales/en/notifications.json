@@ -1,0 +1,34 @@
+{
+  "page": {
+    "title": "Notifications",
+    "subtitle": "Every alert for this pump, read and unread. Open one to go where it can be dealt with.",
+    "noPump": "No pump selected.",
+    "allCount": "All notifications ({{total}})",
+    "typeFilter": "Type",
+    "allTypes": "All types",
+    "loadFailed": "Could not load notifications.",
+    "emptyForType": "No notifications of this type.",
+    "empty": "No notifications yet.",
+    "listTitle": "Alerts",
+    "filtersLabel": "Notification filters",
+    "readFilter": "Read or unread",
+    "readFilterAll": "All",
+    "unreadSummary_one": "{{count}} unread notification",
+    "unreadSummary_other": "{{count}} unread notifications",
+    "unreadLimit": "Showing the newest {{count}} unread. Open or read some to see older ones.",
+    "emptyUnread": "No unread notifications."
+  },
+  "types": {
+    "LOW_STOCK": "Low tank stock",
+    "PRICE_STALE": "Fuel prices not set",
+    "DOCUMENT_EXPIRING": "Document expiry",
+    "CALIBRATION_DUE": "Calibration overdue",
+    "CALIBRATION_DUE_SOON": "Calibration due soon",
+    "SHIFT_OVERDUE": "Shift overdue",
+    "ZERO_SALE_SHIFT": "Zero-sale shift",
+    "PRICE_CHANGE_OPEN_SHIFT": "Price changed during a shift",
+    "ANCILLARY_LOW_STOCK": "Low product stock",
+    "AUTO_CLOSED_SHIFT": "Shift force-closed",
+    "SETTLEMENT_REMINDER": "Settlement reminder"
+  }
+}

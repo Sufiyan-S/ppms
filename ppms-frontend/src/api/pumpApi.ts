@@ -43,10 +43,6 @@ export interface CreateDURequest {
   }>
 }
 
-export interface UpdateNozzleReadingRequest {
-  reading: number
-}
-
 export interface TankInfo {
   id: number
   pumpId: number
@@ -71,13 +67,12 @@ export interface UpdateTankRequest {
   tankIdentifier?: string
 }
 
-export interface CreditClient {
+/** What every role can read about a client, and all an operator gets: enough to pick one for a credit sale. */
+export interface CreditClientSummary {
   id: number
   pumpId: number
   name: string
   phone: string | null
-  notes: string | null
-  createdAt: string
   /** Null for root/parent accounts. Non-null when this is a sub-account. */
   parentClientId: number | null
   /** Human-readable parent name. Null for root accounts. */
@@ -86,11 +81,27 @@ export interface CreditClient {
   isParent: boolean
   /** False when the client has been soft-disabled. */
   isActive: boolean
+}
+
+/** The full account, for roles that can open the Credit page. */
+export interface CreditClient extends CreditClientSummary {
+  notes: string | null
+  createdAt: string
   /** True when the client can check their balance on the public portal. The PIN itself is never returned. */
   hasPortalPin: boolean
   /** Null for an unregistered (B2C) client. */
   gstin?: string | null
   billingAddress?: string | null
+}
+
+/** Whether a client could take a credit sale now, by the rules the sale itself is checked against. */
+export type CreditStatus = 'OK' | 'OVERDUE' | 'OVER_LIMIT' | 'INACTIVE'
+
+export interface CreditClientStanding {
+  clientId: number
+  creditStatus: CreditStatus
+  /** What the client's group can still take; null when the group has no credit limit. */
+  availableCredit: number | null
 }
 
 export interface CreateCreditClientRequest {
@@ -166,9 +177,23 @@ export interface PumpsOverview {
   }
 }
 
+export type SetupStep =
+  | 'DISPENSERS' | 'TANKS' | 'FUEL_PRICES' | 'SHIFT_DEFINITIONS' | 'STAFF' | 'GST_DETAILS' | 'CREDIT_CLIENTS'
+
+/** How far a pump's setup has got; optional steps are not counted in doneCount / requiredCount. */
+export interface SetupChecklist {
+  pumpId: number
+  doneCount: number
+  requiredCount: number
+  items: { step: SetupStep; done: boolean; optional: boolean; detail: string; detailCode: string; detailParams: Record<string, unknown> }[]
+}
+
 export const pumpApi = {
   getMyPumps: () =>
     client.get<PumpSummary[]>('/pumps').then((r) => r.data),
+
+  getSetupChecklist: (pumpId: number) =>
+    client.get<SetupChecklist>(`/pumps/${pumpId}/setup-checklist`).then((r) => r.data),
 
   getPumpsOverview: () =>
     client.get<PumpsOverview>('/pumps/overview').then((r) => r.data),
@@ -203,9 +228,6 @@ export const pumpApi = {
   mapNozzleToTank: (pumpId: number, duId: number, nozzleId: number, tankId: number | null) =>
     client.patch<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles/${nozzleId}/tank`, { tankId }).then((r) => r.data),
 
-  updateNozzleReading: (pumpId: number, duId: number, nozzleId: number, req: UpdateNozzleReadingRequest) =>
-    client.put<NozzleDetail>(`/pumps/${pumpId}/dus/${duId}/nozzles/${nozzleId}/reading`, req).then((r) => r.data),
-
   /** Increases the maximum number of DUs allowed on a pump. */
   updateMaxDuCount: (pumpId: number, maxDuCount: number) =>
     client.patch<PumpSummary>(`/pumps/${pumpId}/max-dus`, { maxDuCount }).then((r) => r.data),
@@ -239,8 +261,16 @@ export const pumpApi = {
 
   // ── Credit clients ─────────────────────────────────────────────────────────
 
+  // Operators get only the summary, so pickers that operators use read this
   getCreditClients: (pumpId: number) =>
+    client.get<CreditClientSummary[]>(`/pumps/${pumpId}/credit-clients`).then((r) => r.data),
+
+  // Same list with every account detail; only for roles that can open the Credit page
+  getCreditClientAccounts: (pumpId: number) =>
     client.get<CreditClient[]>(`/pumps/${pumpId}/credit-clients`).then((r) => r.data),
+
+  getCreditStanding: (pumpId: number) =>
+    client.get<CreditClientStanding[]>(`/pumps/${pumpId}/credit-clients/credit-standing`).then((r) => r.data),
 
   createCreditClient: (pumpId: number, req: CreateCreditClientRequest) =>
     client.post<CreditClient>(`/pumps/${pumpId}/credit-clients`, req).then((r) => r.data),

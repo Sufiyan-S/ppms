@@ -36,7 +36,7 @@ export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
         </thead>
         <tbody>
           {Array.from({ length: rows }).map((_, r) => (
-            <tr key={r} style={{ borderTop: '1px solid #edf2f7' }}>
+            <tr key={r} style={{ borderTop: '1px solid var(--color-border)' }}>
               {Array.from({ length: cols }).map((_, c) => (
                 <td key={c} style={{ padding: '0.8rem 1rem' }}>
                   <span

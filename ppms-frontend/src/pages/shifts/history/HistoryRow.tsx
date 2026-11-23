@@ -1,111 +1,231 @@
 import { useState } from 'react'
-import { Printer } from 'lucide-react'
+import type { ReactNode } from 'react'
+import type { TFunction } from 'i18next'
+import { History, Printer, ReceiptText } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../../store/authStore'
 import type { Shift } from '../../../types/shift'
 import { IconButton } from '../../../components/IconButton'
-import { CreditEntriesModal } from '../modals/CreditEntriesModal'
-import { HandoverModal } from '../modals/HandoverModal'
+import { CreditEntriesPanel } from '../modals/CreditEntriesPanel'
+import { HandoverReportPanel } from '../modals/HandoverReportPanel'
 import { ResolveDiscrepancyModal } from '../modals/ResolveDiscrepancyModal'
-import { STATUS_LABELS, fmtAmt } from '../shiftLabels'
+import { awaitingOwnerApprovalLabel, discrepancyAction, fmtAmt, investigationLabel } from '../shiftLabels'
+import { StatusBadge } from '../../../components/StatusBadge'
+import { shiftStatusBadge } from '../../../components/statusBadges'
+import { MoneyText } from '../../../components/AmountText'
 import { codeLabel } from '../../../constants/labels'
+import { formatIstDateTime } from '../../../utils/date'
+import { DiscrepancyBadge } from '../components/DiscrepancyBadge'
+
+const TIME = { hour: '2-digit', minute: '2-digit' } as const
+
+function duLabel(shift: Shift, t: TFunction<['shifts', 'common']>): string {
+  if (shift.duName == null) return t('handover.report.duFallback', { number: shift.duNumber })
+  // Names such as "DU 1" already carry the prefix; bare names such as "A" get it.
+  return /^DU\b/i.test(shift.duName) ? shift.duName : t('history.duName', { name: shift.duName })
+}
+
+function DuAndNozzles({ shift, wrap = false }: { shift: Shift; wrap?: boolean }) {
+  const { t } = useTranslation(['shifts', 'common'])
+  return (
+    <span className={wrap ? '' : 'whitespace-nowrap'}>
+      <span className="text-xs text-ink-3">{duLabel(shift, t)}</span> · <span className="rounded-control bg-surface-sunken px-2 py-0.5 text-xs font-semibold text-ink">
+        {shift.nozzles.map((n) => `#${n.nozzleNumber} ${codeLabel(n.fuelType)}`).join(', ')}
+      </span>
+    </span>
+  )
+}
+
+/** Open/close state of the credit, resolve and handover panels a shift can show, and the panels themselves. */
+function useShiftPanels(shift: Shift) {
+  const [creditOpen,   setCreditOpen]   = useState(false)
+  const [resolveOpen,  setResolveOpen]  = useState(false)
+  const [handoverOpen, setHandoverOpen] = useState(false)
+  const hasCreditEntries = (shift.creditEntries?.length ?? 0) > 0
+
+  const panels = (
+    <>
+      {creditOpen && hasCreditEntries && (
+        <CreditEntriesPanel
+          shift={shift}
+          entries={shift.creditEntries}
+          creditTotal={shift.creditTotal ?? 0}
+          onClose={() => setCreditOpen(false)}
+        />
+      )}
+      {resolveOpen && <ResolveDiscrepancyModal shift={shift} onClose={() => setResolveOpen(false)} />}
+      {handoverOpen && <HandoverReportPanel shift={shift} onClose={() => setHandoverOpen(false)} />}
+    </>
+  )
+
+  return {
+    openCredit:   () => setCreditOpen(true),
+    openResolve:  () => setResolveOpen(true),
+    openHandover: () => setHandoverOpen(true),
+    panels,
+  }
+}
+
+function PaymentItem({ dotClass, label, stacked, children }: {
+  dotClass: string; label: string; stacked: boolean; children: ReactNode
+}) {
+  return (
+    <div className={stacked ? 'flex items-start justify-between gap-3' : 'flex items-baseline gap-1.5'}>
+      <dt className="flex shrink-0 items-center gap-1.5 text-ink-3">
+        <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+        {label}
+      </dt>
+      <dd className="m-0 flex min-w-0 flex-wrap items-baseline justify-end gap-1 text-right tabular-nums">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * Cash, UPI + Card and Credit collected by a closed shift.
+ * A strip of label/amount pairs aligned right under a table row, or one pair per line on a phone card.
+ */
+function PaymentBreakdown({ shift, stacked, onOpenCredit }: { shift: Shift; stacked: boolean; onOpenCredit: () => void }) {
+  const { t } = useTranslation(['shifts', 'common'])
+  const digitalTotal     = (shift.upiCollected ?? 0) + (shift.cardCollected ?? 0)
+  const creditAmt        = shift.creditTotal ?? 0
+  const hasCreditEntries = (shift.creditEntries?.length ?? 0) > 0
+
+  return (
+    <dl
+      data-testid="payment-breakdown"
+      className={stacked ? 'space-y-1 text-xs' : 'flex flex-wrap items-baseline justify-end gap-x-6 gap-y-1 text-xs'}
+    >
+      <PaymentItem dotClass="bg-ok" label={t('common:paymentMethods.CASH')} stacked={stacked}>
+        <MoneyText value={shift.cashCollected} className="font-semibold text-ink" />
+      </PaymentItem>
+
+      <PaymentItem dotClass="bg-info" label={t('history.payment.upiCard')} stacked={stacked}>
+        {(shift.upiCollected ?? 0) > 0 && (
+          <span className="rounded-control bg-info-bg px-1.5 py-0.5 text-ink-3">
+            {t('history.payment.upiAmount', { amount: fmtAmt(shift.upiCollected) })}
+          </span>
+        )}
+        {(shift.cardCollected ?? 0) > 0 && (
+          <span className="rounded-control bg-info-bg px-1.5 py-0.5 text-ink-3">
+            {t('history.payment.cardAmount', { amount: fmtAmt(shift.cardCollected) })}
+          </span>
+        )}
+        <MoneyText value={digitalTotal > 0 ? digitalTotal : null} className="font-semibold text-ink" />
+      </PaymentItem>
+
+      <PaymentItem dotClass="bg-warn" label={t('common:paymentMethods.CREDIT')} stacked={stacked}>
+        {creditAmt <= 0 ? (
+          <span className="text-ink-3">—</span>
+        ) : hasCreditEntries && !stacked ? (
+          <button
+            type="button"
+            onClick={onOpenCredit}
+            className="flex items-center gap-1.5 rounded-control bg-warn-bg px-2 py-0.5 font-semibold text-warn transition-colors hover:text-warn-strong"
+            title={t('history.payment.viewCredit')}
+          >
+            {fmtAmt(creditAmt)}
+            <span className="text-xs text-warn">
+              · {t('history.payment.clientCount', { count: shift.creditEntries.length })} ↗
+            </span>
+          </button>
+        ) : (
+          <>
+            {hasCreditEntries && (
+              <span className="text-ink-3">{t('history.payment.clientCount', { count: shift.creditEntries.length })}</span>
+            )}
+            <MoneyText value={creditAmt} className="font-semibold text-warn" />
+          </>
+        )}
+      </PaymentItem>
+    </dl>
+  )
+}
+
+function DiscrepancyNotes({ shift }: { shift: Shift }) {
+  const { user } = useAuthStore()
+  const investigation = investigationLabel(shift)
+  return (
+    <>
+      {discrepancyAction(shift, user?.role) === 'awaiting-owner' && (
+        <span className="text-xs font-medium text-warn">{awaitingOwnerApprovalLabel()}</span>
+      )}
+      {shift.discrepancyResolution && (
+        <span className="text-xs text-ink-3">{codeLabel(shift.discrepancyResolution)}</span>
+      )}
+      {investigation && (
+        <span className="text-xs text-warn" title={shift.investigationNote ?? undefined}>{investigation}</span>
+      )}
+    </>
+  )
+}
+
+function ResolveButton({ shift, onOpen, className }: { shift: Shift; onOpen: () => void; className: string }) {
+  const { t } = useTranslation(['shifts', 'common'])
+  const { user } = useAuthStore()
+  const action = discrepancyAction(shift, user?.role)
+  if (action === 'resolve') {
+    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-danger ${className}`}>{t('history.resolve')}</button>
+  }
+  if (action === 'approve') {
+    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-warning ${className}`}>{t('common:actions.approve')}</button>
+  }
+  return null
+}
 
 // ── History row ───────────────────────────────────────────────────────────────
 // Payment breakdown is always visible for closed shifts.
 // Credit amount is clickable — opens a popup modal listing all client credit entries.
 
 export function HistoryRow({ shift }: { shift: Shift }) {
-  const { user } = useAuthStore()
-
-  const isOwnerOrAdmin      = user?.role === 'OWNER' || user?.role === 'ADMIN'
-  const isManagerOrAbove    = isOwnerOrAdmin || user?.role === 'MANAGER'
-  const isPendingResolution = shift.status === 'CLOSED_DISCREPANCY_PENDING'
-  const isPendingApproval   = shift.status === 'CLOSED_DISCREPANCY_PENDING_APPROVAL'
-  const canResolve          = isPendingResolution && isManagerOrAbove
-  const canResolveApproval  = isPendingApproval && isOwnerOrAdmin
-
-  const [creditModalOpen,    setCreditModalOpen]    = useState(false)
-  const [resolveModalOpen,   setResolveModalOpen]   = useState(false)
-  const [handoverOpen,       setHandoverOpen]       = useState(false)
-
-  const badge            = STATUS_LABELS[shift.status] ?? { label: shift.status, color: 'bg-slate-100 text-slate-600' }
-  const isClosed         = shift.totalAmountDue != null
-  const digitalTotal     = (shift.upiCollected ?? 0) + (shift.cardCollected ?? 0)
-  const hasCreditEntries = (shift.creditEntries?.length ?? 0) > 0
-  const creditAmt        = shift.creditTotal ?? 0
+  const { t } = useTranslation(['shifts', 'common'])
+  const { openCredit, openResolve, openHandover, panels } = useShiftPanels(shift)
+  const isClosed = shift.totalAmountDue != null
 
   return (
     <>
-      {/* ── Main data row ─────────────────────────────────────────────────── */}
-      <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-        <td className="px-5 py-3 text-slate-500 text-xs font-mono hidden md:table-cell">{shift.id}</td>
+      <tr>
+        <td className="px-5 py-3 text-ink-3 text-xs font-mono hidden md:table-cell">{shift.id}</td>
         <td className="px-5 py-3">
-          <span className="text-xs text-slate-500 block">
-            {shift.duName ?? `DU #${shift.duNumber}`}
-          </span>
-          <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-xs">
-            {shift.nozzles.map((n) => `#${n.nozzleNumber} ${n.fuelType}`).join(', ')}
-          </span>
+          <DuAndNozzles shift={shift} />
         </td>
         <td className="px-5 py-3 hidden md:table-cell">
           {shift.shiftWindow ? (
-            <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-              {shift.shiftWindow}
-            </span>
+            <StatusBadge tone="info" label={shift.shiftWindow} />
           ) : (
-            <span className="text-xs text-slate-500">—</span>
+            <span className="text-xs text-ink-3">—</span>
           )}
         </td>
-        <td className="px-5 py-3 text-sm text-slate-700 font-medium">{shift.operatorName}</td>
-        <td className="px-5 py-3 text-xs text-slate-500">{shift.shiftDate}</td>
-        <td className="px-5 py-3 text-sm font-semibold text-slate-800">
-          {fmtAmt(shift.totalAmountDue)}
+        <td className="px-5 py-3 text-sm text-ink font-medium">{shift.operatorName}</td>
+        <td className="px-5 py-3 text-xs text-ink-3">{shift.shiftDate}</td>
+        <td className="px-5 py-3 text-right text-sm font-semibold text-ink tabular-nums">
+          <MoneyText value={shift.totalAmountDue} />
         </td>
         <td className="px-5 py-3">
           <div className="flex flex-wrap items-center gap-1">
-            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${badge.color}`}>
-              {badge.label}
-            </span>
-            {shift.isBackfilled && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
-                Backfilled
-              </span>
-            )}
+            <StatusBadge {...shiftStatusBadge(shift.status)} />
+            {shift.isBackfilled && <StatusBadge tone="neutral" icon={History} label={t('history.backfilled')} />}
           </div>
         </td>
-        <td className="px-5 py-3 hidden md:table-cell">
+        <td className="px-5 py-3 text-right hidden md:table-cell">
           {shift.discrepancyAmount != null ? (
-            <span className={`text-xs font-semibold ${
-              shift.discrepancyType === 'SHORT' ? 'text-red-600' : 'text-amber-600'
+            <span className={`whitespace-nowrap text-xs font-semibold tabular-nums ${
+              shift.discrepancyType === 'SHORT' ? 'text-bad' : 'text-warn'
             }`}>
-              {shift.discrepancyType} {fmtAmt(shift.discrepancyAmount)}
+              {shift.discrepancyType === 'SHORT' ? t('common:badges.short') : shift.discrepancyType === 'OVER' ? t('common:badges.over') : shift.discrepancyType} {fmtAmt(shift.discrepancyAmount)}
             </span>
           ) : (
-            <span className="text-xs text-slate-500">—</span>
+            <span className="text-xs text-ink-3">—</span>
           )}
         </td>
         <td className="px-4 py-3 text-right">
           <div className="flex items-center justify-end gap-2">
-            {canResolve && (
-              <button onClick={() => setResolveModalOpen(true)} className="ui-btn ui-btn-danger min-h-0 px-3 py-1.5 text-xs">
-                Resolve
-              </button>
-            )}
-            {canResolveApproval && (
-              <button onClick={() => setResolveModalOpen(true)} className="ui-btn ui-btn-warning min-h-0 px-3 py-1.5 text-xs">
-                Approve
-              </button>
-            )}
-            {isPendingApproval && !isOwnerOrAdmin && (
-              <span className="text-xs text-orange-600 font-medium">Owner approval needed</span>
-            )}
-            {shift.discrepancyResolution && (
-              <span className="text-xs text-slate-500">{codeLabel(shift.discrepancyResolution)}</span>
-            )}
+            <ResolveButton shift={shift} onOpen={openResolve} className="min-h-0 px-3 py-1.5 text-xs" />
+            <DiscrepancyNotes shift={shift} />
             {isClosed && (
               <IconButton
-                onClick={() => setHandoverOpen(true)}
-                className="text-slate-500 hover:text-slate-600 transition-colors"
-                label="Print handover report"
+                onClick={openHandover}
+                className="text-ink-3 hover:text-ink-2 transition-colors"
+                label={t('history.printHandover')}
                 icon={<Printer size={14} strokeWidth={2} />}
               />
             )}
@@ -115,87 +235,86 @@ export function HistoryRow({ shift }: { shift: Shift }) {
 
       {/* ── Payment breakdown row — always visible for closed shifts ──────── */}
       {isClosed && (
-        <tr className="border-b border-slate-100 bg-slate-50/40">
-          <td colSpan={9} className="px-5 pb-3 pt-1">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-
-              {/* Cash */}
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-slate-500">Cash</span>
-                <span className="font-semibold text-slate-700">{fmtAmt(shift.cashCollected)}</span>
-              </div>
-
-              {/* UPI + Card */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                <span className="text-slate-500">UPI + Card</span>
-                <span className="font-semibold text-slate-700">
-                  {digitalTotal > 0 ? fmtAmt(digitalTotal) : '—'}
-                </span>
-                {(shift.upiCollected ?? 0) > 0 && (
-                  <span className="text-slate-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                    UPI {fmtAmt(shift.upiCollected)}
-                  </span>
-                )}
-                {(shift.cardCollected ?? 0) > 0 && (
-                  <span className="text-slate-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                    Card {fmtAmt(shift.cardCollected)}
-                  </span>
-                )}
-              </div>
-
-              {/* Credit — clickable pill that opens the modal */}
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
-                <span className="text-slate-500">Credit</span>
-                {creditAmt > 0 ? (
-                  hasCreditEntries ? (
-                    <button
-                      type="button"
-                      onClick={() => setCreditModalOpen(true)}
-                      className="flex items-center gap-1.5 font-semibold px-2 py-0.5 rounded-md bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors"
-                      title="Click to view credit details"
-                    >
-                      {fmtAmt(creditAmt)}
-                      <span className="text-orange-500 text-xs">
-                        · {shift.creditEntries.length} client{shift.creditEntries.length !== 1 ? 's' : ''} ↗
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="font-semibold text-orange-700">{fmtAmt(creditAmt)}</span>
-                  )
-                ) : (
-                  <span className="text-slate-500">—</span>
-                )}
-              </div>
+        <tr className="bg-surface-sunken">
+          <td colSpan={9} className="p-0">
+            {/* Stays inside the visible width while the table scrolls sideways; the table region is the size container. */}
+            <div className="sticky left-0 max-w-[100cqw] px-5 pb-3 pt-1">
+              <PaymentBreakdown shift={shift} stacked={false} onOpenCredit={openCredit} />
             </div>
           </td>
         </tr>
       )}
 
-      {/* ── Credit entries popup modal ─────────────────────────────────────── */}
-      {creditModalOpen && hasCreditEntries && (
-        <CreditEntriesModal
-          shift={shift}
-          entries={shift.creditEntries}
-          creditTotal={creditAmt}
-          onClose={() => setCreditModalOpen(false)}
-        />
-      )}
-
-      {/* ── Resolve discrepancy modal ──────────────────────────────────────── */}
-      {resolveModalOpen && (
-        <ResolveDiscrepancyModal
-          shift={shift}
-          onClose={() => setResolveModalOpen(false)}
-        />
-      )}
-
-      {/* ── Handover print modal ──────────────────────────────────────────── */}
-      {handoverOpen && (
-        <HandoverModal shift={shift} onClose={() => setHandoverOpen(false)} />
-      )}
+      {panels}
     </>
+  )
+}
+
+// ── History card (phones) ─────────────────────────────────────────────────────
+
+export function HistoryCard({ shift }: { shift: Shift }) {
+  const { t } = useTranslation(['shifts', 'common'])
+  const { openCredit, openResolve, openHandover, panels } = useShiftPanels(shift)
+  const isClosed         = shift.totalAmountDue != null
+  const hasCreditEntries = (shift.creditEntries?.length ?? 0) > 0
+  const start = formatIstDateTime(shift.actualStartTime, TIME)
+  const end   = shift.actualEndTime ? formatIstDateTime(shift.actualEndTime, TIME) : t('handover.report.stillOpen')
+
+  return (
+    <li data-testid="history-card" className="space-y-2 bg-surface px-4 py-(--density-row-y)">
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold text-ink">
+          <span className="font-mono">#{shift.id}</span> · <DuAndNozzles shift={shift} wrap />
+        </p>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <StatusBadge {...shiftStatusBadge(shift.status)} />
+          {shift.isBackfilled && <StatusBadge tone="neutral" icon={History} label={t('history.backfilled')} />}
+        </div>
+      </div>
+
+      <p className="text-xs text-ink-3">
+        <span className="font-medium text-ink-2">{shift.operatorName}</span>
+        {shift.shiftWindow && <> · {shift.shiftWindow}</>}
+        {' · '}<span className="tabular-nums">{start}–{end}</span>
+      </p>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-ink-3">{t('history.columns.amountDue')}</span>
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {shift.discrepancyType && (
+            <DiscrepancyBadge type={shift.discrepancyType} amount={shift.discrepancyAmount ?? 0} />
+          )}
+          <MoneyText value={shift.totalAmountDue} className="text-sm font-semibold text-ink" />
+        </span>
+      </div>
+
+      {isClosed && (
+        <div className="rounded-control bg-surface-sunken px-3 py-2">
+          <PaymentBreakdown shift={shift} stacked onOpenCredit={openCredit} />
+        </div>
+      )}
+
+      <div className="flex flex-col items-end gap-1 empty:hidden">
+        <DiscrepancyNotes shift={shift} />
+      </div>
+
+      <div className="flex flex-col gap-2 empty:hidden">
+        <ResolveButton shift={shift} onOpen={openResolve} className="w-full" />
+        {hasCreditEntries && (
+          <button type="button" onClick={openCredit} className="ui-btn ui-btn-secondary w-full">
+            <ReceiptText size={16} strokeWidth={2} aria-hidden="true" />
+            {t('creditEntries.title')} · {t('history.payment.clientCount', { count: shift.creditEntries.length })}
+          </button>
+        )}
+        {isClosed && (
+          <button type="button" onClick={openHandover} className="ui-btn ui-btn-secondary w-full">
+            <Printer size={16} strokeWidth={2} aria-hidden="true" />
+            {t('history.printHandover')}
+          </button>
+        )}
+      </div>
+
+      {panels}
+    </li>
   )
 }

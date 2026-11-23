@@ -48,6 +48,10 @@ public class BankStatementImport {
     @Column(name = "matched_lines", nullable = false)
     private Integer matchedLines;
 
+    /** SHA-256 of the uploaded file, unique per pump, so the same file cannot be imported twice. */
+    @Column(name = "file_hash", length = 64)
+    private String fileHash;
+
     @Column(name = "imported_by_user_id", nullable = false)
     private Long importedByUserId;
 

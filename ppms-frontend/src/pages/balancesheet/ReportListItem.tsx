@@ -1,58 +1,55 @@
-import { TrendingDown, TrendingUp } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { RefreshCw, TrendingDown, TrendingUp } from 'lucide-react'
+import { serverText } from '../../utils/serverText'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import type { BalanceSheetSummary } from '../../api/balanceSheetApi'
-import { fmtDate, fmtLitres, fmtMoney } from './bsFormat'
-
-// ── Report list item ────────────────────────────────────────────────────────────
+import { StatusBadge } from '../../components/StatusBadge'
+import { MoneyText } from '../../components/AmountText'
+import { fmtDate, fmtLitres } from './bsFormat'
 
 interface ReportListItemProps {
   report: BalanceSheetSummary
+  /** Address search that opens this sheet, e.g. ?sheet=7. */
+  search: string
   isSelected: boolean
-  onClick: () => void
 }
 
-export function ReportListItem({ report, isSelected, onClick }: ReportListItemProps) {
+export function ReportListItem({ report, search, isSelected }: ReportListItemProps) {
+  const { t } = useTranslation('balancesheet')
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const isDay = report.reportType === 'DAY'
   const discrepancyColor = report.cashDiscrepancy === 0
-    ? 'text-emerald-600'
+    ? 'text-ok'
     : report.cashDiscrepancy < 0
-      ? 'text-red-500'
-      : 'text-amber-500'
+      ? 'text-bad'
+      : 'text-warn'
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-4 py-3.5 border-b border-slate-100 transition-colors ${
-        isSelected ? 'bg-blue-50/80 border-l-2 border-l-blue-500 ring-1 ring-inset ring-blue-200' : 'hover:bg-slate-50'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
-              isDay ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-            }`}>
-              {isDay ? 'Day' : 'Shift'}
-            </span>
-            <span className="text-sm font-medium text-slate-700 truncate">{report.periodLabel}</span>
-          </div>
-          <p className="text-xs text-slate-500">{fmtDate(report.reportDate)}</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {report.shiftCount} shift{report.shiftCount !== 1 ? 's' : ''} · {fmtLitres(report.totalLitresSold)} sold
-          </p>
+    <Link to={{ search }} aria-current={isSelected ? 'page' : undefined} className="ui-list-item">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <StatusBadge tone={isDay ? 'neutral' : 'info'} label={isDay ? t('list.day') : t('list.shift')} />
+          <span className="text-sm font-medium text-ink truncate">{serverText(report.periodLabelCode, report.periodLabelParams, report.periodLabel)}</span>
         </div>
-        <div className="text-right flex-shrink-0">
-          <p className="text-sm font-semibold text-slate-700">{fmtMoney(report.totalExpectedRevenue)}</p>
-          <p className={`text-xs font-medium ${discrepancyColor}`}>
-            {report.cashDiscrepancy === 0
-              ? 'Balanced'
-              : <span className="inline-flex items-center gap-0.5">{report.cashDiscrepancy < 0 ? <TrendingDown size={12} strokeWidth={2} /> : <TrendingUp size={12} strokeWidth={2} />}{fmtMoney(Math.abs(report.cashDiscrepancy))}</span>}
-          </p>
-          {isOwnerOrAdmin && <p className="text-xs text-emerald-600">{fmtMoney(report.totalGrossProfit)} profit</p>}
-        </div>
+        {report.stale && (
+          <StatusBadge tone="warn" icon={RefreshCw} label={t('list.stale')} className="mb-0.5" />
+        )}
+        <p className="text-xs text-ink-3">{fmtDate(report.reportDate)}</p>
+        <p className="text-xs text-ink-3 mt-0.5">
+          {t('list.shiftsSold', { count: report.shiftCount, litres: fmtLitres(report.totalLitresSold) })}
+        </p>
       </div>
-    </button>
+      <div className="text-right flex-shrink-0">
+        <MoneyText value={report.totalExpectedRevenue} className="block text-sm font-semibold text-ink" />
+        <p className={`text-xs font-medium ${discrepancyColor}`}>
+          {report.cashDiscrepancy === 0
+            ? t('list.balanced')
+            : <span className="inline-flex items-center gap-0.5">{report.cashDiscrepancy < 0 ? <TrendingDown size={12} strokeWidth={2} /> : <TrendingUp size={12} strokeWidth={2} />}<MoneyText value={Math.abs(report.cashDiscrepancy)} /></span>}
+        </p>
+        {isOwnerOrAdmin && <p className="text-xs text-ok"><MoneyText value={report.totalGrossProfit} /> {t('list.profitSuffix')}</p>}
+      </div>
+    </Link>
   )
 }

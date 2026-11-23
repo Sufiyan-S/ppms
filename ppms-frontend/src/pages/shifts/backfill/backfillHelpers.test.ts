@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fmt, maxDate, minDate, newCreditRow, safeParse } from './backfillHelpers'
+import { maxDate, minDate, newCreditRow, safeParse } from './backfillHelpers'
 
 describe('backfill helpers', () => {
   afterEach(() => {
@@ -19,10 +19,6 @@ describe('backfill helpers', () => {
     expect(safeParse('-3')).toBe(0)
     expect(safeParse('abc')).toBe(0)
     expect(safeParse('Infinity')).toBe(0)
-  })
-
-  it('formats amounts with Indian grouping and two decimals', () => {
-    expect(fmt(123456.789)).toBe('1,23,456.79')
   })
 
   it('creates empty credit rows with distinct keys', () => {

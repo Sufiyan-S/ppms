@@ -1,6 +1,7 @@
 package com.ppms.fuel;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * Returned as HTTP 409 when a new fuel price deviates more than 15% from the last recorded price.
@@ -11,5 +12,7 @@ public record PriceDeviationWarning(
         String message,
         BigDecimal lastPrice,
         BigDecimal newPrice,
-        BigDecimal deviationPercent
+        BigDecimal deviationPercent,
+        String code,
+        Map<String, Object> params
 ) {}

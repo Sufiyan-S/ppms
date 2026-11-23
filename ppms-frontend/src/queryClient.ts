@@ -7,8 +7,10 @@ function isClientError(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500
 }
 
-export const queryClient = new QueryClient({
+export const queryClient: QueryClient = new QueryClient({
   mutationCache: new MutationCache({
+    // Any setup change (nozzle, tank, price, staff, GST…) can move a checklist step, so the checklist is re-read.
+    onSuccess: (): void => { queryClient.invalidateQueries({ queryKey: ['setup-checklist'] }) },
     onError: (error, _variables, _context, mutation) => {
       if (mutation.options.onError) return
       useToastStore.getState().addToast(parseApiError(error), 'error')

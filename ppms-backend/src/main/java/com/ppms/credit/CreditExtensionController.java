@@ -1,5 +1,10 @@
 package com.ppms.credit;
 
+import java.util.Map;
+import com.ppms.audit.AuditAction;
+import com.ppms.audit.AuditService;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
@@ -30,6 +35,7 @@ public class CreditExtensionController {
 
     private final CreditExtensionRepository extensionRepository;
     private final CreditClientRepository clientRepository;
+    private final AuditService auditService;
     private final BusinessClock businessClock;
 
     /**
@@ -75,15 +81,27 @@ public class CreditExtensionController {
             @Valid @RequestBody CreateCreditExtensionRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        // Verify client exists at this pump
-        clientRepository.findById(clientId)
+        CreditClient client = clientRepository.findById(clientId)
                 .filter(c -> c.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found at this pump"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT,
+                        "Credit client not found at this pump"));
+        if (client.getParentClientId() != null) {
+            String parentName = clientRepository.findById(client.getParentClientId())
+                    .map(CreditClient::getName)
+                    .orElse("the parent account");
+            throw new BusinessException(ErrorCodes.CREDIT_EXTENSION_ON_SUB_ACCOUNT,
+                    Map.of("clientName", client.getName(), "parentName", parentName),
+                    "Credit limits and billing cycles of sub-account '" + client.getName()
+                    + "' are checked on its parent account '" + parentName
+                    + "'. Grant the extension on the parent account instead.");
+        }
 
         // Enforce Business Rule 60: only one active extension of the same type
         extensionRepository.findInEffectOfType(pumpId, clientId, request.extensionType(), businessClock.today())
                 .ifPresent(existing -> {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.CREDIT_EXTENSION_ALREADY_ACTIVE,
+                            Map.of("extensionTypeCode", request.extensionType().name(),
+                                   "expiryDate", String.valueOf(existing.getExpiryDate())),
                             "An active " + request.extensionType() + " already exists for this client (expires "
                             + existing.getExpiryDate() + "). Expire it before creating a new one (Business Rule 60).");
                 });
@@ -91,7 +109,9 @@ public class CreditExtensionController {
         // AMOUNT_EXTENSION must have an amount
         if (request.extensionType() == CreditExtensionType.AMOUNT_EXTENSION) {
             if (request.extensionAmount() == null || request.extensionAmount().signum() <= 0) {
-                throw new BusinessException("AMOUNT_EXTENSION requires a positive extensionAmount.");
+                throw new BusinessException(ErrorCodes.CREDIT_EXTENSION_AMOUNT_REQUIRED,
+                        Map.of(),
+                        "AMOUNT_EXTENSION requires a positive extensionAmount.");
             }
         }
 
@@ -108,9 +128,56 @@ public class CreditExtensionController {
 
         extension = extensionRepository.save(extension);
 
+        auditService.log(pumpId, AuditAction.CREDIT_EXTENSION_GRANTED,
+                "CreditExtension", extension.getId().toString(),
+                request.extensionType() + " for clientId=" + clientId
+                        + (extension.getExtensionAmount() != null ? " of ₹" + extension.getExtensionAmount() : "")
+                        + " granted until " + extension.getExpiryDate() + ", reason=" + extension.getReason(),
+                currentUser);
         log.info("Credit extension granted: pumpId={}, clientId={}, type={}, expiry={}, by={}",
                 pumpId, clientId, request.extensionType(), request.expiryDate(), currentUser.getId());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(extension);
+    }
+
+    /**
+     * POST /api/pumps/{pumpId}/credit-clients/{clientId}/extensions/{extensionId}/revoke
+     * Withdraws an active extension before it expires; the row stays with who revoked it and why.
+     */
+    @PostMapping("/{extensionId}/revoke")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    @Transactional
+    public ResponseEntity<CreditExtension> revokeExtension(
+            @PathVariable Long pumpId,
+            @PathVariable Long clientId,
+            @PathVariable Long extensionId,
+            @Valid @RequestBody RevokeCreditExtensionRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        CreditExtension extension = extensionRepository.findByIdForUpdate(extensionId)
+                .filter(found -> found.getPumpId().equals(pumpId) && found.getClientId().equals(clientId))
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_EXTENSION,
+                        "Credit extension not found"));
+        if (extension.getStatus() != CreditExtensionStatus.ACTIVE) {
+            throw new BusinessException(ErrorCodes.CREDIT_EXTENSION_NOT_ACTIVE,
+                    Map.of("statusCode", extension.getStatus().name()),
+                    "Only an active extension can be revoked; this one is " + extension.getStatus() + ".");
+        }
+
+        extension.setStatus(CreditExtensionStatus.REVOKED);
+        extension.setRevokedAt(businessClock.now());
+        extension.setRevokedByUserId(currentUser.getId());
+        extension.setRevokeReason(request.reason().trim());
+        extension = extensionRepository.save(extension);
+
+        auditService.log(pumpId, AuditAction.CREDIT_EXTENSION_REVOKED,
+                "CreditExtension", extensionId.toString(),
+                extension.getExtensionType() + " for clientId=" + clientId + " (expiring " + extension.getExpiryDate()
+                        + ") revoked, reason=" + extension.getRevokeReason(),
+                currentUser);
+        log.info("Credit extension revoked: pumpId={}, clientId={}, extensionId={}, by={}",
+                pumpId, clientId, extensionId, currentUser.getId());
+
+        return ResponseEntity.ok(extension);
     }
 }

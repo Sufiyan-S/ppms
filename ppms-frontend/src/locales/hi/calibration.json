@@ -1,0 +1,64 @@
+{
+  "page": {
+    "title": "नोज़ल कैलिब्रेशन",
+    "subtitle": "नियमों के लिए समय-समय पर होने वाली कैलिब्रेशन जाँच दर्ज करें",
+    "loadFailed": "कैलिब्रेशन डेटा लोड नहीं हो सका। अपना कनेक्शन जाँचें और पेज रीफ़्रेश करें।",
+    "nozzleCount_one": "{{count}} नोज़ल",
+    "nozzleCount_other": "{{count}} नोज़ल",
+    "recordCount_one": "{{count}} रिकॉर्ड",
+    "recordCount_other": "{{count}} रिकॉर्ड"
+  },
+  "nozzleOption": "नोज़ल #{{number}} — {{fuel}}",
+  "form": {
+    "title": "कैलिब्रेशन दर्ज करें",
+    "subtitle": "रिकॉर्ड के लिए कैलिब्रेशन की तारीख, तकनीशियन, सर्टिफ़िकेट और अगली तारीख डालें।",
+    "nozzle": "नोज़ल",
+    "nozzlePlaceholder": "नोज़ल चुनें…",
+    "calibrationDate": "कैलिब्रेशन की तारीख",
+    "review": "कैलिब्रेशन जाँचें",
+    "nextDue": "अगला कैलिब्रेशन कब",
+    "calibratedBy": "कैलिब्रेशन करने वाले",
+    "calibratedByHelp": "तकनीशियन या एजेंसी का नाम",
+    "certificate": "सर्टिफ़िकेट नंबर"
+  },
+  "validation": {
+    "selectNozzle": "कृपया नोज़ल चुनें",
+    "calibratedByRequired": "कैलिब्रेशन किसने किया, यह भरें",
+    "dateRequired": "कैलिब्रेशन की तारीख भरें",
+    "nextDueRequired": "अगले कैलिब्रेशन की तारीख भरें",
+    "nextDueAfterDate": "अगले कैलिब्रेशन की तारीख, कैलिब्रेशन की तारीख के बाद होनी चाहिए",
+    "certificateRequired": "सर्टिफ़िकेट नंबर भरें"
+  },
+  "toast": {
+    "recorded": "कैलिब्रेशन दर्ज हो गया",
+    "recordFailed": "कैलिब्रेशन दर्ज नहीं हो सका"
+  },
+  "review": {
+    "title": "कैलिब्रेशन जाँचें",
+    "confirm": "कैलिब्रेशन पक्का करें",
+    "nozzle": "नोज़ल",
+    "calibrationDate": "कैलिब्रेशन की तारीख",
+    "nextDue": "अगला कैलिब्रेशन कब",
+    "calibratedBy": "किसने कैलिब्रेशन किया",
+    "certificate": "सर्टिफ़िकेट नंबर"
+  },
+  "history": {
+    "title": "कैलिब्रेशन इतिहास",
+    "allNozzlesSuffix": "— सभी नोज़ल",
+    "nozzleSuffix": "— नोज़ल #{{number}} ({{fuel}})",
+    "filterLabel": "नोज़ल से छाँटें",
+    "filterPlaceholder": "नोज़ल से छाँटें…",
+    "allNozzles": "सभी नोज़ल",
+    "emptyTitle": "कोई कैलिब्रेशन रिकॉर्ड नहीं",
+    "emptyRange": "चुनी गई तारीखों में कोई रिकॉर्ड नहीं है।",
+    "emptyNozzle": "इस नोज़ल का अभी कोई कैलिब्रेशन रिकॉर्ड नहीं है।",
+    "emptyFirst": "पहला कैलिब्रेशन दर्ज करने के लिए ऊपर का फ़ॉर्म भरें।",
+    "nozzleNumber": "नोज़ल #{{number}}",
+    "nextDue": "अगली तारीख: {{date}}",
+    "by": "किसने: {{name}}",
+    "cert": "सर्टिफ़िकेट: {{reference}}",
+    "loggedBy": "दर्ज करने वाले: {{name}}",
+    "loggedAt": "दर्ज किया: {{time}}",
+    "filtersLabel": "कैलिब्रेशन इतिहास के फ़िल्टर"
+  }
+}

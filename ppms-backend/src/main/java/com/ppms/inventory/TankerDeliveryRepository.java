@@ -35,4 +35,6 @@ public interface TankerDeliveryRepository extends JpaRepository<TankerDelivery, 
     List<TankerDelivery> findByPumpIdAndInvoiceReference(Long pumpId, String invoiceReference);
 
     boolean existsByPumpId(Long pumpId);
+
+    boolean existsByTankId(Long tankId);
 }

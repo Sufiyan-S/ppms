@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { creditApi } from '../../../api/creditApi'
 import type { CreditClient, RecordPaymentRequest } from '../../../api/creditApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { localDateInputValue } from '../../../utils/date'
-import { Spinner } from '../../../components/Spinner'
+import { formatCurrency } from '../../../utils/format'
 import { useToastStore } from '../../../store/toastStore'
-import { ModalPortal } from '../../../components/ModalPortal'
+import { Modal } from '../../../components/Modal'
+import { MoneyText } from '../../../components/AmountText'
 import { parseApiError } from '../../../utils/apiError'
-
-// ─── Record Payment Modal ────────────────────────────────────────────────────
+import { FormGrid, FormGridFullRow } from '../../../components/layout/FormGrid'
+import { FormField } from '../../../components/FormField'
+import { NumericInput } from '../../../components/NumericInput'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { LiveFigures } from '../../../components/LiveFigures'
+import { StillNeeded } from '../../../components/StillNeeded'
+import { toPaise } from '../../../utils/money'
 
 interface RecordPaymentModalProps {
   client: CreditClient
@@ -19,15 +26,23 @@ interface RecordPaymentModalProps {
   onClose: () => void
 }
 
+/** Each label is common.json paymentMethods.<mode>. */
+const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER'] as const
+
 export function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride, subClients = [], onClose }: RecordPaymentModalProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
   const { addToast } = useToastStore()
   const [amount, setAmount] = useState('')
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'UPI' | 'BANK_TRANSFER' | 'OTHER'>('CASH')
   const [paidAt, setPaidAt] = useState(() => localDateInputValue())
   const [notes, setNotes] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [amountError, setAmountError] = useState<string | undefined>()
+  const [serverError, setServerError] = useState<string | null>(null)
   const [targetClientId, setTargetClientId] = useState<number>(client.id)
+  const stillNeededId = useId()
+  const modeLabelId = useId()
+  const recordForLabelId = useId()
 
   const targetClient = targetClientId === client.id
     ? client
@@ -36,6 +51,16 @@ export function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride,
   const outstandingBalance = targetClientId === client.id
     ? (outstandingBalanceOverride ?? client.outstandingBalance)
     : (targetClient.outstandingBalance ?? 0)
+
+  const enteredAmount = amount === '' ? null : parseFloat(amount)
+  const paymentShown = enteredAmount !== null && !isNaN(enteredAmount) ? enteredAmount : null
+  const balanceAfterPaise = paymentShown === null ? null : toPaise(outstandingBalance) - toPaise(paymentShown)
+  const isOverpaid = balanceAfterPaise !== null && balanceAfterPaise < 0
+
+  const stillNeeded = [
+    ...(amount === '' ? [t('recordPayment.amount')] : []),
+    ...(paidAt === '' ? [t('recordPayment.date')] : []),
+  ]
 
   const mutation = useMutation({
     mutationFn: (req: RecordPaymentRequest) =>
@@ -46,172 +71,113 @@ export function RecordPaymentModal({ client, pumpId, outstandingBalanceOverride,
       if (targetClientId !== client.id) {
         qc.invalidateQueries({ queryKey: ['credit-transactions', pumpId, targetClientId] })
       }
-      addToast(`Payment recorded for ${targetClient.name}`, 'success')
+      addToast(t('recordPayment.recorded', { name: targetClient.name }), 'success')
       onClose()
     },
     onError: (err) => {
-      const msg = parseApiError(err, 'Failed to record payment')
-      setError(msg)
+      const msg = parseApiError(err, t('recordPayment.failed'))
+      setServerError(msg)
       addToast(msg, 'error')
     },
   })
 
-  const handleSubmit = () => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setServerError(null)
     const amt = parseFloat(amount)
     if (!amount || isNaN(amt) || amt <= 0) {
-      setError('Please enter a valid amount')
+      setAmountError(t('recordPayment.invalidAmount'))
       return
     }
     if (amt > outstandingBalance) {
-      setError(`Amount cannot exceed outstanding balance (₹${outstandingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`)
+      setAmountError(t('recordPayment.exceedsOutstanding', { amount: formatCurrency(outstandingBalance) }))
       return
     }
-    setError(null)
+    setAmountError(undefined)
     mutation.mutate({ amount: amt, paymentMode, paidAt, notes: notes.trim() || undefined })
   }
 
   return (
-    <ModalPortal onClose={onClose}>
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal-panel">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--success">
-          <div className="ui-modal-heading">
-            <h2 className="ui-modal-title">Record Payment</h2>
-            <p className="ui-modal-subtitle">{client.name}</p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
-        </div>
-
-        <div className="ui-modal-body space-y-4">
-          {subClients.length > 0 && (
-            <div className="ui-inline-form">
-              <span className="ui-label">Record Payment For</span>
-              <SearchableSelect label="Record Payment For"
-                value={String(targetClientId)}
-                onChange={v => { setTargetClientId(Number(v)); setAmount(''); setError(null) }}
-                options={[
-                  { value: String(client.id), label: `${client.name} (Parent)` },
-                  ...subClients.map(c => ({ value: String(c.id), label: c.name })),
-                ]}
-              />
-            </div>
-          )}
-
-          {/* Outstanding + Remaining live feedback */}
-          <div className="ui-card p-0 overflow-hidden border-amber-200">
-            <div className="bg-amber-50 px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-amber-700">Outstanding Balance</span>
-                <span className="text-base font-bold text-amber-800">
-                ₹{outstandingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-            {amount !== '' && (() => {
-              const amt = parseFloat(amount) || 0
-              const remaining = outstandingBalance - amt
-              return (
-                <div className={`px-4 py-2.5 flex items-center justify-between border-t ${
-                  remaining >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-100'
-                }`}>
-                  <span className={`text-sm ${remaining >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                    Remaining after payment
-                  </span>
-                  <span className={`text-sm font-bold ${remaining >= 0 ? 'text-green-800' : 'text-red-700'}`}>
-                    ₹{Math.abs(remaining).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    {remaining < 0 ? ' (over)' : ''}
-                  </span>
-                </div>
-              )
-            })()}
-          </div>
-
-          <div className="ui-inline-form">
-            <span className="ui-label">
-              Amount <span className="text-red-500">*</span>
-            </span>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
-              <input aria-label="Amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00"
-                data-autofocus
-                className="pl-7 pr-3 shadow-sm"
-              />
-            </div>
-          </div>
-
-          <div className="ui-inline-form">
-            <span className="ui-label">
-              Payment Mode <span className="text-red-500">*</span>
-            </span>
-            <SearchableSelect label="Payment Mode"
-              value={paymentMode}
-              onChange={v => setPaymentMode(v as typeof paymentMode)}
+    <Modal
+      title={t('clientActions.recordPayment')}
+      subtitle={client.name}
+      tone="info"
+      size="md-wide"
+      onClose={onClose}
+      canClose={!mutation.isPending}
+      onSubmit={handleSubmit}
+      bodyClassName="space-y-4"
+      footer={
+        <>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+            {t('common:actions.cancel')}
+          </button>
+          <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('common:actions.saving')}
+            disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn-primary">
+            {t('clientActions.recordPayment')}
+          </LoadingButton>
+        </>
+      }
+    >
+      <FormGrid>
+        {subClients.length > 0 && (
+          <FormGridFullRow>
+            <span id={recordForLabelId} className="ui-label">{t('recordPayment.recordFor')}</span>
+            <SearchableSelect aria-labelledby={recordForLabelId}
+              value={String(targetClientId)}
+              onChange={v => { setTargetClientId(Number(v)); setAmount(''); setAmountError(undefined) }}
               options={[
-                { value: 'CASH',          label: 'Cash' },
-                { value: 'UPI',           label: 'UPI' },
-                { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
-                { value: 'OTHER',         label: 'Other' },
+                { value: String(client.id), label: t('recordPayment.parentOption', { name: client.name }) },
+                ...subClients.map(c => ({ value: String(c.id), label: c.name })),
               ]}
             />
-          </div>
+          </FormGridFullRow>
+        )}
 
-          <div className="ui-inline-form">
-            <label className="block">
-              <span className="ui-label">
-              Payment Date <span className="text-red-500">*</span>
-            </span>
-              <input
-                type="date"
-                value={paidAt}
-                onChange={e => setPaidAt(e.target.value)}
-                className="shadow-sm"
-              />
-            </label>
-          </div>
+        <FormField label={t('recordPayment.amount')} error={amountError}>
+          <NumericInput unit="₹" min="0.01" step="0.01" value={amount}
+            onChange={e => { setAmount(e.target.value); setAmountError(undefined) }}
+            data-autofocus />
+        </FormField>
 
-          <div className="ui-inline-form">
-            <label className="block">
-              <span className="ui-label">Notes</span>
-              <input
-                type="text"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="e.g. Paid via NEFT ref TXN12345"
-                className="shadow-sm"
-              />
-            </label>
-          </div>
-
-          {error && (
-            <div role="alert" className="ui-alert ui-alert-danger text-sm">
-              {error}
-            </div>
-          )}
+        <div>
+          <span id={modeLabelId} className="ui-label">{t('recordPayment.mode')}</span>
+          <SearchableSelect aria-labelledby={modeLabelId}
+            value={paymentMode}
+            onChange={v => setPaymentMode(v as typeof paymentMode)}
+            options={PAYMENT_MODES.map(mode => ({ value: mode, label: t(`common:paymentMethods.${mode}`) }))}
+          />
         </div>
 
-        <div className="ui-modal-footer">
-          <button
-            onClick={onClose}
-            className="ui-btn ui-btn-secondary"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={mutation.isPending}
-            className="ui-btn ui-btn-primary"
-          >
-            {mutation.isPending
-              ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span>
-              : 'Record Payment'}
-          </button>
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+        <FormField label={t('recordPayment.date')}>
+          <input type="date" value={paidAt} onChange={e => setPaidAt(e.target.value)} />
+        </FormField>
+
+        <FormField
+          label={<>{t('common:fields.notes')} <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span></>}
+          help={t('recordPayment.notesHelp')}
+        >
+          <input type="text" value={notes} onChange={e => setNotes(e.target.value)} />
+        </FormField>
+      </FormGrid>
+
+      <LiveFigures
+        label={t('recordPayment.figuresLabel')}
+        figures={[
+          { label: t('recordPayment.outstandingBalance'), value: <MoneyText value={outstandingBalance} /> },
+          { label: t('recordPayment.thisPayment'), value: <MoneyText value={paymentShown} /> },
+          isOverpaid
+            ? { label: t('recordPayment.overpaidBy'), value: <MoneyText value={Math.abs(balanceAfterPaise) / 100} tone="bad" />, isResult: true }
+            : { label: t('recordPayment.remainingAfter'), value: <MoneyText value={balanceAfterPaise === null ? null : balanceAfterPaise / 100} />, isResult: true },
+        ]}
+      />
+
+      {serverError && (
+        <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>
+      )}
+    </Modal>
   )
 }

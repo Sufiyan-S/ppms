@@ -14,8 +14,10 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -37,17 +39,18 @@ class SettlementReminderJobTest {
 
         jobRunningAt("17:59").fireReminders();
 
-        verify(dedupService, never()).maybeInsert(any(), any(), anyString(), anyString(), anyString());
+        verify(dedupService, never()).insertDaily(any(), any(), anyString(), any(), anyString(), anyString(), anyMap());
     }
 
     @Test
-    void reminderIsRaisedFromTheAlertTimeOnwardsUnderOneKeyPerPumpTypeAndDay() {
+    void reminderIsRaisedFromTheAlertTimeOnwardsAsADailyAlertPerPumpAndType() {
         givenUpiAlertAt("18:00");
 
         jobRunningAt("18:00").fireReminders();
 
-        verify(dedupService).maybeInsert(eq(PUMP_ID), eq(NotificationType.SETTLEMENT_REMINDER),
-                eq("SETTLEMENT_REMINDER:UPI:" + PUMP_ID + ":" + TODAY), eq("UPI Settlement Reminder"), anyString());
+        verify(dedupService).insertDaily(eq(PUMP_ID), eq(NotificationType.SETTLEMENT_REMINDER),
+                eq("SETTLEMENT_REMINDER:UPI:" + PUMP_ID), eq(TODAY), eq("UPI Settlement Reminder"), anyString(),
+                eq(Map.of("paymentTypeCode", "UPI")));
     }
 
     @Test
@@ -59,8 +62,8 @@ class SettlementReminderJobTest {
         new SettlementReminderJob(configRepository, dedupService, new FixedBusinessClock(sixPmIstSeenFromUtc))
                 .fireReminders();
 
-        verify(dedupService).maybeInsert(eq(PUMP_ID), eq(NotificationType.SETTLEMENT_REMINDER),
-                eq("SETTLEMENT_REMINDER:UPI:" + PUMP_ID + ":" + TODAY), anyString(), anyString());
+        verify(dedupService).insertDaily(eq(PUMP_ID), eq(NotificationType.SETTLEMENT_REMINDER),
+                eq("SETTLEMENT_REMINDER:UPI:" + PUMP_ID), eq(TODAY), anyString(), anyString(), anyMap());
     }
 
     private void givenUpiAlertAt(String alertTime) {

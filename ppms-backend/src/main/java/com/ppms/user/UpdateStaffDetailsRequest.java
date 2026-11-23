@@ -13,4 +13,6 @@ public class UpdateStaffDetailsRequest {
     private UserRole role;
     private UserGender gender;
     private Boolean nightShiftConsent;
+    @Pattern(regexp = UserLanguage.PATTERN, message = UserLanguage.MESSAGE)
+    private String preferredLanguage;
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { usePumpStore } from '../../../store/usePumpStore'
 import { userApi } from '../../../api/userApi'
 import { shiftPlanApi } from '../../../api/shiftPlanApi'
@@ -10,6 +11,7 @@ import { parseApiError } from '../../../utils/apiError'
 import { addDays, istDateString, mondayOf } from '../../../utils/date'
 
 export function useShiftPlanning() {
+  const { t } = useTranslation('shifts')
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
   const canSeeAttendance = isOwnerOrAdmin || user?.role === 'MANAGER'
@@ -77,7 +79,7 @@ export function useShiftPlanning() {
   const generateMutation = useMutation({
     mutationFn: () => shiftPlanApi.generatePlan(pumpId!, weekStart, Number(genDayOps), Number(genNightOps)),
     onSuccess: () => { setShowGenerate(false); setGenError(null); invalidatePlan() },
-    onError: (err) => setGenError(parseApiError(err, 'Failed to generate plan')),
+    onError: (err) => setGenError(parseApiError(err, t('planning.errors.generateFailed'))),
   })
 
   const publishMutation = useMutation({
@@ -89,14 +91,14 @@ export function useShiftPlanning() {
     mutationFn: ({ entryId }: { entryId: number }) =>
       shiftPlanApi.removeEntry(pumpId!, plan!.id, entryId),
     onSuccess: () => { invalidatePlan(); setSlotError(null) },
-    onError: (err) => setSlotError(parseApiError(err, 'Failed to remove')),
+    onError: (err) => setSlotError(parseApiError(err, t('planning.errors.removeFailed'))),
   })
 
   const addEntryMutation = useMutation({
     mutationFn: ({ opId }: { opId: number }) =>
       shiftPlanApi.addEntry(pumpId!, plan!.id, editSlot!.date, editSlot!.shiftDefinitionId, opId),
     onSuccess: () => { setAddOpId(''); setSlotError(null); invalidatePlan() },
-    onError: (err) => setSlotError(parseApiError(err, 'Failed to add operator')),
+    onError: (err) => setSlotError(parseApiError(err, t('planning.errors.addFailed'))),
   })
 
   // Navigation

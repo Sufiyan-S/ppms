@@ -117,6 +117,47 @@ class AncillaryProductIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void saleKeepsTheGstRateItWasSoldAtWhenTheProductRateChangesLater() throws Exception {
+        long saleId = json(sell(1, "450.00").andExpect(status().is2xxSuccessful())).get("id").asLong();
+
+        perform(patch("/api/pumps/{pumpId}/ancillary/products/{id}", setup.pumpId(), productId), setup.owner(),
+                Map.of("gstRatePercent", new BigDecimal("28")))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject("SELECT gst_rate_percent FROM ancillary_sales WHERE id = ?",
+                BigDecimal.class, saleId)).isEqualByComparingTo("18.00");
+    }
+
+    @Test
+    void backfilledCreditSaleNeedsAClientAndIsAddedToThatClientsBalance() throws Exception {
+        jdbcTemplate.update("UPDATE ancillary_product_prices SET effective_from = effective_from - INTERVAL '5 days' WHERE product_id = ?", productId);
+        long clientId = json(perform(post("/api/pumps/{pumpId}/credit-clients", setup.pumpId()), setup.manager(),
+                Map.of("name", "Client " + shortId(), "phone", "9" + String.format("%09d", System.nanoTime() % 1_000_000_000L)))
+                .andExpect(status().is2xxSuccessful())).get("id").asLong();
+        Map<String, Object> request = new HashMap<>();
+        request.put("productId", productId);
+        request.put("saleDate", TestDates.today().minusDays(1).toString());
+        request.put("quantityUnits", 2);
+        request.put("paymentMode", "CREDIT");
+        request.put("clientName", "Walk-in");
+
+        perform(post("/api/pumps/{pumpId}/ancillary/sales/backfill", setup.pumpId()), setup.owner(), request)
+                .andExpect(status().isBadRequest());
+        assertThat(product().get("currentStockUnits").asInt()).isEqualTo(10);
+
+        request.put("clientId", clientId);
+        perform(post("/api/pumps/{pumpId}/ancillary/sales/backfill", setup.pumpId()), setup.owner(), request)
+                .andExpect(status().is2xxSuccessful());
+
+        JsonNode clients = json(perform(get("/api/pumps/{pumpId}/credit-clients", setup.pumpId()), setup.owner())
+                .andExpect(status().isOk()));
+        assertThat(clients).anySatisfy(client -> {
+            assertThat(client.get("id").asLong()).isEqualTo(clientId);
+            assertThat(client.get("outstandingBalance").decimalValue()).isEqualByComparingTo("900.00");
+        });
+    }
+
+    @Test
     void patchingOnlyTheBrandKeepsTheLowStockThreshold() throws Exception {
         perform(patch("/api/pumps/{pumpId}/ancillary/products/{id}", setup.pumpId(), productId), setup.owner(),
                 Map.of("brand", "Shell"))
@@ -223,6 +264,30 @@ class AncillaryProductIntegrationTest extends ApiIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT cost_price_per_unit FROM ancillary_stock_lots WHERE id = ?", BigDecimal.class, lotId))
                 .isEqualByComparingTo("310.00");
+    }
+
+    @Test
+    void correctingALotCostRecostsUnitsAlreadySoldAndMarksThatDaysSheetStale() throws Exception {
+        Long lotId = jdbcTemplate.queryForObject(
+                "SELECT id FROM ancillary_stock_lots WHERE product_id = ?", Long.class, productId);
+        long saleId = json(sell(4, "450.00").andExpect(status().is2xxSuccessful())).get("id").asLong();
+        jdbcTemplate.update("""
+                INSERT INTO balance_sheets (pump_id, report_type, report_date, period_label, generated_by_user_id, generated_at)
+                VALUES (?, 'DAY', ?, 'Day End', ?, NOW())
+                """, setup.pumpId(), TestDates.today(), setup.owner().getId());
+
+        perform(patch("/api/pumps/{pumpId}/ancillary/lots/{lotId}", setup.pumpId(), lotId), setup.owner(),
+                Map.of("costPricePerUnit", new BigDecimal("280.00")))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT cost_price_per_unit FROM ancillary_lot_consumptions WHERE sale_id = ?", BigDecimal.class, saleId))
+                .isEqualByComparingTo("280.00");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT stale FROM balance_sheets WHERE pump_id = ?", Boolean.class, setup.pumpId())).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT description FROM audit_logs WHERE pump_id = ? AND action = 'LOT_COST_CORRECTED'",
+                String.class, setup.pumpId())).contains("₹300.00 → ₹280.00", "4 unit(s)");
     }
 
     @Test

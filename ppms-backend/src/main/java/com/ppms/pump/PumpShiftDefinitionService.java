@@ -1,6 +1,8 @@
 package com.ppms.pump;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.shift.ShiftRepository;
@@ -16,6 +18,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -103,7 +106,7 @@ public class PumpShiftDefinitionService {
         List<PumpShiftDefinition> todaysDefinitions = repository.findActiveForPumpOnDate(pumpId, today);
         List<PumpShiftDefinition> yesterdaysDefinitions = repository.findActiveForPumpOnDate(pumpId, yesterday);
         if (todaysDefinitions.isEmpty() && yesterdaysDefinitions.isEmpty()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_SCHEDULE_NOT_CONFIGURED, Map.of(),
                     "No shift schedule has been configured for this pump. " +
                     "Ask an admin to set up shift definitions under Pump Settings.");
         }
@@ -119,7 +122,8 @@ public class PumpShiftDefinitionService {
                 .filter(d -> d.containsTime(time) && !d.isInAfterMidnightPart(time))
                 .findFirst()
                 .map(d -> new CurrentShiftWindow(d, today))
-                .orElseThrow(() -> new BusinessException(
+                .orElseThrow(() -> new BusinessException(ErrorCodes.CURRENT_TIME_OUTSIDE_SHIFT_WINDOWS,
+                        Map.of("time", time.withSecond(0).withNano(0).toString()),
                         "The current time (" + time.withSecond(0).withNano(0) + ") does not fall within any configured " +
                         "shift window for this pump. Ask an admin to review the shift definitions."));
     }
@@ -130,9 +134,10 @@ public class PumpShiftDefinitionService {
      */
     public PumpShiftDefinition getByIdAndPump(Long id, Long pumpId) {
         PumpShiftDefinition def = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Shift definition not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT_DEFINITION,
+                        "Shift definition not found: " + id));
         if (!def.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Shift definition " + id + " not found");
+            throw new ResourceNotFoundException(EntityType.SHIFT_DEFINITION, "Shift definition " + id + " not found");
         }
         return def;
     }
@@ -156,10 +161,12 @@ public class PumpShiftDefinitionService {
                                                       List<CreateShiftDefinitionRequest> requests,
                                                       User currentUser) {
         if (requests == null || requests.isEmpty()) {
-            throw new BusinessException("At least one shift definition is required.");
+            throw new BusinessException(ErrorCodes.SHIFT_DEFINITION_REQUIRED, Map.of(),
+                    "At least one shift definition is required.");
         }
         if (requests.size() > supportService.maxShiftsPerPump()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.TOO_MANY_SHIFT_DEFINITIONS,
+                    Map.of("maxShifts", supportService.maxShiftsPerPump(), "receivedShifts", requests.size()),
                     "A pump can have at most " + supportService.maxShiftsPerPump() + " shifts. Received: " + requests.size());
         }
 
@@ -209,6 +216,10 @@ public class PumpShiftDefinitionService {
         for (PumpShiftDefinition existing : repository.findOverlappingDefinitions(pumpId, effectiveFrom, newRangeEnd)) {
             if (existing.getEffectiveTo() == null) {
                 throw new BusinessException(
+                        effectiveTo != null ? ErrorCodes.SHIFT_SCHEDULE_OVERLAPS_OPEN_SCHEDULE
+                                : ErrorCodes.OPEN_SHIFT_SCHEDULE_OVERLAPS_OPEN_SCHEDULE,
+                        Map.of("effectiveFrom", effectiveFrom.toString(), "effectiveTo", String.valueOf(effectiveTo),
+                                "existingFrom", existing.getEffectiveFrom().toString()),
                         "The date range " + newRangeLabel + " overlaps with an active schedule effective from " +
                         existing.getEffectiveFrom() + ". Disable or delete the conflicting group first.");
             }
@@ -216,6 +227,11 @@ public class PumpShiftDefinitionService {
                     && !existing.getEffectiveTo().isAfter(newRangeEnd);
             if (!startsEarlierAndEndsInsideNewRange) {
                 throw new BusinessException(
+                        effectiveTo != null ? ErrorCodes.SHIFT_SCHEDULE_OVERLAPS_SCHEDULE
+                                : ErrorCodes.OPEN_SHIFT_SCHEDULE_OVERLAPS_SCHEDULE,
+                        Map.of("effectiveFrom", effectiveFrom.toString(), "effectiveTo", String.valueOf(effectiveTo),
+                                "existingFrom", existing.getEffectiveFrom().toString(),
+                                "existingTo", existing.getEffectiveTo().toString()),
                         "The date range " + newRangeLabel + " overlaps the schedule " +
                         existing.getEffectiveFrom() + " – " + existing.getEffectiveTo() +
                         ". Delete that schedule or choose dates that do not overlap it.");
@@ -250,14 +266,14 @@ public class PumpShiftDefinitionService {
                 .toList();
 
         if (group.isEmpty()) {
-            throw new ResourceNotFoundException(
+            throw new ResourceNotFoundException(EntityType.SHIFT_DEFINITION,
                     "No shift definitions found for pump " + pumpId + " effective " + effectiveFrom
                     + (effectiveTo != null ? " to " + effectiveTo : " (open-ended)"));
         }
 
         List<Long> defIds = group.stream().map(PumpShiftDefinition::getId).toList();
         if (shiftRepository.existsByShiftDefinitionIdIn(defIds)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_SCHEDULE_IN_USE, Map.of(),
                     "Cannot delete this shift schedule — shifts have already been recorded against it. " +
                     "You can only delete schedules that have never been used.");
         }
@@ -278,7 +294,7 @@ public class PumpShiftDefinitionService {
     public List<ShiftDefinitionResponse> disableGroup(Long pumpId, LocalDate effectiveFrom, LocalDate disableDate) {
         List<PumpShiftDefinition> all = repository.findByPumpIdAndEffectiveFrom(pumpId, effectiveFrom);
         if (all.isEmpty()) {
-            throw new ResourceNotFoundException(
+            throw new ResourceNotFoundException(EntityType.SHIFT_DEFINITION,
                     "No shift definitions found for pump " + pumpId + " effective " + effectiveFrom);
         }
 
@@ -288,12 +304,13 @@ public class PumpShiftDefinitionService {
                 .toList();
 
         if (openGroup.isEmpty()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_SCHEDULE_ALREADY_DISABLED, Map.of(),
                     "This shift schedule has already been disabled. Delete it and create a new one if needed.");
         }
 
         if (disableDate.isBefore(effectiveFrom)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_SCHEDULE_DISABLE_DATE_BEFORE_START,
+                    Map.of("disableDate", disableDate.toString(), "effectiveFrom", effectiveFrom.toString()),
                     "Disable date (" + disableDate + ") cannot be before the schedule start date (" + effectiveFrom + ").");
         }
 

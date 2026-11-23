@@ -1,6 +1,7 @@
 package com.ppms.credit;
 
 import com.ppms.auth.ClientIpResolver;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.PumpLocation;
 import com.ppms.pump.PumpLocationRepository;
@@ -11,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -40,7 +42,9 @@ public class ClientPortalController {
         lookupLimiter.checkLookupAllowed(clientIpResolver.resolve(request), lookup.pumpId(), lookup.phone());
 
         CreditClient client = findClientWithPin(lookup)
-                .orElseThrow(() -> new ResourceNotFoundException(NOT_FOUND_MESSAGE));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCodes.CREDIT_ACCOUNT_NOT_MATCHED,
+                        Map.of(),
+                        NOT_FOUND_MESSAGE));
 
         return new CreditBalanceLookupResponse(
                 creditInterestService.computeOutstanding(client.getId()),

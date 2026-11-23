@@ -1,6 +1,7 @@
 package com.ppms.pump;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -23,10 +25,12 @@ public class PumpShiftDefinitionSupportService {
     public void validateBatch(List<CreateShiftDefinitionRequest> requests) {
         long nightCount = requests.stream().filter(CreateShiftDefinitionRequest::isNightShift).count();
         if (nightCount == 0) {
-            throw new BusinessException("At least one shift must be designated as the night shift.");
+            throw new BusinessException(ErrorCodes.NIGHT_SHIFT_REQUIRED, Map.of(),
+                    "At least one shift must be designated as the night shift.");
         }
         if (nightCount > 1) {
-            throw new BusinessException("Only one shift can be designated as the night shift. Found: " + nightCount);
+            throw new BusinessException(ErrorCodes.MULTIPLE_NIGHT_SHIFTS, Map.of("nightShiftCount", nightCount),
+                    "Only one shift can be designated as the night shift. Found: " + nightCount);
         }
 
         CreateShiftDefinitionRequest nightShift = requests.stream()
@@ -34,7 +38,7 @@ public class PumpShiftDefinitionSupportService {
                 .findFirst()
                 .orElseThrow();
         if (!overlapsNightWindow(nightShift)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.NIGHT_SHIFT_OUTSIDE_NIGHT_WINDOW, Map.of(),
                     "The night shift must overlap the 00:00–06:00 window. " +
                             "It can start before midnight and/or end after 06:00, " +
                             "but it must cover part of that range.");
@@ -49,7 +53,8 @@ public class PumpShiftDefinitionSupportService {
             return (request.getEndTime().toSecondOfDay() - request.getStartTime().toSecondOfDay()) / 60L;
         }).sum();
         if (totalMinutes > MAX_TOTAL_MINUTES) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_DEFINITIONS_EXCEED_24_HOURS,
+                    Map.of("totalMinutes", totalMinutes),
                     "The combined duration of all shifts exceeds 24 hours (" +
                             totalMinutes + " minutes). Reduce the shift windows.");
         }
@@ -57,7 +62,9 @@ public class PumpShiftDefinitionSupportService {
         for (int i = 0; i < requests.size(); i++) {
             for (int j = i + 1; j < requests.size(); j++) {
                 if (overlaps(requests.get(i), requests.get(j))) {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.SHIFT_DEFINITIONS_OVERLAP,
+                            Map.of("firstShiftName", requests.get(i).getName(),
+                                   "secondShiftName", requests.get(j).getName()),
                             "Shift \"" + requests.get(i).getName() + "\" overlaps with \"" +
                                     requests.get(j).getName() + "\". Shift windows must not overlap.");
                 }
@@ -69,7 +76,8 @@ public class PumpShiftDefinitionSupportService {
                 .distinct()
                 .count();
         if (distinctSortOrders != requests.size()) {
-            throw new BusinessException("Each shift must have a unique sort order.");
+            throw new BusinessException(ErrorCodes.SHIFT_SORT_ORDER_NOT_UNIQUE, Map.of(),
+                    "Each shift must have a unique sort order.");
         }
     }
 
@@ -80,7 +88,7 @@ public class PumpShiftDefinitionSupportService {
                 if (found == null) {
                     found = request.getEffectiveFrom();
                 } else if (!found.equals(request.getEffectiveFrom())) {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.SHIFT_DEFINITIONS_EFFECTIVE_FROM_DIFFERS, Map.of(),
                             "All shift definitions in a batch must share the same effectiveFrom date.");
                 }
             }
@@ -95,7 +103,7 @@ public class PumpShiftDefinitionSupportService {
                 if (found == null) {
                     found = request.getEffectiveTo();
                 } else if (!found.equals(request.getEffectiveTo())) {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.SHIFT_DEFINITIONS_EFFECTIVE_TO_DIFFERS, Map.of(),
                             "All shift definitions in a batch must share the same effectiveTo date.");
                 }
             }

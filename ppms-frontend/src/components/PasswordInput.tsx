@@ -1,5 +1,6 @@
 import { useState, forwardRef } from 'react'
 import type { InputHTMLAttributes } from 'react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Drop-in replacement for <input type="password">.
@@ -19,7 +20,8 @@ interface PasswordInputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  ({ className, toggleLabel = 'Show password', ...props }, ref) => {
+  ({ className, toggleLabel, ...props }, ref) => {
+    const { t } = useTranslation()
     const [visible, setVisible] = useState(false)
 
     return (
@@ -34,9 +36,9 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          aria-label={toggleLabel}
+          aria-label={toggleLabel ?? t('passwordInput.show')}
           aria-pressed={visible}
-          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:text-slate-700 transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-control text-ink-3 hover:text-ink transition-colors"
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}
         </button>

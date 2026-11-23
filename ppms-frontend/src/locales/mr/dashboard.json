@@ -1,0 +1,108 @@
+{
+  "overview": {
+    "loadError": "काही लाइव्ह माहिती लोड होऊ शकली नाही. दाखवलेले आकडे अपूर्ण असू शकतात — पुन्हा प्रयत्न करण्यासाठी रिफ्रेश करा.",
+    "stalePrices": {
+      "title": "आज इंधन दर अपडेट केले नाहीत",
+      "body": "{{pump}} — सेटअपमध्ये दर अपडेट करण्यासाठी येथे टॅप करा",
+      "action": "अपडेट करा →"
+    },
+    "lowStock": {
+      "title": "डिलिव्हरी हवी असलेले टँक:",
+      "tank": "{{tank}} ({{fuel}}) — {{percent}}% भरलेला"
+    },
+    "liveShifts": "लाइव्ह शिफ्ट",
+    "loadingChart": "विक्री चार्ट लोड होत आहे"
+  },
+  "stats": {
+    "activeShifts": "चालू शिफ्ट",
+    "noOpenShifts": "एकही शिफ्ट चालू नाही",
+    "atPump": "{{pump}} येथे",
+    "selectedPump": "निवडलेला पंप",
+    "todaysRevenue": "आजची विक्री",
+    "closedToday_one": "आज {{count}} शिफ्ट बंद झाली",
+    "closedToday_other": "आज {{count}} शिफ्ट बंद झाल्या",
+    "lowStockTanks": "कमी स्टॉकचे टँक",
+    "allTanksOk": "सर्व टँक ठीक आहेत",
+    "needAttention": "लक्ष द्या",
+    "shiftsOverdue_one": "{{count}} शिफ्टची वेळ उलटली",
+    "shiftsOverdue_other": "{{count}} शिफ्टची वेळ उलटली",
+    "noneOverdue": "कोणत्याही शिफ्टची वेळ उलटलेली नाही",
+    "acrossPumps_one": "{{count}} पंपमध्ये",
+    "acrossPumps_other": "{{count}} पंपांमध्ये",
+    "staleFuelPrices": "जुने इंधन दर",
+    "allPricesUpdated": "आज सर्व दर अपडेट आहेत",
+    "pumpsToUpdate": "सेटअपमध्ये अपडेट करायचे पंप",
+    "label": "आज एका नजरेत"
+  },
+  "tankStock": {
+    "title": "टँक स्टॉक सारांश",
+    "fullInventory": "पूर्ण स्टॉक →",
+    "low": "कमी",
+    "progress": "{{tank}} स्टॉक: {{percent}}%",
+    "progressLow": "{{tank}} स्टॉक: {{percent}}% – कमी स्टॉक",
+    "remaining": "{{litres}} L शिल्लक"
+  },
+  "money": {
+    "label": "पैशांचा सारांश",
+    "cashInDrawer": "ड्रॉवरमधील रोख",
+    "cashNote": "ड्रॉवरचा सध्याचा बॅलन्स",
+    "creditOutstanding": "क्रेडिट थकबाकी",
+    "creditNote": "क्रेडिट ग्राहकांकडे थकबाकी",
+    "waitingForApproval": "मंजुरी प्रलंबित",
+    "waitingNoteWithPayments": "खर्च आणि क्रेडिट पेमेंट",
+    "waitingNote": "खर्च",
+    "notSettled": "अजून सेटलमेंट झाले नाही",
+    "notSettledNote": "UPI, कार्ड आणि फ्लीट कार्ड"
+  },
+  "attention": {
+    "title": "आज लक्ष देण्याची कामे",
+    "itemCount_one": "{{count}} काम",
+    "itemCount_other": "{{count}} कामे",
+    "severity": {
+      "HIGH": "तातडीचे",
+      "MEDIUM": "लवकर",
+      "LOW": "वेळ मिळेल तेव्हा"
+    },
+    "severityPrefix": "{{severity}}: ",
+    "urgentPrefix": "तातडीचे · ",
+    "reviewLabel": "पाहा: {{reason}}",
+    "reviewLabelWithPump": "पाहा: {{pump}}, {{reason}}",
+    "loading": "लक्ष देण्याची कामे लोड होत आहेत",
+    "loadError": "लक्ष देण्याची कामे लोड होऊ शकली नाहीत. पुन्हा प्रयत्न करण्यासाठी रिफ्रेश करा.",
+    "allClear": "आजसाठी सर्व ठीक आहे"
+  },
+  "manager": {
+    "quickActions": "झटपट कामे",
+    "openShift": "शिफ्ट सुरू करा",
+    "dipCheck": "डिप तपासणी",
+    "delivery": "डिलिव्हरी",
+    "cashEntry": "रोख नोंद",
+    "openShifts": "चालू शिफ्ट",
+    "noneOpen": "सध्या एकही शिफ्ट चालू नाही.",
+    "openFor": "{{duration}} पासून चालू",
+    "credit": "क्रेडिट"
+  },
+  "chart": {
+    "title": "विक्रीचा कल",
+    "lastDays": "मागील {{days}} दिवस",
+    "dayButton": "{{days}} दिवस",
+    "summary": "मागील {{days}} दिवसांची विक्री आणि इंधन प्रमाणाचा कल",
+    "revenue": "विक्री",
+    "series": "चार्टमधील मालिका",
+    "empty": "मागील {{days}} दिवसांत बंद शिफ्टची विक्री नाही. शिफ्ट बंद होतील तसा चार्ट भरत जाईल."
+  },
+  "allPumps": {
+    "scope": "सारांशाची व्याप्ती",
+    "overdueShifts_one": "{{count}} शिफ्टची वेळ उलटली",
+    "overdueShifts_other": "{{count}} शिफ्टची वेळ उलटली",
+    "lowTanks_one": "{{count}} टँक कमी",
+    "lowTanks_other": "{{count}} टँक कमी",
+    "pricesNotUpdated": "आज दर अपडेट केले नाहीत",
+    "activeShifts_one": "{{count}} चालू शिफ्ट",
+    "activeShifts_other": "{{count}} चालू शिफ्ट",
+    "loadError": "तुमच्या पंपांचे आकडे लोड होऊ शकले नाहीत. पुन्हा प्रयत्न करण्यासाठी रिफ्रेश करा.",
+    "loading": "सर्व पंप लोड होत आहेत",
+    "pumps": "पंप",
+    "selectHint": "सारांश उघडण्यासाठी पंप निवडा"
+  }
+}

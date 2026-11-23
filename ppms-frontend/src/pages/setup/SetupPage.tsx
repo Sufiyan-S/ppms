@@ -1,91 +1,132 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Plus } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Gauge, Info } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { pumpApi } from '../../api/pumpApi'
+import type { PumpSummary } from '../../api/pumpApi'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
-import type { PumpSummary } from '../../api/pumpApi'
-import { Reveal } from '../../components/Reveal'
-import { CreatePumpForm } from './CreatePumpForm'
-import { PumpManagementPanel } from './PumpManagementPanel'
+import { canPerformAction } from '../../permissions/permissions'
+import { Page } from '../../components/layout/Page'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { PageSection } from '../../components/layout/PageSection'
+import { useUrlParam } from '../../components/layout/useUrlParam'
+import { SkeletonRows } from '../../components/Skeleton'
+import { StatusBadge } from '../../components/StatusBadge'
+import { FuelPricesContent } from './FuelPricesContent'
+import { SetupSteps } from './SetupSteps'
+import type { SectionKey } from './sectionKey'
+import { firstStepToDo, isSectionKey } from './setupStepOrder'
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/** ?action= values the command palette can open Setup with. */
+const ACTION_STEPS: Record<string, SectionKey> = { 'add-staff': 'staff', 'set-fuel-prices': 'prices' }
+
+/** A manager may only keep the daily fuel prices up to date. */
+function ManagerFuelPrices({ pump }: { pump: PumpSummary }) {
+  const { t } = useTranslation('setup')
+  const { data: currentPrices = [] } = useQuery({
+    queryKey: ['fuelPrices', pump.id],
+    queryFn: () => pumpApi.getCurrentPrices(pump.id),
+  })
+  return (
+    <>
+      <div className="ui-alert flex items-start gap-2.5 border border-info bg-info-bg text-sm text-info">
+        <Info size={16} strokeWidth={2} aria-hidden="true" className="mt-0.5 shrink-0" />
+        <p>{t('sections.managerNote')}</p>
+      </div>
+      <PageSection title={t('steps.names.prices')}>
+        <FuelPricesContent pump={pump} currentPrices={currentPrices} />
+      </PageSection>
+    </>
+  )
+}
 
 export default function SetupPage() {
+  const { t } = useTranslation(['setup', 'common'])
   const queryClient = useQueryClient()
-  const { user } = useAuthStore()
-  const { selectedPumpId, setSelectedPumpId } = usePumpStore()
+  const role = useAuthStore((state) => state.user?.role)
+  const selectedPumpId = usePumpStore((state) => state.selectedPumpId)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const action = useUrlParam('action')
+  const canManageSetup = canPerformAction('setup:manage', role)
 
   const { data: pumps = [], isLoading } = useQuery({
     queryKey: ['myPumps'],
     queryFn: pumpApi.getMyPumps,
   })
+  const pump = pumps.find((p) => p.id === selectedPumpId) ?? null
 
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
+  const { data: checklist, isPending: checklistPending } = useQuery({
+    queryKey: ['setup-checklist', pump?.id],
+    queryFn: () => pumpApi.getSetupChecklist(pump!.id),
+    enabled: !!pump && canManageSetup,
+  })
 
-  const [createOpen, setCreateOpen] = useState(true)
-  const selectedPump = pumps.find((p) => p.id === selectedPumpId) ?? null
+  const sectionParam = searchParams.get('section')
+  const actionStep = action.value ? ACTION_STEPS[action.value] : undefined
+  const requestedStep = actionStep ?? (isSectionKey(sectionParam) ? sectionParam : null)
+  const isWaitingForStartStep = canManageSetup && !!pump && !requestedStep && checklistPending
+  const currentStep = requestedStep ?? firstStepToDo(checklist)
 
-  const handlePumpCreated = (pump: PumpSummary) => {
-    queryClient.invalidateQueries({ queryKey: ['myPumps'] })
-    setSelectedPumpId(pump.id)
-    setCreateOpen(false)
-  }
+  // Puts the starting step in the address once, so finishing it does not move the owner on mid-task.
+  useEffect(() => {
+    if (!canManageSetup || !pump || requestedStep || checklistPending) return
+    setSearchParams((params) => {
+      const updated = new URLSearchParams(params)
+      updated.set('section', firstStepToDo(checklist))
+      return updated
+    }, { replace: true })
+  }, [canManageSetup, pump, requestedStep, checklistPending, checklist, setSearchParams])
+
+  const closeAddStaff = () => setSearchParams((params) => {
+    const updated = new URLSearchParams(params)
+    updated.delete('action')
+    updated.set('section', 'staff')
+    return updated
+  }, { replace: true })
+
+  const complete = checklist && checklist.doneCount === checklist.requiredCount
 
   return (
-    <div className="ui-page ui-page--narrow space-y-6">
-
-      {/* Page title */}
-      <Reveal delay={60}>
-      <div>
-        <h1 className="ui-title-sm">Pump Setup</h1>
-        <p className="ui-subtitle">
-          Create pump locations, configure nozzles, set prices, manage staff and credit clients.
-        </p>
-      </div>
-      </Reveal>
-
-      {/* ── Create Pump card — Super Admin only (SaaS: adding a pump requires subscription change) ── */}
-      {isSuperAdmin && (
-        <Reveal delay={130}>
-        <div className="ui-card overflow-hidden p-0">
-          <button
-            onClick={() => setCreateOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center shrink-0">
-                <Plus size={12} strokeWidth={3} className="text-white" />
-              </div>
-              <span className="text-sm font-semibold text-slate-700">Create a New Pump Location</span>
-            </div>
-            <ChevronDown size={14} strokeWidth={2} className={`text-slate-500 transition-transform duration-200 ${createOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {createOpen && (
-              <div className="border-t border-slate-100 px-5 pb-5 pt-2">
-                <CreatePumpForm onCreated={handlePumpCreated} />
-              </div>
+    <Page>
+      <PageHeader
+        title={t('page.title')}
+        description={pump ? `${pump.name} · ${pump.address}` : t('page.subtitle')}
+        badges={pump && (
+          <>
+            {checklist && (
+              <StatusBadge
+                tone={complete ? 'ok' : 'warn'}
+                label={t('checklist.doneCount', { done: checklist.doneCount, required: checklist.requiredCount })}
+              />
             )}
-        </div>
-        </Reveal>
-      )}
+            {canManageSetup && (
+              <StatusBadge tone="neutral" icon={Gauge} label={t('sections.duUsage', { used: pump.dus.length, max: pump.maxDuCount })} />
+            )}
+          </>
+        )}
+      />
 
-      {/* ── Pump management accordion ── */}
-      {selectedPump && (
-        <Reveal delay={200}>
-        <PumpManagementPanel
-          pump={selectedPump}
+      {!isLoading && pumps.length === 0 ? (
+        <p className="ui-empty">{t('page.noPumps')}</p>
+      ) : !pump ? (
+        !isLoading && <p className="ui-empty">{t('common:notices.noPump')}</p>
+      ) : !canManageSetup ? (
+        <ManagerFuelPrices pump={pump} />
+      ) : isWaitingForStartStep ? (
+        <div className="ui-card"><SkeletonRows count={4} /></div>
+      ) : (
+        <SetupSteps
+          pump={pump}
+          checklist={checklist}
+          currentStep={currentStep}
           onPumpUpdated={() => queryClient.invalidateQueries({ queryKey: ['myPumps'] })}
+          isAddStaffOpen={action.value === 'add-staff'}
+          onOpenAddStaff={() => action.set('add-staff')}
+          onCloseAddStaff={closeAddStaff}
         />
-        </Reveal>
       )}
-
-      {!isLoading && pumps.length === 0 && !createOpen && (
-        <div className="ui-card text-center text-sm text-slate-500 py-6">
-          No pumps yet. Create one above to get started.
-        </div>
-      )}
-    </div>
+    </Page>
   )
 }

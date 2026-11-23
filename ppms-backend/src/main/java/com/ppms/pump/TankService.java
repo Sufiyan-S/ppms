@@ -3,6 +3,8 @@ package com.ppms.pump;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Underground tank setup. Edits lock the tank row so they cannot overwrite a concurrent stock change.
@@ -40,10 +43,11 @@ public class TankService {
     @Transactional
     public TankResponse createTank(Long pumpId, CreateTankRequest request, User currentUser) {
         pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         if (tankRepository.existsByPumpIdAndTankIdentifier(pumpId, request.getTankIdentifier().trim())) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.TANK_NAME_ALREADY_EXISTS,
+                    Map.of("tankIdentifier", String.valueOf(request.getTankIdentifier())),
                     "A tank named '" + request.getTankIdentifier() + "' already exists on this pump.");
         }
 
@@ -78,10 +82,12 @@ public class TankService {
     public TankResponse updateTankStatus(Long pumpId, Long tankId, TankStatus status, User currentUser) {
         UndergroundTank tank = findTankForUpdate(pumpId, tankId);
         if (status == TankStatus.DECOMMISSIONED) {
-            throw new BusinessException("Use the decommission endpoint to permanently remove a tank.");
+            throw new BusinessException(ErrorCodes.TANK_DECOMMISSION_NEEDS_ENDPOINT, Map.of(),
+                    "Use the decommission endpoint to permanently remove a tank.");
         }
         if (tank.getStatus() == status) {
-            throw new BusinessException("Tank is already " + status.name().toLowerCase() + ".");
+            throw new BusinessException(ErrorCodes.TANK_ALREADY_IN_STATUS, Map.of("statusCode", status.name()),
+                    "Tank is already " + status.name().toLowerCase() + ".");
         }
 
         tank.setStatus(status);
@@ -102,9 +108,9 @@ public class TankService {
 
     private UndergroundTank findTankForUpdate(Long pumpId, Long tankId) {
         UndergroundTank tank = tankRepository.findByIdForUpdate(tankId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tank not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANK, "Tank not found"));
         if (!tank.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Tank not found");
+            throw new ResourceNotFoundException(EntityType.TANK, "Tank not found");
         }
         return tank;
     }

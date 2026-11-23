@@ -5,8 +5,6 @@ import com.ppms.auth.JwtCookieSupport;
 import com.ppms.fuel.FuelType;
 import com.ppms.pump.DispensaryUnit;
 import com.ppms.pump.DispensaryUnitRepository;
-import com.ppms.pump.Nozzle;
-import com.ppms.pump.NozzleRepository;
 import com.ppms.pump.PumpLocation;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.pump.TankStatus;
@@ -40,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -55,7 +52,6 @@ class TenantIsolationIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private PumpLocationRepository pumpLocationRepository;
     @Autowired private DispensaryUnitRepository duRepository;
-    @Autowired private NozzleRepository nozzleRepository;
     @Autowired private UndergroundTankRepository tankRepository;
     @Autowired private ShiftRepository shiftRepository;
     @Autowired private PasswordEncoder passwordEncoder;
@@ -65,7 +61,6 @@ class TenantIsolationIntegrationTest {
     private PumpLocation pumpB;
     private User operatorB;
     private DispensaryUnit duB;
-    private Nozzle nozzleB;
     private UndergroundTank tankB;
 
     @BeforeEach
@@ -89,32 +84,13 @@ class TenantIsolationIntegrationTest {
                 .duNumber(1)
                 .name("DU-" + shortId())
                 .build());
-        nozzleB = nozzleRepository.save(Nozzle.builder()
-                .duId(duB.getId())
-                .nozzleNumber(1)
-                .fuelType(FuelType.PETROL)
-                .lastReading(new BigDecimal("1000.000"))
-                .tankId(tankB.getId())
-                .build());
-    }
-
-    @Test
-    void ownerCannotUpdateNozzleReadingOfAnotherPump() throws Exception {
-        mockMvc.perform(put("/api/pumps/{pumpId}/dus/{duId}/nozzles/{nozzleId}/reading",
-                        pumpA.getId(), duB.getId(), nozzleB.getId())
-                        .cookie(loginAs(ownerA))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reading\":1}"))
-                .andExpect(status().isNotFound());
-
-        Nozzle unchanged = nozzleRepository.findById(nozzleB.getId()).orElseThrow();
-        assertThat(unchanged.getLastReading()).isEqualByComparingTo("1000.000");
     }
 
     @Test
     void ownerCannotDeactivateStaffOfAnotherOwner() throws Exception {
         mockMvc.perform(patch("/api/users/{userId}/status", operatorB.getId())
-                        .param("status", "INACTIVE")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"INACTIVE\"}")
                         .cookie(loginAs(ownerA)))
                 .andExpect(status().isNotFound());
 

@@ -1,5 +1,6 @@
 package com.ppms.inventory;
 
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
@@ -68,10 +69,10 @@ public class TankerController {
             @Valid @RequestBody CreateTankerRequest request) {
 
         Tanker tanker = tankerRepository.findById(tankerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANKER, "Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Tanker not found");
+            throw new ResourceNotFoundException(EntityType.TANKER, "Tanker not found");
         }
 
         if (request.isDefaultTanker()) {
@@ -96,10 +97,10 @@ public class TankerController {
             @PathVariable Long tankerId) {
 
         Tanker tanker = tankerRepository.findById(tankerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANKER, "Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Tanker not found");
+            throw new ResourceNotFoundException(EntityType.TANKER, "Tanker not found");
         }
 
         tanker.setActive(false);
@@ -116,10 +117,10 @@ public class TankerController {
             @PathVariable Long tankerId) {
 
         Tanker tanker = tankerRepository.findById(tankerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Tanker not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANKER, "Tanker not found"));
 
         if (!tanker.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Tanker not found");
+            throw new ResourceNotFoundException(EntityType.TANKER, "Tanker not found");
         }
 
         tankerRepository.clearAllDefaultsForPump(pumpId);

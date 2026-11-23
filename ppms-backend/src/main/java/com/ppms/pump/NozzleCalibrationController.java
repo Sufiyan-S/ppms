@@ -5,6 +5,8 @@ import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -27,8 +29,8 @@ import java.util.stream.Collectors;
  * GET  /api/pumps/{pumpId}/nozzles/{nozzleId}/calibrations     — list calibration history (OWNER, ADMIN, MANAGER)
  * POST /api/pumps/{pumpId}/nozzles/{nozzleId}/calibrations     — log a new calibration event (OWNER, ADMIN only)
  *
- * When a calibration is logged with next_calibration_due set:
- * - The notification service will alert when that date approaches.
+ * Every calibration is logged with next_calibration_due:
+ * - The notification service alerts 7 days before that date and again once it has passed.
  * - ShiftService.openShift() will BLOCK shift creation if the date has passed
  *   (calibration overdue = pump cannot legally operate until re-calibrated).
  */
@@ -77,7 +79,7 @@ public class NozzleCalibrationController {
      * POST /api/pumps/{pumpId}/nozzles/{nozzleId}/calibrations
      * Logs a calibration event for the nozzle.
      *
-     * If nextCalibrationDue is set, future shifts will be blocked once that date passes,
+     * nextCalibrationDue and certificateReference are required: shifts are blocked once the due date passes,
      * ensuring the nozzle cannot operate with an expired calibration certificate.
      */
     @PostMapping
@@ -91,9 +93,9 @@ public class NozzleCalibrationController {
 
         Nozzle nozzle = findNozzleForPump(nozzleId, pumpId);
 
-        if (request.nextCalibrationDue() != null
-                && request.nextCalibrationDue().isBefore(request.calibrationDate())) {
-            throw new BusinessException("nextCalibrationDue must be on or after calibrationDate");
+        if (!request.nextCalibrationDue().isAfter(request.calibrationDate())) {
+            throw new BusinessException(ErrorCodes.CALIBRATION_NEXT_DUE_NOT_AFTER_DATE, Map.of(),
+                    "The next calibration due date must be after the calibration date.");
         }
 
         NozzleCalibrationLog log = NozzleCalibrationLog.builder()
@@ -114,11 +116,10 @@ public class NozzleCalibrationController {
                 pumpId, nozzleId, request.calibrationDate(), request.nextCalibrationDue(),
                 request.certificateReference(), currentUser.getId());
 
-        auditService.log(pumpId, AuditAction.NOZZLE_ADDED,
+        auditService.log(pumpId, AuditAction.CALIBRATION_LOGGED,
                 "NozzleCalibrationLog", saved.getId().toString(),
                 "Calibration logged for nozzle #" + nozzle.getNozzleNumber() +
-                " on " + request.calibrationDate() +
-                (request.nextCalibrationDue() != null ? ", next due: " + request.nextCalibrationDue() : ""),
+                " on " + request.calibrationDate() + ", next due: " + request.nextCalibrationDue(),
                 currentUser);
 
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -127,11 +128,12 @@ public class NozzleCalibrationController {
 
     private Nozzle findNozzleForPump(Long nozzleId, Long pumpId) {
         Nozzle nozzle = nozzleRepository.findById(nozzleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.NOZZLE, "Nozzle not found"));
         DispensaryUnit du = dispensaryUnitRepository.findById(nozzle.getDuId())
-                .orElseThrow(() -> new ResourceNotFoundException("Dispensary unit not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.DISPENSARY_UNIT,
+                        "Dispensary unit not found"));
         if (!du.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Nozzle not found");
+            throw new ResourceNotFoundException(EntityType.NOZZLE, "Nozzle not found");
         }
         return nozzle;
     }

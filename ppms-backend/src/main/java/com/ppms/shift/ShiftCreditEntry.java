@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -37,6 +38,10 @@ public class ShiftCreditEntry {
 
     @Column(name = "amount", nullable = false)
     private BigDecimal amount;
+
+    // Business day of the sale: the shift date for a backfilled shift, otherwise the IST day it was entered
+    @Column(name = "sale_date", nullable = false)
+    private LocalDate saleDate;
 
     // Which fuel was given on credit — PETROL, DIESEL, or CNG
     @Column(name = "fuel_type")

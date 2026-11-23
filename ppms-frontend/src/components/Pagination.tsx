@@ -1,4 +1,6 @@
 import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
+import { formatNumberIn } from '../i18n/format'
 import type { PagedResponse } from '../types/paged'
 
 interface PaginationProps<T> {
@@ -23,6 +25,7 @@ export function Pagination<T>({
   onPageSizeChange,
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: PaginationProps<T>) {
+  const { t } = useTranslation()
   const pageSizeSelectId = useId()
   // Only show pagination controls when there is more than one page
   if (data.totalPages <= 1) return null
@@ -35,9 +38,9 @@ export function Pagination<T>({
   return (
     <div className="ui-pagination">
       <div className="ui-pagination__summary">
-        <span className="ui-pagination__summary-label">Showing</span>
+        <span className="ui-pagination__summary-label">{t('pagination.showing')}</span>
         <span className="ui-pagination__summary-value">{startItem}–{endItem}</span>
-        <span className="ui-pagination__summary-label">of {totalElements.toLocaleString()}</span>
+        <span className="ui-pagination__summary-label">{t('pagination.ofTotal', { total: formatNumberIn(totalElements) })}</span>
       </div>
 
       <div className="ui-pagination__controls">
@@ -45,14 +48,14 @@ export function Pagination<T>({
           onClick={() => onPageChange(page - 1)}
           disabled={!data.hasPrevious}
           className="ui-btn ui-btn-secondary min-h-9 px-3 py-2 disabled:opacity-40"
-          aria-label="Previous page"
+          aria-label={t('pagination.previousPage')}
         >
           ‹
         </button>
 
         {buildPageNumbers(page, totalPages).map((p, i) =>
           p === '…' ? (
-            <span key={`ellipsis-${i}`} className="px-2 py-1 text-slate-500">
+            <span key={`ellipsis-${i}`} className="px-2 py-1 text-ink-3">
               …
             </span>
           ) : (
@@ -75,7 +78,7 @@ export function Pagination<T>({
           onClick={() => onPageChange(page + 1)}
           disabled={!data.hasNext}
           className="ui-btn ui-btn-secondary min-h-9 px-3 py-2 disabled:opacity-40"
-          aria-label="Next page"
+          aria-label={t('pagination.nextPage')}
         >
           ›
         </button>
@@ -83,7 +86,7 @@ export function Pagination<T>({
 
       <div className="ui-pagination__size">
         <label htmlFor={pageSizeSelectId} className="ui-pagination__size-label">
-          Rows per page
+          {t('pagination.rowsPerPage')}
         </label>
         <select
           id={pageSizeSelectId}

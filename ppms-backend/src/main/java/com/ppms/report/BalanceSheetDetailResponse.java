@@ -6,6 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.List;
 
 @Data
@@ -18,9 +19,19 @@ public class BalanceSheetDetailResponse {
     private LocalDate reportDate;
     private String   shiftWindow;
     private String   periodLabel;
+    private String   periodLabelCode;
+    private Map<String, Object> periodLabelParams;
     private String   generatedByUserName;
     private OffsetDateTime generatedAt;
     private String   notes;
+
+    /** Something the sheet summarises changed after generation; regenerate to refresh it. */
+    private boolean  stale;
+    private String   staleReason;
+    private String   staleReasonCode;
+    private Map<String, Object> staleReasonParams;
+    /** Shifts of the report date still open when this live sheet for today was generated. */
+    private int      openShiftCount;
 
     /**
      * Distinct shift definition names included in this report (DAY reports only).

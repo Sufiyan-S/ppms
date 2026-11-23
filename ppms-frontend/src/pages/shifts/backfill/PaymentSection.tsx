@@ -1,63 +1,34 @@
-import { Check } from 'lucide-react'
-import { SectionLabel } from './SectionLabel'
-import { fmt } from './backfillHelpers'
+import { useTranslation } from 'react-i18next'
+import { toPaise } from '../../../utils/money'
+import { fmt } from '../components/creditRow'
+import { PaymentField } from '../close/CloseShiftFields'
+import { safeParse } from './backfillHelpers'
 import type { BackfillForm } from './useBackfillForm'
 
-export function PaymentSection({ form }: { form: BackfillForm }) {
-  const { selectedNozzleIds, cashCollected, setCashCollected, upiCollected, setUpiCollected, cardCollected, setCardCollected, fleetCardCollected, setFleetCardCollected, allRatesResolved, totalExpected, totalCollected, discrepancyAmt } = form
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-      <SectionLabel>Payment Collected</SectionLabel>
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: 'UPI (₹)',        value: upiCollected,       set: setUpiCollected },
-          { label: 'Card (₹)',        value: cardCollected,      set: setCardCollected },
-          { label: 'Fleet Card (₹)', value: fleetCardCollected, set: setFleetCardCollected },
-          { label: 'Cash (₹)',        value: cashCollected,      set: setCashCollected },
-        ].map(({ label, value, set }) => (
-          <div key={label}>
-            <label className="block">
-              <span className="ui-label text-xs">{label}</span>
-              <input
-                type="number" min="0" step="0.01" placeholder="0.00"
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                className="ui-input"
-              />
-            </label>
-          </div>
-        ))}
-      </div>
+/** What cash must be for the shift to balance once UPI, card, fleet card and credit are taken off the total due. */
+function restInCashPaise(form: BackfillForm): number {
+  const { totalExpected, upiCollected, cardCollected, fleetCardCollected, creditNum } = form
+  if (totalExpected === null) return 0
+  return Math.max(0, toPaise(totalExpected) - toPaise(safeParse(upiCollected)) - toPaise(safeParse(cardCollected))
+    - toPaise(safeParse(fleetCardCollected)) - toPaise(creditNum))
+}
 
-      {/* Expected vs Collected summary */}
-      {totalExpected !== null && selectedNozzleIds.size > 0 && allRatesResolved && (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-          <div className="flex items-center justify-between px-3 py-2 text-xs text-slate-600">
-            <span>Expected (metered fuel sales)</span>
-            <span className="font-semibold text-slate-800">₹{fmt(totalExpected)}</span>
-          </div>
-          <div className="flex items-center justify-between px-3 py-2 text-xs text-slate-600">
-            <span>Collected (UPI + card + fleet + cash + credit)</span>
-            <span className="font-semibold text-slate-800">₹{fmt(totalCollected)}</span>
-          </div>
-          {discrepancyAmt !== null && (
-            <div className={`flex items-center justify-between px-3 py-2 text-xs font-semibold ${
-              Math.abs(discrepancyAmt) < 0.01
-                ? 'text-emerald-700 bg-emerald-50'
-                : discrepancyAmt < 0
-                ? 'text-red-700 bg-red-50'
-                : 'text-amber-700 bg-amber-50'
-            }`}>
-              <span>
-                {Math.abs(discrepancyAmt) < 0.01 ? <span className="inline-flex items-center gap-1">Balanced<Check size={12} strokeWidth={2.5} /></span> : discrepancyAmt < 0 ? 'Short (under-collected)' : 'Over (excess collected)'}
-              </span>
-              <span>
-                {Math.abs(discrepancyAmt) < 0.01 ? '₹0.00' : `₹${fmt(Math.abs(discrepancyAmt))}`}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
+export function PaymentSection({ form }: { form: BackfillForm }) {
+  const { t } = useTranslation('shifts')
+  const { cashCollected, setCashCollected, upiCollected, setUpiCollected, cardCollected, setCardCollected, fleetCardCollected, setFleetCardCollected } = form
+  const rest = restInCashPaise(form)
+  const fillRest = rest > 0 && toPaise(safeParse(cashCollected)) !== rest ? (
+    <button type="button" onClick={() => setCashCollected((rest / 100).toFixed(2))} className="ui-text-action">
+      {t('close.payment.fillRest', { amount: fmt(rest / 100) })}
+    </button>
+  ) : null
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:gap-x-4">
+      <PaymentField label={t('backfill.payment.cash')} value={cashCollected} onChange={setCashCollected} action={fillRest} />
+      <PaymentField label={t('backfill.payment.upi')} value={upiCollected} onChange={setUpiCollected} />
+      <PaymentField label={t('backfill.payment.card')} value={cardCollected} onChange={setCardCollected} />
+      <PaymentField label={t('backfill.payment.fleetCard')} value={fleetCardCollected} onChange={setFleetCardCollected} />
     </div>
   )
 }

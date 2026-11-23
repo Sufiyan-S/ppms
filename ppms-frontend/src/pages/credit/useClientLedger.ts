@@ -17,7 +17,7 @@ export function useClientLedger(pumpId: number, clientId: number, canApprovePaym
   // Full client list (needed to discover children, which may have 0 balance and not appear in ledger)
   const { data: pumpClientsData } = useQuery({
     queryKey: ['creditClients', pumpId],
-    queryFn:  () => pumpApi.getCreditClients(pumpId),
+    queryFn:  () => pumpApi.getCreditClientAccounts(pumpId),
     enabled:  client?.isParent === true,
   })
   const childClients = useMemo(

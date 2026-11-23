@@ -8,7 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,19 +38,19 @@ public interface ShiftCreditEntryRepository extends JpaRepository<ShiftCreditEnt
     @Query("SELECT e.clientId, COALESCE(SUM(e.amount), 0) FROM ShiftCreditEntry e WHERE e.clientId IN :clientIds AND e.voidStatus = 'ACTIVE' GROUP BY e.clientId")
     List<Object[]> sumAmountsByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
-    @Query("SELECT e FROM ShiftCreditEntry e WHERE e.clientId = :clientId AND e.voidStatus = 'ACTIVE'")
-    List<ShiftCreditEntry> findActiveByClientId(@Param("clientId") Long clientId);
+    @Query("SELECT e FROM ShiftCreditEntry e WHERE e.clientId IN :clientIds AND e.voidStatus = 'ACTIVE'")
+    List<ShiftCreditEntry> findActiveByClientIdIn(@Param("clientIds") java.util.Collection<Long> clientIds);
 
     /**
-     * Date of the oldest ACTIVE (non-voided) credit entry for a client.
-     * Used by the interest calculator to determine when the grace period starts.
-     * Voided entries are excluded — if a client's first-ever entry was later voided,
-     * the interest clock should start from the first real (non-cancelled) transaction,
-     * not from a phantom one that was reversed before any debt was owed.
-     * Returns empty if the client has no active credit entries yet.
+     * Sale date of the oldest ACTIVE (non-voided) credit entry of the given clients, where the interest grace
+     * period starts. A voided first entry was never owed, so it does not start the clock.
      */
-    @Query("SELECT MIN(e.createdAt) FROM ShiftCreditEntry e WHERE e.clientId = :clientId AND e.voidStatus = 'ACTIVE'")
-    Optional<OffsetDateTime> findOldestEntryDateByClientId(@Param("clientId") Long clientId);
+    @Query("SELECT MIN(e.saleDate) FROM ShiftCreditEntry e WHERE e.clientId IN :clientIds AND e.voidStatus = 'ACTIVE'")
+    Optional<LocalDate> findOldestSaleDateByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
+
+    /** Rows of [clientId, oldest ACTIVE sale date]. */
+    @Query("SELECT e.clientId, MIN(e.saleDate) FROM ShiftCreditEntry e WHERE e.clientId IN :clientIds AND e.voidStatus = 'ACTIVE' GROUP BY e.clientId")
+    List<Object[]> findOldestSaleDatesByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
     boolean existsByClientId(Long clientId);
 

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { shiftApi } from '../../../api/shiftApi'
 import { shiftDefinitionApi } from '../../../api/shiftDefinitionApi'
 import { userApi } from '../../../api/userApi'
@@ -11,11 +12,12 @@ import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard'
 import { useOnValuesChange } from '../../../hooks/useOnValuesChange'
 import { roundToMillilitres, roundToPaise, toPaise } from '../../../utils/money'
 import { pumpApi } from '../../../api/pumpApi'
-import { FUEL_LABELS } from '../../../constants/fuel'
+import { codeLabel } from '../../../constants/labels'
 import { maxDate, safeParse, newCreditRow } from './backfillHelpers'
 import type { CreditRow, BackfillShiftModalProps } from './backfillHelpers'
 
 export function useBackfillForm({ pumpId, onClose }: BackfillShiftModalProps) {
+  const { t } = useTranslation('shifts')
   const qc = useQueryClient()
 
   const [shiftDate,         setShiftDate]         = useState(maxDate())
@@ -199,23 +201,23 @@ export function useBackfillForm({ pumpId, onClose }: BackfillShiftModalProps) {
       qc.invalidateQueries({ queryKey: ['activeShifts', pumpId] })
       onClose()
     },
-    onError: (err) => setError(parseApiError(err, 'Failed to backfill shift. Please try again.')),
+    onError: (err) => setError(parseApiError(err, t('backfill.errors.failed'))),
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    if (!shiftDate)           return setError('Please select a shift date.')
-    if (!shiftDefinitionId)   return setError('Please select a shift window.')
-    if (!selectedDU)          return setError('Please select a Dispensary Unit.')
-    if (!operatorId)          return setError('Please select an operator.')
-    if (selectedNozzleIds.size === 0) return setError('Please select at least one nozzle.')
+    if (!shiftDate)           return setError(t('backfill.errors.selectDate'))
+    if (!shiftDefinitionId)   return setError(t('backfill.errors.selectWindow'))
+    if (!selectedDU)          return setError(t('backfill.errors.selectDu'))
+    if (!operatorId)          return setError(t('backfill.errors.selectOperator'))
+    if (selectedNozzleIds.size === 0) return setError(t('backfill.errors.selectNozzle'))
 
     // Validate that all fuel rates are provided
     for (const fuelType of selectedFuelTypes) {
       if (getEffectiveRate(fuelType) === null) {
-        return setError(`Enter the fuel rate for ${FUEL_LABELS[fuelType] ?? fuelType} on ${shiftDate}.`)
+        return setError(t('backfill.errors.enterRate', { fuel: codeLabel(fuelType), date: shiftDate }))
       }
     }
 
@@ -225,21 +227,21 @@ export function useBackfillForm({ pumpId, onClose }: BackfillShiftModalProps) {
       const closing = parseFloat(closingReadings[nozzleId] ?? '')
       const nozzle  = availableNozzles.find((n) => n.id === nozzleId)
       if (!isFinite(opening) || opening < 0)
-        return setError(`Opening reading is required for nozzle #${nozzle?.nozzleNumber ?? nozzleId}.`)
+        return setError(t('backfill.errors.openingRequired', { number: nozzle?.nozzleNumber ?? nozzleId }))
       if (!isFinite(closing) || closing < 0)
-        return setError(`Closing reading is required for nozzle #${nozzle?.nozzleNumber ?? nozzleId}.`)
+        return setError(t('backfill.errors.closingRequired', { number: nozzle?.nozzleNumber ?? nozzleId }))
       if (closing < opening)
-        return setError(`Closing reading cannot be less than opening for nozzle #${nozzle?.nozzleNumber ?? nozzleId}.`)
+        return setError(t('backfill.errors.closingBelowOpening', { number: nozzle?.nozzleNumber ?? nozzleId }))
       nozzleReadings.push({ nozzleId, openingReading: opening, closingReading: closing })
     }
 
     const creditEntries: CreditEntryInput[] = []
     for (const row of creditRows) {
       if (!row.clientId)
-        return setError('Select a credit client for every credit entry.')
+        return setError(t('backfill.errors.selectClient'))
       const amt = parseFloat(row.amount)
       if (!isFinite(amt) || amt <= 0)
-        return setError(`Amount must be greater than 0 for credit entry: "${row.clientName}".`)
+        return setError(t('backfill.errors.amountPositive', { name: row.clientName }))
       creditEntries.push({
         clientId:    row.clientId,
         clientName:  row.clientName.trim(),
@@ -285,8 +287,6 @@ export function useBackfillForm({ pumpId, onClose }: BackfillShiftModalProps) {
     || discrepancyReason.trim() !== ''
   const { requestClose, isConfirming, discard, keepEditing } = useConfirmDiscard(hasUnsavedChanges, onClose)
   const canSubmit = !!shiftDate && !!shiftDefinitionId && !!selectedDU && !!operatorId && selectedNozzleIds.size > 0
-
-  const selectedOperator = operators.find((o) => o.id === operatorId)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -352,7 +352,6 @@ export function useBackfillForm({ pumpId, onClose }: BackfillShiftModalProps) {
     discard,
     keepEditing,
     canSubmit,
-    selectedOperator,
   }
 }
 

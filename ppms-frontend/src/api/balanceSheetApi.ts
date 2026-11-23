@@ -1,4 +1,4 @@
-import client from './client'
+import client, { REPORT_TIMEOUT_MS } from './client'
 import type { PagedResponse } from '../types/paged'
 
 // ── Request ────────────────────────────────────────────────────────────────────
@@ -21,6 +21,8 @@ export interface BalanceSheetSummary {
   reportDate: string
   shiftWindow: string | null
   periodLabel: string
+  periodLabelCode: string | null
+  periodLabelParams: Record<string, unknown>
   generatedByUserName: string
   generatedAt: string
   shiftCount: number
@@ -28,6 +30,13 @@ export interface BalanceSheetSummary {
   totalExpectedRevenue: number
   totalGrossProfit: number
   cashDiscrepancy: number
+  /** True when a shift close, cash recovery, dip or cost correction changed this sheet's date after it was generated. */
+  stale: boolean
+  staleReason: string | null
+  staleReasonCode: string | null
+  staleReasonParams: Record<string, unknown>
+  /** Shifts of the period still open when today's live sheet was generated. */
+  openShiftCount: number
 }
 
 // ── Detail (single report view) ───────────────────────────────────────────────
@@ -148,6 +157,8 @@ export interface BalanceSheetDetail {
   reportDate: string
   shiftWindow: string | null
   periodLabel: string
+  periodLabelCode: string | null
+  periodLabelParams: Record<string, unknown>
   generatedByUserName: string
   generatedAt: string
   notes: string | null
@@ -188,13 +199,18 @@ export interface BalanceSheetDetail {
   settlementSummary: SettlementSummary | null
   /** Distinct shift definition names included in this DAY report. Null for SHIFT reports. */
   includedShiftNames: string[] | null
+  stale: boolean
+  staleReason: string | null
+  staleReasonCode: string | null
+  staleReasonParams: Record<string, unknown>
+  openShiftCount: number
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
 
 export const balanceSheetApi = {
   generate: (pumpId: number, req: GenerateBalanceSheetRequest) =>
-    client.post<BalanceSheetDetail>(`/pumps/${pumpId}/balance-sheets/generate`, req).then(r => r.data),
+    client.post<BalanceSheetDetail>(`/pumps/${pumpId}/balance-sheets/generate`, req, { timeout: REPORT_TIMEOUT_MS }).then(r => r.data),
 
   list: (pumpId: number, from?: string, to?: string, page = 0, size = 10) => {
     const params: Record<string, string | number> = { page, size }
@@ -205,6 +221,10 @@ export const balanceSheetApi = {
 
   getById: (pumpId: number, id: number) =>
     client.get<BalanceSheetDetail>(`/pumps/${pumpId}/balance-sheets/${id}`).then(r => r.data),
+
+  /** Replaces the sheet with a freshly generated one for the same period; the response carries the new id. */
+  regenerate: (pumpId: number, id: number) =>
+    client.post<BalanceSheetDetail>(`/pumps/${pumpId}/balance-sheets/${id}/regenerate`, undefined, { timeout: REPORT_TIMEOUT_MS }).then(r => r.data),
 
   delete: (pumpId: number, id: number) =>
     client.delete(`/pumps/${pumpId}/balance-sheets/${id}`).then(r => r.data),

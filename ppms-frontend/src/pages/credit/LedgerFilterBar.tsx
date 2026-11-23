@@ -1,101 +1,96 @@
+import { useTranslation } from 'react-i18next'
 import type { FilterMode, LedgerFilters, TxTypeFilter } from './useLedgerFilters'
+import type { MergedTx } from './ledgerGroups'
+import { CsvExportButton } from '../../components/CsvExportButton'
+import { FilterBar } from '../../components/layout/FilterBar'
+import { csvFilename } from '../../utils/csv'
+import type { CsvColumn } from '../../utils/csv'
+import { codeLabel } from '../../constants/labels'
+
+// Column headers stay English: accountants pass these files on to their CA as they are.
+const LEDGER_COLUMNS: CsvColumn<MergedTx>[] = [
+  { header: 'Date', value: (row) => row.businessDate, kind: 'date' },
+  { header: 'Account', value: (row) => row.subAccountName ?? row.clientName },
+  { header: 'Type', value: (row) => codeLabel(row.type) },
+  { header: 'Reference', value: (row) => row.reference },
+  { header: 'Detail', value: (row) => row.detail },
+  { header: 'Amount', value: (row) => row.amount, kind: 'money' },
+  { header: 'Running balance', value: (row) => row.runningBalance, kind: 'money' },
+  { header: 'Status', value: (row) => codeLabel(row.status) },
+  { header: 'Counted in balance', value: (row) => (row.countedInBalance ? 'Yes' : 'No') },
+]
+
+const FILTER_MODES: FilterMode[] = ['all', 'month', 'range']
+/** Each label is credit.json ledger.typeFilters.<value>. */
+const TX_TYPE_FILTERS: TxTypeFilter[] = ['ALL', 'SALE', 'PAYMENT', 'INTEREST']
 
 export function LedgerFilterBar({ filters }: { filters: LedgerFilters }) {
+  const { t } = useTranslation(['credit', 'common'])
   const {
     filterMode, setFilterMode, txTypeFilter, setTxTypeFilter, availableMonths,
-    selectedMonth, setSelectedMonth, fromDate, setFromDate, toDate, setToDate,
+    selectedMonth, setSelectedMonth, fromDate, setFromDate, toDate, setToDate, filtered,
   } = filters
+  const exportRange = filterMode === 'range' ? { from: fromDate, to: toDate } : undefined
 
   return (
-    <>
-    {/* Filter toolbar */}
-    <div className="flex flex-wrap items-center gap-3 mb-3">
-      <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Ledger History</h3>
-      <div className="flex items-center gap-1 ml-auto bg-slate-100 rounded-lg p-0.5">
-        {(['all', 'month', 'range'] as FilterMode[]).map(m => (
-          <button
-            key={m}
-            onClick={() => setFilterMode(m)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-              filterMode === m
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {m === 'all' ? 'All' : m === 'month' ? 'By Month' : 'Date Range'}
-          </button>
-        ))}
+    <div className="mb-4 overflow-hidden rounded-card border border-border">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2">
+        <h3 className="text-sm font-semibold text-ink-2">{t('ledger.history')}</h3>
+        <CsvExportButton
+          filename={csvFilename(filterMode === 'month' && selectedMonth ? `credit-ledger-${selectedMonth}` : 'credit-ledger', exportRange)}
+          columns={LEDGER_COLUMNS}
+          rows={filtered}
+        />
       </div>
-    </div>
-    {/* Transaction type filter */}
-    <div className="flex items-center gap-2 mb-4">
-      {([
-        { value: 'ALL',      label: 'All Types',  color: 'slate' },
-        { value: 'SALE',     label: '↑ Sales',    color: 'orange' },
-        { value: 'PAYMENT',  label: '↓ Payments', color: 'green' },
-        { value: 'INTEREST', label: '% Interest', color: 'purple' },
-      ] as { value: TxTypeFilter; label: string; color: string }[]).map(({ value, label, color }) => (
-        <button
-          key={value}
-          onClick={() => setTxTypeFilter(value)}
-          className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-            txTypeFilter === value
-              ? color === 'slate'
-                ? 'bg-slate-700 border-slate-700 text-white'
-                : color === 'orange'
-                ? 'bg-orange-100 border-orange-400 text-orange-700'
-                : color === 'green'
-                ? 'bg-green-100 border-green-400 text-green-700'
-                : 'bg-purple-100 border-purple-400 text-purple-700'
-              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-
-    {/* Filter controls */}
-    {filterMode === 'month' && (
-      <div className="mb-4 flex flex-wrap gap-2">
-        {availableMonths.length === 0 ? (
-          <span className="text-xs text-slate-500">No transactions yet</span>
-        ) : (
-          availableMonths.map(m => (
-            <button
-              key={m}
-              onClick={() => setSelectedMonth(prev => prev === m ? '' : m)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                selectedMonth === m
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'
-              }`}
-            >
-              {m}
+      <FilterBar label={t('ledger.filtersLabel')} className="border-b-0 border-t border-border">
+        <div className="ui-chip-row">
+          {FILTER_MODES.map(mode => (
+            <button key={mode} type="button" aria-pressed={filterMode === mode} onClick={() => setFilterMode(mode)} className="ui-chip">
+              {t(`ledger.modes.${mode}`)}
             </button>
-          ))
-        )}
-      </div>
-    )}
+          ))}
+        </div>
+        <div className="ui-chip-row">
+          {TX_TYPE_FILTERS.map(value => (
+            <button key={value} type="button" aria-pressed={txTypeFilter === value} onClick={() => setTxTypeFilter(value)} className="ui-chip">
+              {t(`ledger.typeFilters.${value}`)}
+            </button>
+          ))}
+        </div>
 
-    {filterMode === 'range' && (
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label htmlFor="credit-ledger-from" className="text-xs text-slate-500 whitespace-nowrap">From</label>
-          <input id="credit-ledger-from" type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="credit-ledger-to" className="text-xs text-slate-500 whitespace-nowrap">To</label>
-          <input id="credit-ledger-to" type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        {(fromDate || toDate) && (
-          <button onClick={() => { setFromDate(''); setToDate('') }}
-            className="text-xs text-slate-500 hover:text-slate-600">Clear</button>
+        {filterMode === 'month' && (
+          availableMonths.length === 0 ? (
+            <span className="text-xs text-ink-3">{t('ledger.noTransactions')}</span>
+          ) : (
+            <div className="ui-chip-row basis-full">
+              {availableMonths.map(month => (
+                <button key={month} type="button" aria-pressed={selectedMonth === month}
+                  onClick={() => setSelectedMonth(previous => previous === month ? '' : month)} className="ui-chip">
+                  {month}
+                </button>
+              ))}
+            </div>
+          )
         )}
-      </div>
-    )}
-    </>
+
+        {filterMode === 'range' && (
+          <div className="flex basis-full flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <label htmlFor="credit-ledger-from" className="text-xs text-ink-3 whitespace-nowrap">{t('common:fields.from')}</label>
+              <input id="credit-ledger-from" type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="text-sm" />
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="credit-ledger-to" className="text-xs text-ink-3 whitespace-nowrap">{t('common:fields.to')}</label>
+              <input id="credit-ledger-to" type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="text-sm" />
+            </div>
+            {(fromDate || toDate) && (
+              <button type="button" onClick={() => { setFromDate(''); setToDate('') }} className="ui-btn ui-btn-ghost ui-btn-compact">
+                {t('common:actions.clear')}
+              </button>
+            )}
+          </div>
+        )}
+      </FilterBar>
+    </div>
   )
 }

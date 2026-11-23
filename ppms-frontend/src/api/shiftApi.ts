@@ -1,6 +1,8 @@
 import client from './client'
 import type { SpringPage } from '../types/paged'
-import type { Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput, BackfillShiftRequest } from '../types/shift'
+import type {
+  Shift, OpenShiftRequest, CloseShiftRequest, CreditEntryInput, BackfillShiftRequest, CreateHandoverRequest, HandoverResponse,
+} from '../types/shift'
 
 export type { CreditEntryInput }
 
@@ -14,9 +16,15 @@ export interface ShiftHistoryFilter {
   to?: string
   discrepanciesOnly?: boolean
   discrepancyType?: 'SHORT' | 'OVER'
+  /** Keeps shifts that sold this fuel; the server refuses it together with discrepanciesOnly. */
+  fuelType?: string
 }
 
 const HISTORY_PAGE_SIZE = 200
+
+// The server answers a resend carrying the same key with the first result instead of writing twice.
+const withIdempotencyKey = (idempotencyKey?: string) =>
+  idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined
 const MAX_HISTORY_PAGES = 25
 
 export const shiftApi = {
@@ -32,6 +40,7 @@ export const shiftApi = {
         ...(filter.to && { to: filter.to }),
         ...(filter.discrepanciesOnly && { discrepanciesOnly: true }),
         ...(filter.discrepancyType && { discrepancyType: filter.discrepancyType }),
+        ...(filter.fuelType && { fuelType: filter.fuelType }),
       },
     }).then((r) => r.data),
 
@@ -52,11 +61,17 @@ export const shiftApi = {
   openShift: (pumpId: number, request: OpenShiftRequest) =>
     client.post<Shift>(`/pumps/${pumpId}/shifts/open`, request).then((r) => r.data),
 
-  addCreditEntry: (pumpId: number, shiftId: number, entry: CreditEntryInput) =>
-    client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/credit-entries`, entry).then((r) => r.data),
+  addCreditEntry: (pumpId: number, shiftId: number, entry: CreditEntryInput, idempotencyKey?: string) =>
+    client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/credit-entries`, entry, withIdempotencyKey(idempotencyKey))
+      .then((r) => r.data),
 
-  closeShift: (pumpId: number, shiftId: number, request: CloseShiftRequest) =>
-    client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/close`, request).then((r) => r.data),
+  closeShift: (pumpId: number, shiftId: number, request: CloseShiftRequest, idempotencyKey?: string) =>
+    client.post<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/close`, request, withIdempotencyKey(idempotencyKey))
+      .then((r) => r.data),
+
+  createHandover: (pumpId: number, request: CreateHandoverRequest, idempotencyKey?: string) =>
+    client.post<HandoverResponse>(`/pumps/${pumpId}/handovers`, request, withIdempotencyKey(idempotencyKey))
+      .then((r) => r.data),
 
   resolveDiscrepancy: (pumpId: number, shiftId: number, req: ResolveDiscrepancyRequest) =>
     client.patch<Shift>(`/pumps/${pumpId}/shifts/${shiftId}/discrepancy-resolution`, req).then((r) => r.data),

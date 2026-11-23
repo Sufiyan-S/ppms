@@ -1,10 +1,23 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Check } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { authApi } from '../../api/authApi'
 import { parseApiError } from '../../utils/apiError'
+import { AuthCard, AuthScreen } from './AuthCard'
+import { BackToLogin } from './BackToLogin'
+
+function NoEmailHelp() {
+  const { t } = useTranslation('auth')
+  return (
+    <div className="ui-alert text-sm">
+      <p className="font-medium">{t('forgotPassword.noEmailTitle')}</p>
+      <p className="mt-1">{t('forgotPassword.noEmailBody')}</p>
+    </div>
+  )
+}
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation('auth')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -12,13 +25,13 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phoneNumber.trim()) { setError('Phone number is required'); return }
+    if (!phoneNumber.trim()) { setError(t('forgotPassword.phoneRequired')); return }
     setLoading(true); setError(null)
     try {
       await authApi.forgotPassword(phoneNumber.trim())
       setSent(true)
     } catch (err) {
-      setError(parseApiError(err, 'Something went wrong. Please try again.'))
+      setError(parseApiError(err))
     } finally {
       setLoading(false)
     }
@@ -26,39 +39,32 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <div className="ui-auth-shell">
-        <div className="ui-auth-card text-center space-y-4">
-          <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-            <Check size={28} strokeWidth={2.5} className="text-emerald-600" />
-          </div>
-          <h1 className="ui-title-sm">Check your email</h1>
-          <p className="ui-subtitle">
-            If this phone number is registered and has an email address on file,
-            we have sent a password reset link. Check your inbox.
-          </p>
-          <p className="text-xs text-slate-500">The link expires in 1 hour.</p>
-          <Link to="/login" className="ui-link inline-flex justify-center">
-            Back to login
-          </Link>
-        </div>
-      </div>
+      <AuthScreen>
+        <AuthCard
+          title={t('forgotPassword.sentTitle')}
+          description={t('forgotPassword.sentBody')}
+          icon={(
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-ok-bg">
+              <Check size={24} strokeWidth={2.5} aria-hidden="true" className="text-ok" />
+            </div>
+          )}
+          footer={<BackToLogin />}
+        >
+          <p className="text-xs text-ink-3">{t('forgotPassword.linkExpiry')}</p>
+          <NoEmailHelp />
+        </AuthCard>
+      </AuthScreen>
     )
   }
 
   return (
-    <div className="ui-auth-shell">
-      <div className="ui-auth-card space-y-6">
-
-        <div>
-          <h1 className="ui-title-sm">Forgot Password</h1>
-          <p className="ui-subtitle">
-            Enter your registered phone number and we'll send a reset link to your email.
-          </p>
-        </div>
+    <AuthScreen>
+      <AuthCard title={t('forgotPassword.title')} description={t('forgotPassword.subtitle')} footer={<BackToLogin />}>
+        <NoEmailHelp />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="phoneNumber" className="ui-label">Phone Number</label>
+            <label htmlFor="phoneNumber" className="ui-label">{t('fields.phoneNumber')}</label>
             <input
               id="phoneNumber"
               type="tel"
@@ -66,26 +72,24 @@ export default function ForgotPasswordPage() {
               autoComplete="tel"
               value={phoneNumber}
               onChange={e => setPhoneNumber(e.target.value)}
-              placeholder="e.g. 9876543210"
-              className="shadow-sm"
+              placeholder={t('forgotPassword.phonePlaceholder')}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'forgot-phone-error' : undefined}
+              className="shadow-raised"
             />
+            {error && <p id="forgot-phone-error" className="ui-error-text" role="alert">{error}</p>}
           </div>
 
-          {error && <p className="ui-error-text" role="alert">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
             className="ui-btn ui-btn-primary w-full"
           >
-            {loading ? 'Sending…' : 'Send Reset Link'}
+            {loading ? t('forgotPassword.sending') : t('forgotPassword.send')}
           </button>
         </form>
-
-        <Link to="/login" className="ui-link block text-center">
-          Back to login
-        </Link>
-      </div>
-    </div>
+      </AuthCard>
+    </AuthScreen>
   )
 }

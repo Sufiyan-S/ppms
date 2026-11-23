@@ -16,7 +16,8 @@ public record ProfitLossReport(
         BigDecimal totalUpiRevenue,
         BigDecimal totalCardRevenue,
         BigDecimal totalCreditRevenue,
-        List<FuelLine> byFuelType) {
+        List<FuelLine> byFuelType,
+        List<DayLine> byDay) {
 
     public record FuelLine(
             String fuelType,
@@ -25,6 +26,13 @@ public record ProfitLossReport(
             BigDecimal grossProfit,
             BigDecimal grossMarginPerLitre,    // null when totalUnitsSold == 0
             List<LotCostLine> lotCostLines) {}
+
+    /** One business day that had a closed shift: revenue and cost of goods of that day's shifts. */
+    public record DayLine(
+            LocalDate date,
+            BigDecimal revenue,
+            BigDecimal cogs,
+            BigDecimal grossProfit) {}
 
     public record LotCostLine(
             Long lotId,

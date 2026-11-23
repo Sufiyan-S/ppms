@@ -1,0 +1,49 @@
+{
+  "eventTypes": {
+    "OPENING_BALANCE": "सुरुवातीचा बॅलन्स",
+    "CASH_IN": "रोख जमा",
+    "CASH_OUT": "रोख काढली",
+    "CLOSING_BALANCE": "शेवटचा बॅलन्स"
+  },
+  "page": {
+    "title": "कॅश ड्रॉवर",
+    "subtitle": "पंपाच्या तिजोरीत येणाऱ्या आणि जाणाऱ्या रोख रकमेचा हिशोब ठेवा",
+    "loadFailed": "रोख नोंदी लोड झाल्या नाहीत. कनेक्शन तपासा आणि पान रीफ्रेश करा.",
+    "currentBalance": "सध्याचा बॅलन्स",
+    "balanceHint": "सर्व रोख जमा मधून काढलेली रोख वजा करून काढला",
+    "eventCount_one": "{{count}} नोंद",
+    "eventCount_other": "{{count}} नोंदी"
+  },
+  "list": {
+    "title": "रोख नोंदी",
+    "filterByType": "नोंदीच्या प्रकारानुसार निवडा",
+    "allTypes": "सर्व प्रकार",
+    "emptyRangeTitle": "या तारखांमध्ये एकही नोंद नाही",
+    "emptyRangeSubtitle": "वरच्या तारखा बदलून पाहा.",
+    "emptyTitle": "अजून एकही रोख नोंद नाही",
+    "emptySubtitle": "पहली नोंद करण्यासाठी \"रोख व्यवहार नोंदवा\" दाबा.",
+    "filtersLabel": "रोख नोंदींचे फिल्टर"
+  },
+  "form": {
+    "title": "रोख व्यवहार नोंदवा",
+    "subtitle": "तिजोरीत आलेले किंवा गेलेले पैसे योग्य प्रकार आणि तारखेसह नोंदवा.",
+    "eventType": "नोंदीचा प्रकार",
+    "amount": "रक्कम",
+    "availableBalance": "उपलब्ध बॅलन्स: {{amount}}",
+    "description": "तपशील",
+    "date": "तारीख",
+    "balanceNow": "सध्या तिजोरीत",
+    "balanceAfter": "यानंतर तिजोरीत",
+    "needAmount": "रक्कम",
+    "needDescription": "तपशील",
+    "recorded": "रोख नोंद झाली",
+    "recordFailed": "नोंद करता आली नाही",
+    "descriptionRequired": "तपशील लिहिणे आवश्यक आहे",
+    "amountPositive": "रक्कम शून्यापेक्षा जास्त असावी",
+    "exceedsBalance": "काढायची रक्कम {{amount}} ड्रॉवरच्या सध्याच्या बॅलन्स {{balance}} पेक्षा जास्त आहे."
+  },
+  "review": {
+    "title": "रोख नोंद तपासा",
+    "record": "नोंद करा"
+  }
+}

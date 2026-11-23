@@ -4,8 +4,11 @@ import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
+import com.ppms.common.time.DateRangeBounds;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
@@ -142,15 +145,30 @@ public class PaymentSettlementService {
         SettlementPaymentType type = req.getPaymentType();
         LocalDate settlementDate = req.getSettlementDate();
         if (settlementDate.isAfter(businessClock.today())) {
-            throw new BusinessException("settlementDate cannot be in the future.");
+            throw new BusinessException(ErrorCodes.SETTLEMENT_DATE_IN_FUTURE,
+                    Map.of(),
+                    "settlementDate cannot be in the future.");
         }
 
         BigDecimal amount = req.getAmountReceived().setScale(2, RoundingMode.HALF_UP);
+        String bankReference = req.getBankReference() == null || req.getBankReference().isBlank()
+                ? null
+                : req.getBankReference().trim();
 
         lockPump(pumpId);
+        if (bankReference != null && settlementRepository.existsActiveWithBankReference(pumpId, bankReference)) {
+            throw new BusinessException(ErrorCodes.SETTLEMENT_BANK_REFERENCE_DUPLICATE,
+                    Map.of("bankReference", bankReference),
+                    "A settlement with bank reference " + bankReference
+                    + " is already recorded for this pump. Check the settlement list instead of recording it again.");
+        }
         if (settlementRepository.existsRecentDuplicate(pumpId, type, settlementDate, amount,
                 businessClock.now().minus(DUPLICATE_WINDOW))) {
-            throw new BusinessException("An identical " + type.name() + " settlement of ₹" + amount + " for "
+            throw new BusinessException(ErrorCodes.SETTLEMENT_RECENT_DUPLICATE,
+                    Map.of("paymentTypeCode", type.name(),
+                           "amount", amount.toPlainString(),
+                           "settlementDate", settlementDate.toString()),
+                    "An identical " + type.name() + " settlement of ₹" + amount + " for "
                     + settlementDate + " was recorded in the last 2 minutes. Refresh the list before recording it again.");
         }
 
@@ -160,6 +178,15 @@ public class PaymentSettlementService {
                              : orZero(shiftRepository.sumFleetCardCollectedByPumpId(pumpId));
         BigDecimal alreadySettled = orZero(settlementRepository.sumAmountByPumpIdAndPaymentType(pumpId, type));
         BigDecimal pendingAtRecordTime = collected.subtract(alreadySettled).setScale(2, RoundingMode.HALF_UP);
+        if (amount.compareTo(pendingAtRecordTime) > 0) {
+            throw new BusinessException(ErrorCodes.SETTLEMENT_EXCEEDS_PENDING,
+                    Map.of("paymentTypeCode", type.name(),
+                           "amount", amount.toPlainString(),
+                           "pending", pendingAtRecordTime.max(BigDecimal.ZERO).toPlainString()),
+                    "This " + type.name() + " settlement of ₹" + amount + " is more than the ₹"
+                    + pendingAtRecordTime.max(BigDecimal.ZERO) + " still pending for " + type.name()
+                    + ". Check the amount, or close the shifts whose collections it covers first.");
+        }
 
         PaymentSettlement settlement = PaymentSettlement.builder()
                 .pumpId(pumpId)
@@ -167,6 +194,7 @@ public class PaymentSettlementService {
                 .settlementDate(settlementDate)
                 .amountReceived(amount)
                 .notes(req.getNotes())
+                .bankReference(bankReference)
                 .recordedByUserId(currentUser.getId())
                 .pendingAtRecordTime(pendingAtRecordTime)
                 .build();
@@ -175,7 +203,8 @@ public class PaymentSettlementService {
 
         auditService.log(pumpId, AuditAction.SETTLEMENT_RECORDED,
                 "PaymentSettlement", settlement.getId().toString(),
-                "Recorded " + type.name() + " settlement of ₹" + amount + " on " + settlementDate,
+                "Recorded " + type.name() + " settlement of ₹" + amount + " on " + settlementDate
+                        + (bankReference != null ? " (bank reference " + bankReference + ")" : ""),
                 currentUser);
 
         log.info("Settlement recorded: pump={} type={} amount={} date={} by={}",
@@ -194,9 +223,11 @@ public class PaymentSettlementService {
     public SettlementResponse voidSettlement(Long pumpId, Long settlementId, VoidSettlementRequest req, User currentUser) {
         lockPump(pumpId);
         PaymentSettlement settlement = settlementRepository.findByIdAndPumpId(settlementId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Settlement not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SETTLEMENT, "Settlement not found"));
         if (PaymentSettlement.VOIDED.equals(settlement.getVoidStatus())) {
-            throw new BusinessException("This settlement is already voided.");
+            throw new BusinessException(ErrorCodes.SETTLEMENT_ALREADY_VOIDED,
+                    Map.of(),
+                    "This settlement is already voided.");
         }
 
         settlement.setVoidStatus(PaymentSettlement.VOIDED);
@@ -240,6 +271,24 @@ public class PaymentSettlementService {
                 .fleetCardPending(fleetPending)
                 .totalPending(upiPending.add(cardPending).add(fleetPending).setScale(2, RoundingMode.HALF_UP))
                 .build();
+    }
+
+    // ── Unsettled collections by age ──────────────────────────────────────────
+
+    /**
+     * Collections that have not reached the bank yet, as runs of consecutive collection days per payment type,
+     * oldest first. Everything settled so far clears the oldest days first, the same FIFO rule the daily summary uses.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingSettlementRange> getPendingByAge(Long pumpId) {
+        LocalDate today = businessClock.today();
+        Map<LocalDate, Map<SettlementPaymentType, BigDecimal>> collected =
+                collectionsByDate(pumpId, DateRangeBounds.startOrEarliest(null), today);
+        Map<SettlementPaymentType, BigDecimal> totalSettled = new EnumMap<>(SettlementPaymentType.class);
+        for (SettlementPaymentType type : SettlementPaymentType.values()) {
+            totalSettled.put(type, orZero(settlementRepository.sumAmountByPumpIdAndPaymentType(pumpId, type)));
+        }
+        return PendingSettlementAging.unsettledRanges(collected, totalSettled, today);
     }
 
     // ── Daily summary ─────────────────────────────────────────────────────────
@@ -348,14 +397,16 @@ public class PaymentSettlementService {
     /** Serialises settlement writes per pump so duplicate detection and voiding see each other's results. */
     private void lockPump(Long pumpId) {
         pumpLocationRepository.findByIdForUpdate(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found: " + pumpId));
     }
 
     private SettlementPaymentType parsePaymentType(String value) {
         try {
             return SettlementPaymentType.valueOf(value.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("Invalid paymentType '" + value + "'. Must be UPI, CARD, or FLEET_CARD.");
+            throw new BusinessException(ErrorCodes.SETTLEMENT_PAYMENT_TYPE_INVALID,
+                    Map.of("paymentType", value),
+                    "Invalid paymentType '" + value + "'. Must be UPI, CARD, or FLEET_CARD.");
         }
     }
 
@@ -369,6 +420,7 @@ public class PaymentSettlementService {
                 .settlementDate(s.getSettlementDate().toString())
                 .amountReceived(s.getAmountReceived())
                 .notes(s.getNotes())
+                .bankReference(s.getBankReference())
                 .recordedByUserName(userNames.getOrDefault(s.getRecordedByUserId(), "Unknown"))
                 .createdAt(s.getCreatedAt() != null ? s.getCreatedAt().toString() : null)
                 .pendingAtRecordTime(s.getPendingAtRecordTime())

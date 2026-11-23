@@ -1,0 +1,111 @@
+{
+  "header": {
+    "portal": "सुपर एडमिन पोर्टल",
+    "tagline": "प्लेटफ़ॉर्म प्रबंधन — नए पंप मालिक जोड़ें",
+    "role": "सुपर एडमिन",
+    "openProfileMenu": "प्रोफ़ाइल मेन्यू खोलें",
+    "resetPassword": "पासवर्ड बदलें",
+    "loggingOut": "लॉग आउट हो रहा है…",
+    "logout": "लॉग आउट",
+    "passwordUpdated": "पासवर्ड बदल गया। कृपया नए पासवर्ड से लॉग इन करें।"
+  },
+  "page": {
+    "title": "प्लेटफ़ॉर्म प्रबंधन",
+    "pumpOwners": "पंप मालिक",
+    "pumps": "पंप",
+    "staffMembers": "स्टाफ़",
+    "copiedCredentials": "PPMS लॉग इन जानकारी\nफ़ोन: {{phone}}\nपासवर्ड: {{password}}\nपंप: {{pump}}",
+    "description": "पंप मालिक जोड़ें और उनके पंप व सेटअप संभालें।",
+    "totalsLabel": "प्लेटफ़ॉर्म के कुल आँकड़े"
+  },
+  "created": {
+    "title": "मालिक का खाता बन गया — यह लॉग इन जानकारी उन्हें दें",
+    "body": "{{name}} अब लॉग इन करके अपना पंप सेट कर सकते हैं।",
+    "phone": "फ़ोन",
+    "password": "पासवर्ड",
+    "hidePassword": "पासवर्ड छिपाएँ",
+    "revealPassword": "पासवर्ड दिखाएँ",
+    "hide": "छिपाएँ",
+    "show": "दिखाएँ",
+    "pump": "पंप",
+    "employeeId": "कर्मचारी ID",
+    "copy": "कॉपी करें"
+  },
+  "fields": {
+    "pumpName": "पंप का नाम",
+    "pumpAddress": "पंप का पता",
+    "maxDuCount": "अधिकतम DU संख्या",
+    "maxDuHelp": "1 से 20"
+  },
+  "onboard": {
+    "title": "नया मालिक जोड़ें",
+    "subtitle": "मालिक का खाता और उनका पहला पंप बनाता है।",
+    "ownerDetails": "मालिक की जानकारी",
+    "fullName": "पूरा नाम",
+    "phoneNumber": "फ़ोन नंबर",
+    "initialPassword": "शुरुआती पासवर्ड",
+    "pumpDetails": "पंप की जानकारी",
+    "creating": "बन रहा है…",
+    "submit": "मालिक जोड़ें",
+    "failed": "मालिक नहीं बन सका। कृपया फिर कोशिश करें।",
+    "backToOwners": "मालिकों पर वापस",
+    "phoneHelp": "10 अंकों का मोबाइल नंबर"
+  },
+  "owners": {
+    "title": "जोड़े गए मालिक",
+    "subtitle": "प्लेटफ़ॉर्म पर अभी के सभी पंप मालिक।",
+    "count_one": "{{count}} मालिक",
+    "count_other": "{{count}} मालिक",
+    "empty": "अभी कोई मालिक नहीं।",
+    "emptyHint": "पहला पंप मालिक जोड़ने के लिए \"नया मालिक जोड़ें\" चुनें।",
+    "statusActive": "सक्रिय",
+    "statusInactive": "निष्क्रिय",
+    "pumpCount_one": "{{count}} पंप",
+    "pumpCount_other": "{{count}} पंप",
+    "disabledCount": "· {{value}} बंद",
+    "resetPassword": "पासवर्ड रीसेट करें",
+    "addPump": "पंप जोड़ें",
+    "noPumps": "अभी कोई पंप नहीं जोड़ा गया।",
+    "idLabel": "ID:",
+    "joined": "{{date}} को जुड़े",
+    "updatePumpFailed": "पंप नहीं बदला जा सका। कृपया फिर कोशिश करें।",
+    "listLabel": "मालिक",
+    "detailLabel": "मालिक का विवरण",
+    "selectOwner": "पंप और सेटअप की प्रगति देखने के लिए एक मालिक चुनें।",
+    "notFound": "यह मालिक सूची में नहीं है।",
+    "pumpsTitle": "पंप",
+    "setupDone": "{{total}} में से {{done}} पंप सेट"
+  },
+  "addPump": {
+    "title": "{{name}} के लिए नया पंप जोड़ें",
+    "copy": "इस मालिक के तहत एक और पंप जोड़ता है।",
+    "adding": "जोड़ा जा रहा है…",
+    "submit": "पंप जोड़ें",
+    "failed": "पंप नहीं जुड़ सका। कृपया फिर कोशिश करें।"
+  },
+  "pump": {
+    "disabled": "बंद",
+    "staff": "{{value}} स्टाफ़",
+    "setup": "सेटअप {{required}} में से {{done}} पूरा",
+    "saveChanges": "बदलाव सेव करें",
+    "editTitle": "{{name}} बदलें",
+    "disableTitle": "{{name}} बंद करें?",
+    "disableConsequence": "दोबारा चालू करने तक मालिक और स्टाफ़ यह पंप इस्तेमाल नहीं कर पाएँगे। शिफ्ट चालू हो तो यह नहीं हो सकता।",
+    "disableConfirm": "पंप बंद करें"
+  },
+  "validation": {
+    "pumpNameRequired": "पंप का नाम ज़रूरी है",
+    "pumpAddressRequired": "पंप का पता ज़रूरी है",
+    "atLeastOne": "कम से कम 1 होना चाहिए",
+    "atMostTwenty": "20 से ज़्यादा नहीं हो सकता",
+    "fullNameRequired": "पूरा नाम ज़रूरी है",
+    "phoneLength": "फ़ोन नंबर ठीक 10 अंकों का होना चाहिए",
+    "digitsOnly": "सिर्फ़ अंक डालें",
+    "passwordLength": "पासवर्ड कम से कम 8 अक्षर का होना चाहिए",
+    "passwordUppercase": "कम से कम एक बड़ा अक्षर (A–Z) होना चाहिए",
+    "passwordLowercase": "कम से कम एक छोटा अक्षर (a–z) होना चाहिए",
+    "passwordDigit": "कम से कम एक अंक होना चाहिए",
+    "atLeastOneDu": "कम से कम 1 DU होना चाहिए",
+    "atMostTwentyDus": "20 से ज़्यादा DU नहीं हो सकते"
+  }
+}

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CreditInvoiceLineBuilderTest {
 
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final long PRODUCT_ID = 5L;
 
     private final AncillaryProduct engineOil = AncillaryProduct.builder()
@@ -34,7 +32,7 @@ class CreditInvoiceLineBuilderTest {
             .build();
 
     @Test
-    void fuelLineCarriesNoGstAndIsDatedInIndia() {
+    void fuelLineCarriesNoGstAndIsDatedByItsSaleDateNotWhenItWasEntered() {
         ShiftCreditEntry entry = ShiftCreditEntry.builder()
                 .id(11L)
                 .amount(new BigDecimal("1500"))
@@ -42,13 +40,14 @@ class CreditInvoiceLineBuilderTest {
                 .description("given to driver")
                 .vehicleRegistration("MH12AB1234")
                 .billNo("B-7")
-                .createdAt(OffsetDateTime.parse("2026-03-31T19:00:00Z"))
+                .saleDate(LocalDate.of(2026, 3, 28))
+                .createdAt(OffsetDateTime.parse("2026-04-02T10:00:00Z"))
                 .build();
 
-        CreditInvoiceLine line = CreditInvoiceLineBuilder.fuelLines(List.of(entry), IST).get(0);
+        CreditInvoiceLine line = CreditInvoiceLineBuilder.fuelLines(List.of(entry)).get(0);
 
         assertThat(line.getLineType()).isEqualTo(InvoiceLineType.FUEL);
-        assertThat(line.getSaleDate()).isEqualTo(LocalDate.of(2026, 4, 1));
+        assertThat(line.getSaleDate()).isEqualTo(LocalDate.of(2026, 3, 28));
         assertThat(line.getDescription()).isEqualTo("DIESEL – given to driver");
         assertThat(line.getLineTotal()).isEqualByComparingTo("1500.00");
         assertThat(line.getCgst().add(line.getSgst()).add(line.getIgst())).isEqualByComparingTo("0");
@@ -90,6 +89,20 @@ class CreditInvoiceLineBuilderTest {
     }
 
     @Test
+    void gstIsTakenOutAtTheRateStoredOnTheSaleNotTheProductsCurrentRate() {
+        AncillarySale soldAtTwelvePercent = sale("224.00", "0.00", "224.00", 2);
+        soldAtTwelvePercent.setGstRatePercent(new BigDecimal("12.00"));
+
+        CreditInvoiceLine line = ancillaryLine(soldAtTwelvePercent, true);
+
+        assertThat(line.getGstRate()).isEqualByComparingTo("12.00");
+        assertThat(line.getTaxableValue()).isEqualByComparingTo("200.00");
+        assertThat(line.getCgst()).isEqualByComparingTo("12.00");
+        assertThat(line.getSgst()).isEqualByComparingTo("12.00");
+        assertThat(line.getLineTotal()).isEqualByComparingTo("224.00");
+    }
+
+    @Test
     void saleToAnotherStateIsChargedIgst() {
         CreditInvoiceLine line = ancillaryLine(sale("236.00", "0.00", "236.00", 2), false);
 
@@ -111,6 +124,7 @@ class CreditInvoiceLineBuilderTest {
                 .totalAmount(new BigDecimal(totalAmount))
                 .gstAmount(new BigDecimal(gstAmount))
                 .totalWithGst(new BigDecimal(totalWithGst))
+                .gstRatePercent(new BigDecimal("18.00"))
                 .paymentMode(TransactionPaymentMode.CREDIT)
                 .saleDate(LocalDate.of(2026, 11, 2))
                 .build();

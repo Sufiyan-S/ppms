@@ -3,7 +3,7 @@ import client from './client'
 import { shiftApi } from './shiftApi'
 import type { Shift } from '../types/shift'
 
-vi.mock('./client', () => ({ default: { get: vi.fn() } }))
+vi.mock('./client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 
 const get = vi.mocked(client.get)
 
@@ -61,5 +61,31 @@ describe('shiftApi.getShiftHistory', () => {
     expect(get).toHaveBeenCalledWith('/pumps/7/shifts/history', {
       params: { page: 3, size: 10, from: '2026-11-01', to: '2026-11-20', discrepanciesOnly: true, discrepancyType: 'SHORT' },
     })
+  })
+})
+
+describe('shiftApi writes that may be resent', () => {
+  const post = vi.mocked(client.post)
+  beforeEach(() => {
+    post.mockReset()
+    post.mockResolvedValue({ data: {} })
+  })
+
+  it('sends the Idempotency-Key header on close, handover and credit entry', async () => {
+    const closing = { fuelReadings: [], cashCollected: 0, upiCollected: 0, cardCollected: 0, fleetCardCollected: 0, creditTotal: 0, creditEntries: [], replacedCreditEntryIds: [] }
+    await shiftApi.closeShift(7, 11, closing, 'key-close')
+    await shiftApi.createHandover(7, { outgoingShiftId: 11, incomingOperatorId: 4, physicalCashVerified: true, meterReadingsVerified: true, closing }, 'key-handover')
+    await shiftApi.addCreditEntry(7, 11, { clientName: 'Fleet Co', amount: 10 }, 'key-credit')
+
+    expect(post.mock.calls.map((call) => call[2])).toEqual([
+      { headers: { 'Idempotency-Key': 'key-close' } },
+      { headers: { 'Idempotency-Key': 'key-handover' } },
+      { headers: { 'Idempotency-Key': 'key-credit' } },
+    ])
+  })
+
+  it('sends no header when no key is given', async () => {
+    await shiftApi.addCreditEntry(7, 11, { clientName: 'Fleet Co', amount: 10 })
+    expect(post.mock.calls[0][2]).toBeUndefined()
   })
 })

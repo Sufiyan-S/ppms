@@ -3,6 +3,8 @@ package com.ppms.payroll;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.DispensaryUnitRepository;
 import com.ppms.shift.Shift;
@@ -56,7 +58,7 @@ public class PayrollController {
 
     /**
      * GET /api/pumps/{pumpId}/payroll/pending-discrepancies?userId={userId}
-     * Returns all unresolved discrepancy shifts for a user on this pump.
+     * Returns all unresolved SHORT discrepancy shifts for a user on this pump.
      * Called by the payroll UI before generating a payroll draft so the owner can choose
      * which discrepancies to resolve as SALARY_DEDUCTION in the current pay run.
      */
@@ -125,20 +127,25 @@ public class PayrollController {
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal User currentUser) {
         String statusStr = body.get("status");
-        if (statusStr == null) throw new BusinessException("status is required");
+        if (statusStr == null) throw new BusinessException(ErrorCodes.PAYROLL_STATUS_REQUIRED,
+                Map.of(),
+                "status is required");
 
         PayrollStatus newStatus;
         try {
             newStatus = PayrollStatus.valueOf(statusStr.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("Invalid status. Allowed: DRAFT, APPROVED, PAID");
+            throw new BusinessException(ErrorCodes.PAYROLL_STATUS_INVALID,
+                    Map.of(),
+                    "Invalid status. Allowed: DRAFT, APPROVED, PAID");
         }
 
         PayrollRecord record = payrollRepository.findById(recordId)
-                .orElseThrow(() -> new ResourceNotFoundException("Payroll record not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PAYROLL_RECORD,
+                        "Payroll record not found"));
 
         if (!record.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Payroll record not found");
+            throw new ResourceNotFoundException(EntityType.PAYROLL_RECORD, "Payroll record not found");
         }
 
         // Enforce the allowed lifecycle transitions
@@ -147,7 +154,8 @@ public class PayrollController {
                      || (record.getStatus() == PayrollStatus.APPROVED && newStatus == PayrollStatus.DRAFT);
 
         if (!valid) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PAYROLL_STATUS_TRANSITION_INVALID,
+                    Map.of("fromStatusCode", record.getStatus().name(), "toStatusCode", newStatus.name()),
                     "Invalid transition: " + record.getStatus() + " → " + newStatus);
         }
 

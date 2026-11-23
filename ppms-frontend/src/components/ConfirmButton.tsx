@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { IconButton } from './IconButton'
 
 interface ConfirmButtonProps {
@@ -29,11 +30,14 @@ export function ConfirmButton({
   onConfirm,
   disabled = false,
   triggerLabel,
-  triggerAriaLabel = 'Delete',
-  prompt = 'Delete?',
+  triggerAriaLabel,
+  prompt,
   triggerClassName,
   confirmClassName = 'ui-btn ui-btn-danger min-h-0 px-2 py-0.5 text-xs',
 }: ConfirmButtonProps) {
+  const { t } = useTranslation()
+  const triggerName = triggerAriaLabel ?? t('actions.delete')
+  const promptText = prompt ?? t('confirm.deletePrompt')
   const [confirming, setConfirming] = useState(false)
   const noRef = useRef<HTMLButtonElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -61,8 +65,8 @@ export function ConfirmButton({
 
   if (confirming) {
     return (
-      <span role="group" aria-label={prompt} className="flex items-center gap-1">
-        <span className="text-xs text-red-600 font-medium">{prompt}</span>
+      <span role="group" aria-label={promptText} className="flex items-center gap-1">
+        <span className="text-xs text-bad font-medium">{promptText}</span>
         <button
           type="button"
           onClick={() => { onConfirm(); close() }}
@@ -70,7 +74,7 @@ export function ConfirmButton({
           disabled={disabled}
           className={confirmClassName}
         >
-          Yes
+          {t('actions.yes')}
         </button>
         <button
           ref={noRef}
@@ -79,7 +83,7 @@ export function ConfirmButton({
           onKeyDown={closeOnEscape}
           className="ui-btn ui-btn-ghost min-h-6 px-2 py-0.5 text-xs"
         >
-          No
+          {t('actions.no')}
         </button>
       </span>
     )
@@ -92,8 +96,8 @@ export function ConfirmButton({
         type="button"
         onClick={() => setConfirming(true)}
         disabled={disabled}
-        aria-label={triggerAriaLabel}
-        className={triggerClassName ?? 'ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-red-500 hover:text-red-700'}
+        aria-label={triggerName}
+        className={triggerClassName ?? 'ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-bad hover:text-bad-strong'}
       >
         {triggerLabel}
       </button>
@@ -103,11 +107,11 @@ export function ConfirmButton({
   return (
     <IconButton
       ref={triggerRef}
-      label={triggerAriaLabel}
+      label={triggerName}
       icon={<X size={14} strokeWidth={2} />}
       onClick={() => setConfirming(true)}
       disabled={disabled}
-      className={triggerClassName ?? 'ui-btn ui-btn-ghost text-red-500 hover:text-red-700'}
+      className={triggerClassName ?? 'ui-btn ui-btn-ghost text-bad hover:text-bad-strong'}
     />
   )
 }

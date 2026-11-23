@@ -38,7 +38,7 @@ describe('PreferencesPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: /Preferred day off/ }))
     await user.click(await screen.findByRole('option', { name: 'Friday' }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save preferences' }))
 
     expect(shiftPlanApi.setPreference).toHaveBeenCalledWith(PUMP_ID, member.id, nightShift.id, 'FRIDAY')
   })

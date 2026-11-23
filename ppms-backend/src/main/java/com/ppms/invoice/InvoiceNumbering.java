@@ -1,6 +1,8 @@
 package com.ppms.invoice;
 
+import java.util.Map;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 
 import java.time.LocalDate;
 import java.time.Month;
@@ -23,7 +25,9 @@ public final class InvoiceNumbering {
     public static String invoiceNumber(String prefix, String financialYear, int sequenceNumber) {
         String number = prefix + "/" + financialYear.substring(2) + "/" + String.format("%04d", sequenceNumber);
         if (number.length() > MAX_INVOICE_NUMBER_LENGTH) {
-            throw new BusinessException("Invoice number " + number + " would be longer than "
+            throw new BusinessException(ErrorCodes.INVOICE_NUMBER_TOO_LONG,
+                    Map.of("invoiceNumber", number, "max", MAX_INVOICE_NUMBER_LENGTH),
+                    "Invoice number " + number + " would be longer than "
                     + MAX_INVOICE_NUMBER_LENGTH + " characters. Use a shorter invoice prefix in pump setup.");
         }
         return number;

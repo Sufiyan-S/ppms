@@ -1,13 +1,15 @@
-import { Check, X, Circle } from 'lucide-react'
+import { Check, X, Circle, Moon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { SkeletonTable } from '../../../components/Skeleton'
 import { Reveal } from '../../../components/Reveal'
 import { IconButton } from '../../../components/IconButton'
-import { SHIFT_ROW_COLORS, STATUS_BADGE, formatDay } from './planningHelpers'
+import { SHIFT_ROW_ACCENTS, STATUS_BADGE, formatDay, formatShiftWindow } from './planningHelpers'
 import type { ShiftPlanning } from './useShiftPlanning'
 import { ScrollRegion } from '../../../components/ScrollRegion'
 
 export function PlanningGrid({ form }: { form: ShiftPlanning }) {
+  const { t } = useTranslation(['shifts', 'common'])
   const { isOwnerOrAdmin, setEditSlot, slotError, setSlotError, addOpId, setAddOpId, operatorStaff, staffById, plan, planLoading, sortedDefs, removeEntryMutation, addEntryMutation, days, today, entryMap, actualMap, isEditingSlot } = form
   return (
              <Reveal delay={200}>
@@ -17,28 +19,28 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                <>
                  {/* No-plan notice for future weeks */}
                  {!plan && days.some(d => d >= today) && (
-                   <div className="ui-card-plain ui-card-muted px-5 py-3 text-sm text-slate-500 text-center">
+                   <div className="ui-card-plain ui-card-muted px-5 py-3 text-sm text-ink-3 text-center">
                      {isOwnerOrAdmin ? (
                        <>
-                         No plan generated for this week yet.{' '}
-                         <span className="text-blue-600 font-medium">Click "Auto-generate" to create a schedule.</span>
+                         {t('planning.grid.noPlanOwner')}{' '}
+                         <span className="text-primary font-medium">{t('planning.grid.noPlanHint')}</span>
                        </>
-                     ) : 'No plan published for this week yet.'}
+                     ) : t('planning.grid.noPlanStaff')}
                    </div>
                  )}
 
-                 <ScrollRegion label="Weekly shift plan" className="ui-card p-0 overflow-x-auto">
+                 <ScrollRegion label={t('planning.grid.regionLabel')} className="ui-card p-0 overflow-x-auto">
                    <table className="w-full text-xs border-collapse min-w-[640px]">
                      <thead>
-                       <tr className="border-b border-slate-100">
-                         <th scope="col" className="w-28 text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                           Shift
+                       <tr className="border-b border-border">
+                         <th scope="col" className="ui-plan-shift-cell text-left text-xs font-semibold text-ink-2">
+                           {t('planning.grid.shift')}
                          </th>
                          {days.map(day => (
-                           <th scope="col" key={day} className={`px-2 py-3 text-center font-semibold ${day < today ? 'text-slate-500' : 'text-slate-600'}`}>
+                           <th scope="col" key={day} className={`px-2 py-3 text-center font-semibold ${day < today ? 'text-ink-3' : 'text-ink-2'}`}>
                              {formatDay(day)}
                              {day < today && (
-                               <div className="text-xs font-normal text-slate-500 mt-0.5">actual</div>
+                               <div className="text-xs font-normal text-ink-3 mt-0.5">{t('planning.grid.actual')}</div>
                              )}
                            </th>
                          ))}
@@ -47,23 +49,30 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                      <tbody>
                        {sortedDefs.length === 0 ? (
                          <tr>
-                           <td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-500">
-                             No shift definitions configured for this pump. Set them up in Pump Setup first.
+                           <td colSpan={8} className="px-3 py-6 text-center text-sm text-ink-3">
+                             {t('planning.grid.noDefinitions')}
                            </td>
                          </tr>
                        ) : sortedDefs.map((def, defIdx) => {
-                         const colors = SHIFT_ROW_COLORS[defIdx % SHIFT_ROW_COLORS.length]
+                         const accent = SHIFT_ROW_ACCENTS[defIdx % SHIFT_ROW_ACCENTS.length]
                          return (
-                           <tr key={def.id} className={`border-b border-slate-100 ${colors.bg}`}>
-                             <td className={`px-3 py-3 font-semibold ${colors.text} align-top`}>
-                               {def.name}
-                               {def.isNightShift && (
-                                 <span className="ml-1 text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-medium">Night</span>
-                               )}
-                               <div className="font-normal text-slate-500 text-xs mt-0.5 leading-tight">
-                                 {def.windowLabel}
-                               </div>
-                             </td>
+                           <tr key={def.id} className="border-b border-border">
+                             <th scope="row" className={`ui-plan-shift-cell text-left font-normal ${accent}`}>
+                               <span className="flex items-center gap-1.5 text-sm font-semibold leading-5 text-ink">
+                                 {def.name}
+                                 {def.isNightShift && (
+                                   <span role="img" aria-label={t('planning.grid.nightShift')} title={t('planning.grid.nightShift')} className="inline-flex text-ink-3">
+                                     <Moon size={14} strokeWidth={2} aria-hidden="true" />
+                                   </span>
+                                 )}
+                               </span>
+                               <span className="mt-0.5 block whitespace-nowrap text-xs text-ink-3 tabular-nums">
+                                 {formatShiftWindow(def)}
+                                 {def.crossesMidnight && (
+                                   <span className="ml-1 font-medium text-ink-2">{t('planning.grid.nextDay')}</span>
+                                 )}
+                               </span>
+                             </th>
                              {days.map(day => {
                                const slotEntries = entryMap[day]?.[def.id] ?? []
                                const actualOpIds = actualMap[day]?.[def.id] ?? []
@@ -75,7 +84,7 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                )
 
                                return (
-                                 <td key={day} className={`px-2 py-2 align-top ${isPast ? 'opacity-80' : ''}`}>
+                                 <td key={day} className={`ui-plan-day-cell ${isPast ? 'opacity-80' : ''}`}>
                                    <div className="space-y-1">
                                      {isPast ? (
                                        // Past date: show confirmed (actually worked) + absent (planned but didn't show)
@@ -84,26 +93,26 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                            e => !actualOpIds.includes(e.operatorUserId)
                                          )
                                          if (actualOpIds.length === 0 && absentEntries.length === 0) {
-                                           return <span className="text-slate-500 text-xs italic">No shift</span>
+                                           return <span className="text-ink-3 text-xs italic">{t('planning.grid.noShift')}</span>
                                          }
                                          return (
                                            <>
                                              {actualOpIds.map(opId => (
-                                               <div key={opId} className="flex items-center gap-1">
-                                                 <span className="truncate text-slate-600 font-medium">
+                                               <div key={opId} className="flex min-h-5 items-center gap-1">
+                                                 <span className="truncate text-ink-2 font-medium">
                                                    {staffById[opId]?.fullName ?? `#${opId}`}
                                                  </span>
-                                                 <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-emerald-100 text-emerald-700">
+                                                 <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-ok-bg text-ok">
                                                    <Check size={10} strokeWidth={2.5} />
                                                  </span>
                                                </div>
                                              ))}
                                              {absentEntries.map(entry => (
-                                               <div key={`absent-${entry.id}`} className="flex items-center gap-1">
-                                                 <span className="truncate text-slate-500 font-medium">
+                                               <div key={`absent-${entry.id}`} className="flex min-h-5 items-center gap-1">
+                                                 <span className="truncate text-ink-3 font-medium">
                                                    {staffById[entry.operatorUserId]?.fullName ?? `#${entry.operatorUserId}`}
                                                  </span>
-                                                 <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600">
+                                                 <span className="ml-auto flex items-center px-1.5 py-0.5 rounded-full shrink-0 bg-bad-bg text-bad">
                                                    <X size={10} strokeWidth={2.5} />
                                                  </span>
                                                </div>
@@ -115,8 +124,8 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                        // Future / today: show plan entries
                                        <>
                                          {slotEntries.map(entry => (
-                                           <div key={entry.id} className="flex items-center gap-1 group">
-                                             <span className="truncate text-slate-700 font-medium">
+                                           <div key={entry.id} className="flex min-h-5 items-center gap-1 group">
+                                             <span className="truncate text-ink font-medium">
                                                {staffById[entry.operatorUserId]?.fullName ?? `#${entry.operatorUserId}`}
                                              </span>
                                              <span className={`ml-auto text-xs px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_BADGE[entry.status]}`}>
@@ -126,8 +135,8 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                                <IconButton
                                                  onClick={() => removeEntryMutation.mutate({ entryId: entry.id })}
                                                  disabled={removeEntryMutation.isPending}
-                                                 className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-slate-500 hover:text-red-500 transition-all ml-0.5 shrink-0"
-    label="Remove from plan"
+                                                 className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-ink-3 hover:text-bad transition-all ml-0.5 shrink-0"
+    label={t('planning.grid.removeFromPlan')}
     icon={<X size={11} strokeWidth={2} />}
     />
                                              )}
@@ -139,19 +148,19 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                            <button
                                              type="button"
                                              onClick={() => { setEditSlot({ date: day, shiftDefinitionId: def.id }); setSlotError(null); setAddOpId('') }}
-                                             className="text-slate-500 hover:text-blue-500 transition-colors text-xs"
-                                             title="Add operator"
+                                             className="text-ink-3 hover:text-primary transition-colors text-xs"
+                                             title={t('planning.grid.addOperator')}
                                            >
-                                             + Add
+                                             {t('planning.grid.addShort')}
                                            </button>
                                          )}
 
                                          {isEditing && (
                                            <div className="mt-1 space-y-1">
-                                             <SearchableSelect label="Operator to add"
+                                             <SearchableSelect label={t('planning.grid.operatorToAdd')}
                                                value={addOpId}
                                                onChange={v => setAddOpId(v)}
-                                               placeholder="— pick operator —"
+                                               placeholder={t('planning.grid.pickOperator')}
                                                size="sm"
                                                options={availableToAdd.map(s => ({ value: s.id.toString(), label: s.fullName }))}
                                              />
@@ -160,14 +169,14 @@ export function PlanningGrid({ form }: { form: ShiftPlanning }) {
                                                  type="button"
                                                  onClick={() => addOpId && addEntryMutation.mutate({ opId: Number(addOpId) })}
                                                  disabled={!addOpId || addEntryMutation.isPending}
-                                                 className="ui-btn ui-btn-primary min-h-0 px-2 py-1 text-xs disabled:bg-blue-300"
+                                                 className="ui-btn ui-btn-primary min-h-0 px-2 py-1 text-xs disabled:opacity-60"
                                                >
-                                                 Add
+                                                 {t('common:actions.add')}
                                                </button>
                                                <IconButton
                                                  onClick={() => { setEditSlot(null); setSlotError(null) }}
                                                  className="ui-btn ui-btn-secondary px-2 py-1 text-xs"
-    label="Cancel"
+    label={t('common:actions.cancel')}
     icon={<X size={12} strokeWidth={2} />}
     />
                                              </div>

@@ -1,0 +1,46 @@
+{
+  "page": {
+    "title": "Compliance Documents",
+    "subtitle": "Track licences, permits, and certificates",
+    "addButton": "Add document",
+    "documentCount_one": "{{count}} document",
+    "documentCount_other": "{{count}} documents"
+  },
+  "alert": {
+    "title": "Compliance attention needed",
+    "expired_one": "{{count}} document expired.",
+    "expired_other": "{{count}} documents expired.",
+    "expiringSoon_one": "{{count}} document expiring within 30 days.",
+    "expiringSoon_other": "{{count}} documents expiring within 30 days."
+  },
+  "form": {
+    "editTitle": "Edit document",
+    "addTitle": "Add document",
+    "subtitle": "Store expiry dates, document types, and notes in one place.",
+    "name": "Document name",
+    "type": "Document type",
+    "expiryDate": "Expiry date",
+    "update": "Save document",
+    "add": "Add document",
+    "typeHelp": "For example licence, certificate or permit",
+    "nameRequired": "Enter the document name",
+    "typeRequired": "Enter the document type"
+  },
+  "list": {
+    "title": "All Documents ({{count}})",
+    "empty": "No documents added yet. Add your licences and permits to track their expiry.",
+    "expires": "Expires: {{date}}",
+    "noExpiry": "No expiry",
+    "deleteNamed": "Delete {{name}}",
+    "filtersLabel": "Document filters",
+    "shownOf": "Showing {{count}} of {{total}}",
+    "noneWithStatus": "No documents with this status."
+  },
+  "toast": {
+    "updated": "Document updated.",
+    "added": "Document added.",
+    "saveFailed": "Failed to save document",
+    "deleted": "Document deleted.",
+    "deleteFailed": "Failed to delete document"
+  }
+}

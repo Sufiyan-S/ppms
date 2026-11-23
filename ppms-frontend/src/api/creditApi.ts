@@ -27,13 +27,17 @@ export interface CreditClient {
 }
 
 export interface CreditTransaction {
-  type: 'SALE' | 'PAYMENT' | 'INTEREST'
+  /** SALE is fuel on credit; COUNTER_SALE is a shop product sold on credit. */
+  type: 'SALE' | 'COUNTER_SALE' | 'PAYMENT' | 'INTEREST'
   referenceId: number
   reference: string | null
+  /** Set when the server wrote the reference (INTEREST rows), for translated screens. */
+  referenceCode: string | null
+  referenceParams: Record<string, unknown>
   detail: string | null
   amount: number
   runningBalance: number
-  /** When the row was recorded; the ledger is ordered by this. */
+  /** When the row was recorded; rows of the same business date are ordered by this. */
   occurredAt: string
   /** IST date (YYYY-MM-DD) the row belongs to; for a payment, the date the client paid. */
   businessDate: string
@@ -58,6 +62,8 @@ export interface ApplyInterestResponse {
   periodFrom?: string
   periodTo?: string
   reason?: string
+  reasonCode?: string
+  reasonParams?: Record<string, unknown>
 }
 
 export interface CreditPayment {
@@ -97,7 +103,7 @@ export interface CreditExtension {
   expiryDate: string  // YYYY-MM-DD
   grantedByUserId: number
   reason: string
-  status: 'ACTIVE' | 'EXPIRED'
+  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED'
   createdAt: string
 }
 
@@ -153,6 +159,51 @@ export interface GenerateAllInvoicesResult {
   failedClientIds: number[]
 }
 
+export type CreditStanding = 'OK' | 'OVERDUE' | 'OVER_LIMIT' | 'INACTIVE'
+
+/** One standalone or parent account; a parent's figures cover its sub-accounts. */
+export interface CreditAgingRow {
+  clientId: number
+  name: string
+  phone: string | null
+  subAccountCount: number
+  billingCycle: 'WEEKLY' | 'MONTHLY'
+  /** 0 = no limit. */
+  creditLimit: number
+  outstanding: number
+  upTo30Days: number
+  days31To60: number
+  days61To90: number
+  over90Days: number
+  /** Earliest sale still carrying part of the balance (YYYY-MM-DD). */
+  oldestUnpaidSaleDate: string | null
+  lastPaymentDate: string | null
+  /** Days past the billing cycle; 0 when not overdue. */
+  daysOverdue: number
+  creditStatus: CreditStanding
+  pendingPaymentCount: number
+  pendingPaymentAmount: number
+}
+
+export interface CreditAging {
+  summary: {
+    totalOutstanding: number
+    overdueAmount: number
+    overSixtyAmount: number
+    overdueCount: number
+    overLimitCount: number
+    pendingApprovalCount: number
+  }
+  clients: CreditAgingRow[]
+}
+
+export interface InvoiceRunPreview {
+  clientsToInvoice: number
+  totalAmount: number
+  /** False when the pump has no GSTIN, legal name or invoice prefix, so nothing can be issued. */
+  gstDetailsComplete: boolean
+}
+
 export const creditApi = {
   // Returns all clients with outstanding balances
   getLedgerSummary: (pumpId: number) =>
@@ -166,11 +217,14 @@ export const creditApi = {
   getAllTransactions: (pumpId: number, clientId: number, includeChildren = false) =>
     client.get<CreditTransaction[]>(`/pumps/${pumpId}/credit-ledger/${clientId}/transactions/all`, { params: { includeChildren } }).then(r => r.data),
 
+  getAging: (pumpId: number) =>
+    client.get<CreditAging>(`/pumps/${pumpId}/credit-ledger/aging`).then(r => r.data),
+
   getPendingPayments: (pumpId: number) =>
     client.get<CreditPayment[]>(`/pumps/${pumpId}/credit-ledger/payments/pending`).then(r => r.data),
 
-  approvePayment: (pumpId: number, paymentId: number, status: 'APPROVED' | 'REJECTED') =>
-    client.patch<CreditPayment>(`/pumps/${pumpId}/credit-ledger/payments/${paymentId}/approve`, { status }).then(r => r.data),
+  approvePayment: (pumpId: number, paymentId: number, status: 'APPROVED' | 'REJECTED', reason?: string) =>
+    client.patch<CreditPayment>(`/pumps/${pumpId}/credit-ledger/payments/${paymentId}/approve`, { status, reason }).then(r => r.data),
 
   // Records a payment against a client's balance
   recordPayment: (pumpId: number, clientId: number, req: RecordPaymentRequest) =>
@@ -197,9 +251,9 @@ export const creditApi = {
       failedClientIds: number[]
     }>(`/pumps/${pumpId}/credit-ledger/interest/apply-all`).then(r => r.data),
 
-  // Permanently deletes an interest charge row from the ledger (Owner/Admin only)
-  deleteInterestCharge: (pumpId: number, clientId: number, chargeId: number) =>
-    client.delete(`/pumps/${pumpId}/credit-ledger/${clientId}/interest/${chargeId}`),
+  // Waives an interest charge with a reason; the row stays on the ledger but is no longer owed (Owner/Admin only)
+  waiveInterestCharge: (pumpId: number, clientId: number, chargeId: number, reason: string) =>
+    client.patch(`/pumps/${pumpId}/credit-ledger/${clientId}/interest/${chargeId}/waive`, { reason }),
 
   // Total interest ever recovered for a client (parent = includes all sub-accounts)
   getTotalInterestRecovered: (pumpId: number, clientId: number): Promise<number> =>
@@ -220,6 +274,11 @@ export const creditApi = {
   createExtension: (pumpId: number, clientId: number, req: CreateExtensionRequest) =>
     client.post<CreditExtension>(`/pumps/${pumpId}/credit-clients/${clientId}/extensions`, req).then(r => r.data),
 
+  // Withdraws an active extension before it expires, with a reason (Admin/Owner only)
+  revokeExtension: (pumpId: number, clientId: number, extensionId: number, reason: string) =>
+    client.post<CreditExtension>(`/pumps/${pumpId}/credit-clients/${clientId}/extensions/${extensionId}/revoke`, { reason })
+      .then(r => r.data),
+
   // ── Credit invoices ─────────────────────────────────────────────────────────
 
   listInvoices: (pumpId: number, clientId: number, page = 0, size = 10) =>
@@ -232,6 +291,9 @@ export const creditApi = {
   generateInvoice: (pumpId: number, clientId: number, period: InvoicePeriod) =>
     client.post<CreditInvoice>(`/pumps/${pumpId}/credit-invoices`, { clientId, ...period }).then(r => r.data),
 
+  previewInvoicesForAllClients: (pumpId: number, period: InvoicePeriod) =>
+    client.get<InvoiceRunPreview>(`/pumps/${pumpId}/credit-invoices/generate-all/preview`, { params: period }).then(r => r.data),
+
   generateInvoicesForAllClients: (pumpId: number, period: InvoicePeriod) =>
     client.post<GenerateAllInvoicesResult>(`/pumps/${pumpId}/credit-invoices/generate-all`, period).then(r => r.data),
 
@@ -241,4 +303,8 @@ export const creditApi = {
   // Same-origin page; the browser sends the session cookie when it is opened in a new tab
   invoicePrintUrl: (pumpId: number, invoiceId: number) =>
     `/api/pumps/${pumpId}/credit-invoices/${invoiceId}/print`,
+
+  // Same-origin printable statement for the period, opened in a new tab
+  statementUrl: (pumpId: number, clientId: number, period: { fromDate: string; toDate: string }) =>
+    `/api/pumps/${pumpId}/credit-ledger/${clientId}/statement?${new URLSearchParams(period).toString()}`,
 }

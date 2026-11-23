@@ -29,7 +29,8 @@ export function useLedgerFilters(
   )
 
   const applyFilters = useCallback((tx: { type: string; businessDate: string }): boolean => {
-    if (txTypeFilter !== 'ALL' && tx.type !== txTypeFilter) return false
+    const filterType = tx.type === 'COUNTER_SALE' ? 'SALE' : tx.type
+    if (txTypeFilter !== 'ALL' && filterType !== txTypeFilter) return false
     if (filterMode === 'month' && selectedMonth) return getMonthKey(tx.businessDate) === selectedMonth
     if (filterMode === 'range') {
       if (fromDate && tx.businessDate < fromDate) return false

@@ -1,20 +1,51 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { shiftDefinitionApi } from '../../../api/shiftDefinitionApi'
 import type { CreateShiftDefinitionRequest } from '../../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { IconButton } from '../../../components/IconButton'
-import { subtractOneMinute, TIME_OPTS, SORT_ORDER_OPTS, defaultRows } from './shiftDefinitionRows'
+import { FormField } from '../../../components/FormField'
+import { FormGrid } from '../../../components/layout/FormGrid'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { subtractOneMinute, TIME_OPTS, SORT_ORDER_OPTS, defaultRows, shiftLength } from './shiftDefinitionRows'
 import type { ShiftRow } from './shiftDefinitionRows'
 
+/** Which date field a validation message belongs under; anything else is shown above the buttons. */
+interface FormErrors {
+  startDate?: string
+  endDate?: string
+  form?: string
+}
+
+/** The row's length, "8h" or "8h 30m", with "ends next day" for a night shift past midnight, or the mistake to fix. */
+function RowLength({ row, id }: { row: ShiftRow; id: string }) {
+  const { t } = useTranslation(['setup', 'common'])
+  const length = shiftLength(row)
+  if (!length) {
+    return <p id={id} className="ui-error-text mt-0">{t('shiftDefs.form.endsBeforeStartShort')}</p>
+  }
+  const duration = length.minutes === 0
+    ? t('shiftDefs.form.hours', { hours: length.hours })
+    : t('common:duration.hoursMinutes', { hours: length.hours, minutes: length.minutes })
+  return (
+    <p id={id} className="text-xs text-ink-3 tabular-nums">
+      {length.endsNextDay ? t('shiftDefs.form.lengthNextDay', { duration }) : duration}
+    </p>
+  )
+}
+
 export function CreateShiftBatchForm({ pumpId, onClose }: { pumpId: number; onClose: () => void }) {
+  const { t } = useTranslation(['setup', 'common'])
   const qc = useQueryClient()
+  const titleId = useId()
+  const rowIdPrefix = useId()
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [hasEndDate, setHasEndDate] = useState(false)
   const [effectiveTo, setEffectiveTo] = useState('')
   const [rows, setRows] = useState<ShiftRow[]>(defaultRows)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [errors, setErrors] = useState<FormErrors>({})
 
   const createMutation = useMutation({
     mutationFn: (reqs: CreateShiftDefinitionRequest[]) =>
@@ -25,7 +56,7 @@ export function CreateShiftBatchForm({ pumpId, onClose }: { pumpId: number; onCl
       onClose()
     },
     onError: (err) => {
-      setFormError(parseApiError(err, 'Failed to save shift definitions'))
+      setErrors({ form: parseApiError(err, t('shiftDefs.form.saveFailed')) })
     },
   })
 
@@ -43,19 +74,17 @@ export function CreateShiftBatchForm({ pumpId, onClose }: { pumpId: number; onCl
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
 
   const handleSubmit = () => {
-    setFormError(null)
-    if (!effectiveFrom) { setFormError('Start date (Effective From) is required'); return }
-    if (hasEndDate && !effectiveTo) { setFormError('End date is required when "Has end date" is checked'); return }
-    if (hasEndDate && effectiveTo <= effectiveFrom) { setFormError('End date must be after the start date'); return }
-    if (rows.some(r => !r.name.trim())) { setFormError('Each shift must have a name'); return }
+    setErrors({})
+    if (!effectiveFrom) { setErrors({ startDate: t('shiftDefs.form.startRequired') }); return }
+    if (hasEndDate && !effectiveTo) { setErrors({ endDate: t('shiftDefs.form.endRequired') }); return }
+    if (hasEndDate && effectiveTo <= effectiveFrom) { setErrors({ endDate: t('shiftDefs.form.endAfterStart') }); return }
+    if (rows.some(r => !r.name.trim())) { setErrors({ form: t('shiftDefs.form.nameRequired') }); return }
 
     // Guard: only the night shift is allowed to cross midnight (endTime < startTime).
     // If a non-night shift has end < start, the user almost certainly picked AM instead of PM.
     const badRow = rows.find(r => !r.isNightShift && r.endTime <= r.startTime)
     if (badRow) {
-      setFormError(
-        `"${badRow.name}" ends before it starts. Only the Night shift can cross midnight. Did you select AM instead of PM?`
-      )
+      setErrors({ form: t('shiftDefs.form.endsBeforeStart', { name: badRow.name }) })
       return
     }
 
@@ -75,55 +104,56 @@ export function CreateShiftBatchForm({ pumpId, onClose }: { pumpId: number; onCl
   }
 
   return (
-    <div className="ui-card-plain p-4 space-y-4">
-      <h3 className="text-sm font-semibold text-slate-700">New Shift Schedule</h3>
+    <section aria-labelledby={titleId} className="ui-card-plain p-4 space-y-4">
+      <div>
+        <h3 id={titleId} className="text-sm font-semibold text-ink">{t('shiftDefs.form.title')}</h3>
+        <p className="mt-0.5 text-xs text-ink-3">{t('shiftDefs.form.overlapHint')}</p>
+      </div>
 
-      {/* Date range */}
-      <div className="grid grid-cols-2 gap-3">
+      <FormGrid>
+        <FormField label={t('shiftDefs.form.startDate')} error={errors.startDate}>
+          <input
+            type="date"
+            value={effectiveFrom}
+            onChange={e => setEffectiveFrom(e.target.value)}
+            className="text-sm"
+          />
+        </FormField>
         <div>
-          <label className="block">
-            <span className="ui-label">Start Date <span className="text-red-400">*</span></span>
+          <FormField
+            label={t('shiftDefs.form.endDate')}
+            error={errors.endDate}
+            help={hasEndDate ? undefined : t('shiftDefs.form.openEnded')}
+          >
             <input
               type="date"
-              value={effectiveFrom}
-              onChange={e => setEffectiveFrom(e.target.value)}
-              className="text-sm"
+              value={effectiveTo}
+              onChange={e => setEffectiveTo(e.target.value)}
+              disabled={!hasEndDate}
+              min={effectiveFrom || undefined}
+              className="text-sm disabled:bg-bg disabled:text-ink-3"
             />
+          </FormField>
+          <label className="ui-inline-check">
+            <input
+              type="checkbox"
+              checked={hasEndDate}
+              onChange={e => { setHasEndDate(e.target.checked); if (!e.target.checked) setEffectiveTo('') }}
+            />
+            <span>{t('shiftDefs.form.setEndDate')}</span>
           </label>
         </div>
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="ui-label mb-0">End Date</span>
-            <label className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={hasEndDate}
-                onChange={e => { setHasEndDate(e.target.checked); if (!e.target.checked) setEffectiveTo('') }}
-                className="w-3 h-3 accent-blue-600"
-              />
-              Set end date
-            </label>
-          </div>
-          <input aria-label="End date"
-            type="date"
-            value={effectiveTo}
-            onChange={e => setEffectiveTo(e.target.value)}
-            disabled={!hasEndDate}
-            min={effectiveFrom || undefined}
-            className="text-sm disabled:bg-slate-50 disabled:text-slate-400"
-          />
-          {!hasEndDate && (
-            <p className="text-xs text-slate-500 mt-1">Open-ended — no expiry date</p>
-          )}
-        </div>
-      </div>
-      <p className="text-xs text-slate-500 -mt-2">
-        Any previously open schedule will be automatically closed on the day before the start date.
-        You cannot create two schedules with overlapping date ranges.
-      </p>
+      </FormGrid>
 
-      {/* Shift rows */}
       <div className="space-y-3">
+        <div aria-hidden="true" className="hidden gap-2 md:grid md:grid-cols-[minmax(0,12rem)_minmax(8.5rem,1fr)_auto_minmax(8.5rem,1fr)_minmax(6.5rem,7.5rem)_auto]">
+          <span className="ui-label mb-0">{t('shiftDefs.form.shiftName')}</span>
+          <span className="ui-label mb-0">{t('shiftDefs.form.startTime')}</span>
+          <span />
+          <span className="ui-label mb-0">{t('shiftDefs.form.endTime')}</span>
+          <span className="ui-label mb-0">{t('shiftDefs.form.displayOrder')}</span>
+          <span />
+        </div>
         {rows.map((row, idx) => {
           const otherRows = rows.filter((_, i) => i !== idx)
           // Only block times used by rows that have been named — unnamed rows have default
@@ -133,86 +163,84 @@ export function CreateShiftBatchForm({ pumpId, onClose }: { pumpId: number; onCl
           const usedEnds   = new Set(configuredOtherRows.map(r => r.endTime))
           const startOpts  = TIME_OPTS.filter(o => !usedStarts.has(o.value))
           const endOpts    = TIME_OPTS.filter(o => !usedEnds.has(o.value))
+          const lengthId = `${rowIdPrefix}-length-${idx}`
           return (
-          <div key={idx} className="grid gap-2 items-center md:grid-cols-[minmax(0,12rem)_minmax(8.5rem,1fr)_auto_minmax(8.5rem,1fr)_minmax(6.5rem,7.5rem)_auto]">
-            <input aria-label="Shift name"
-              placeholder="Name (e.g. Morning)"
-              value={row.name}
-              onChange={e => updateRow(idx, { name: e.target.value })}
-              className="min-w-0 text-sm md:max-w-[12rem]"
-            />
-            <SearchableSelect label="Start time"
-              value={row.startTime}
-              onChange={v => updateRow(idx, { startTime: v })}
-              options={startOpts}
-              size="sm"
-              className="min-w-0"
-            />
-            <span className="text-xs text-slate-500">→</span>
-            <SearchableSelect label="End time"
-              value={row.endTime}
-              onChange={v => updateRow(idx, { endTime: v })}
-              options={endOpts}
-              size="sm"
-              className="min-w-0"
-            />
-            <SearchableSelect label="Display order"
-              value={String(row.sortOrder)}
-              onChange={v => updateRow(idx, { sortOrder: Number(v) })}
-              options={SORT_ORDER_OPTS}
-              size="sm"
-              className="min-w-0"
-            />
-            <div className="flex items-center gap-1.5">
-              <input
-                id={`night-${idx}`}
-                type="checkbox"
-                checked={row.isNightShift}
-                onChange={e => updateRow(idx, { isNightShift: e.target.checked })}
-                className="w-3.5 h-3.5 accent-indigo-600"
+          <div key={idx} className="space-y-1">
+            <div className="grid gap-2 items-center md:grid-cols-[minmax(0,12rem)_minmax(8.5rem,1fr)_auto_minmax(8.5rem,1fr)_minmax(6.5rem,7.5rem)_auto]">
+              <input aria-label={t('shiftDefs.form.shiftName')}
+                aria-describedby={lengthId}
+                placeholder={t('shiftDefs.form.shiftNamePlaceholder')}
+                value={row.name}
+                onChange={e => updateRow(idx, { name: e.target.value })}
+                className="min-w-0 text-sm md:max-w-48"
               />
-              <label htmlFor={`night-${idx}`} className="text-xs text-slate-600 select-none">Night</label>
-              {rows.length > 1 && (
-                <IconButton onClick={() => removeRow(idx)} className="ui-btn ui-btn-ghost ml-1 text-base leading-none text-red-400 hover:text-red-600"
-                  label="Remove row"
-                  icon={'×'}
-                />
-              )}
+              <SearchableSelect label={t('shiftDefs.form.startTime')}
+                value={row.startTime}
+                onChange={v => updateRow(idx, { startTime: v })}
+                options={startOpts}
+                size="sm"
+                className="min-w-0"
+              />
+              <span aria-hidden="true" className="text-xs text-ink-3">→</span>
+              <SearchableSelect label={t('shiftDefs.form.endTime')}
+                value={row.endTime}
+                onChange={v => updateRow(idx, { endTime: v })}
+                options={endOpts}
+                size="sm"
+                className="min-w-0"
+              />
+              <SearchableSelect label={t('shiftDefs.form.displayOrder')}
+                value={String(row.sortOrder)}
+                onChange={v => updateRow(idx, { sortOrder: Number(v) })}
+                options={SORT_ORDER_OPTS}
+                size="sm"
+                className="min-w-0"
+              />
+              <div className="flex items-center gap-1.5">
+                <label className="ui-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={row.isNightShift}
+                    onChange={e => updateRow(idx, { isNightShift: e.target.checked })}
+                  />
+                  <span>{t('shiftDefs.night')}</span>
+                </label>
+                {rows.length > 1 && (
+                  <IconButton onClick={() => removeRow(idx)} className="ui-btn ui-btn-ghost ml-1 text-base leading-none text-ink-3"
+                    label={t('shiftDefs.form.removeRow')}
+                    icon={'×'}
+                  />
+                )}
+              </div>
             </div>
+            <RowLength row={row} id={lengthId} />
           </div>
           )
         })}
       </div>
 
       {rows.length < 4 && (
-        <button
-          type="button"
-          onClick={addRow}
-          className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
-        >
-          + Add another shift
+        <button type="button" onClick={addRow} className="ui-text-action text-sm">
+          {t('shiftDefs.form.addShift')}
         </button>
       )}
 
-      {formError && <p role="alert" className="ui-error-text">{formError}</p>}
+      {errors.form && <p role="alert" className="ui-error-text">{errors.form}</p>}
 
-      <div className="flex gap-2 pt-1">
-        <button
+      <div className="flex flex-wrap gap-2 pt-1">
+        <LoadingButton
           type="button"
+          isLoading={createMutation.isPending}
+          loadingLabel={t('common:actions.saving')}
           onClick={handleSubmit}
-          disabled={createMutation.isPending}
-          className="ui-btn ui-btn-primary"
+          className="ui-btn-primary"
         >
-          {createMutation.isPending ? 'Saving…' : 'Save Schedule'}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ui-btn ui-btn-secondary"
-        >
-          Cancel
+          {t('shiftDefs.form.save')}
+        </LoadingButton>
+        <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+          {t('common:actions.cancel')}
         </button>
       </div>
-    </div>
+    </section>
   )
 }

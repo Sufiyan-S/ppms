@@ -1,17 +1,28 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
-import { X } from 'lucide-react'
 import { ancillaryApi } from '../../api/ancillaryApi'
 import type { CreateProductRequest, UnitOfMeasure } from '../../api/ancillaryApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
-import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
+import { NumericInput } from '../../components/NumericInput'
+import { FormField } from '../../components/FormField'
+import { FormGrid } from '../../components/layout/FormGrid'
+import { LoadingButton } from '../../components/LoadingButton'
+import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
-import { ReviewRow } from './ReviewRow'
+import { ReviewList, ReviewRow } from './ReviewRow'
 import { UNITS } from './ancillaryFormat'
 import { isValidHsnCode } from '../../utils/gst'
 
+interface FieldErrors {
+  name?: string
+  packageSize?: string
+  hsnCode?: string
+}
+
+/** Adds a counter product: name, pack and stock alert, then a review step before creating it. */
 export function AddProductDialog({
   pumpId, onClose, onSuccess,
 }: {
@@ -19,23 +30,26 @@ export function AddProductDialog({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { t } = useTranslation(['ancillary', 'common'])
   const { addToast } = useToastStore()
+  const stillNeededId = useId()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<CreateProductRequest>({
     name: '', brand: '', variant: '', hsnCode: '',
     packageSize: 1, unitOfMeasure: 'PIECE',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [serverError, setServerError] = useState<string | null>(null)
 
   const createMutation = useMutation({
     mutationFn: (data: CreateProductRequest) => ancillaryApi.createProduct(pumpId, data),
     onSuccess: () => {
-      addToast('Product created successfully', 'success')
+      addToast(t('addProduct.created'), 'success')
       onSuccess()
     },
     onError: (err) => {
-      const msg = parseApiError(err, 'Failed to create product')
-      setError(msg)
+      const msg = parseApiError(err, t('addProduct.createFailed'))
+      setServerError(msg)
       addToast(msg, 'error')
     },
   })
@@ -46,27 +60,26 @@ export function AddProductDialog({
   const normalizedThreshold = form.lowStockThreshold && form.lowStockThreshold > 0 ? form.lowStockThreshold : undefined
   const normalizedHsnCode = form.hsnCode?.trim() || undefined
 
-  const validate = () => {
-    if (!normalizedName) return 'Product name is required'
-    if (!form.packageSize || form.packageSize <= 0) return 'Package size must be greater than 0'
-    if (!isValidHsnCode(form.hsnCode ?? '')) return 'HSN code must be 4 to 8 digits'
-    return null
+  const validate = (): FieldErrors => {
+    const errors: FieldErrors = {}
+    if (!normalizedName) errors.name = t('addProduct.nameMissing')
+    if (!form.packageSize || form.packageSize <= 0) errors.packageSize = t('addProduct.packageSizePositive')
+    if (!isValidHsnCode(form.hsnCode ?? '')) errors.hsnCode = t('validation.hsnInvalid')
+    return errors
   }
 
-  const handleReview = () => {
-    const validationError = validate()
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-    setError(null)
+  const handleReview = (e: React.FormEvent) => {
+    e.preventDefault()
+    const errors = validate()
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) return
+    setServerError(null)
     setStep('review')
   }
 
   const handleCreate = () => {
-    const validationError = validate()
-    if (validationError) {
-      setError(validationError)
+    if (Object.keys(validate()).length > 0) {
+      setStep('form')
       return
     }
     createMutation.mutate({
@@ -80,164 +93,125 @@ export function AddProductDialog({
     })
   }
 
-  return (
-    <ModalPortal onClose={onClose} closeOnBackdropClick>
-    <div className="ui-modal-backdrop px-4">
-      <div className="ui-modal-panel w-full max-w-md">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h3 className="ui-modal-title">{step === 'form' ? 'Add Product' : 'Review Product'}</h3>
-            <p className="ui-modal-subtitle">
-              {step === 'form'
-                ? 'Create a new counter product with stock alert settings.'
-                : 'Review the product details before creating it.'}
-            </p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
-        </div>
+  const optional = (label: string) => (
+    <>{label} <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span></>
+  )
 
+  const stillNeeded = [
+    ...(normalizedName ? [] : [t('addProduct.needName')]),
+    ...(form.packageSize > 0 ? [] : [t('addProduct.needPackageSize')]),
+  ]
+
+  return (
+    <Modal
+      tone="info"
+      title={step === 'form' ? t('addProduct.title') : t('addProduct.reviewTitle')}
+      subtitle={step === 'form' ? t('addProduct.subtitle') : normalizedName}
+      size="lg"
+      onClose={onClose}
+      canClose={!createMutation.isPending}
+      closeOnBackdropClick
+      onSubmit={step === 'form' ? handleReview : undefined}
+      bodyClassName="space-y-4"
+      footer={step === 'form' ? (
+        <>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+            {t('common:actions.cancel')}
+          </button>
+          <button type="submit" disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn ui-btn-primary">
+            {t('common:actions.review')}
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={() => { setStep('form'); setServerError(null) }}
+            disabled={createMutation.isPending} className="ui-btn ui-btn-secondary">
+            {t('common:actions.edit')}
+          </button>
+          <LoadingButton type="button" isLoading={createMutation.isPending} loadingLabel={t('addProduct.creating')}
+            onClick={handleCreate} className="ui-btn-primary">
+            {t('addProduct.create')}
+          </LoadingButton>
+        </>
+      )}
+    >
         {step === 'form' && (
-          <div className="ui-modal-body space-y-4">
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error} Go back to modify the data and try again.</div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <>
+            <FormGrid>
+              <FormField label={t('addProduct.name')} error={fieldErrors.name}>
+                <input
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  data-autofocus
+                />
+              </FormField>
+              <FormField label={optional(t('addProduct.brand'))}>
+                <input
+                  value={form.brand ?? ''}
+                  onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
+                />
+              </FormField>
+              <FormField label={optional(t('addProduct.variant'))}>
+                <input
+                  value={form.variant ?? ''}
+                  onChange={e => setForm(f => ({ ...f, variant: e.target.value }))}
+                />
+              </FormField>
+              <FormField label={optional(t('fields.hsnCode'))} error={fieldErrors.hsnCode} help={fieldErrors.hsnCode ? undefined : t('editHsn.hint')}>
+                <input
+                  inputMode="numeric"
+                  maxLength={8}
+                  value={form.hsnCode ?? ''}
+                  onChange={e => setForm(f => ({ ...f, hsnCode: e.target.value.replace(/\D/g, '') }))}
+                />
+              </FormField>
+              <FormField label={t('addProduct.packageSize')} error={fieldErrors.packageSize}>
+                <NumericInput
+                  min="0.01"
+                  step="0.01"
+                  value={form.packageSize || ''}
+                  onChange={e => setForm(f => ({ ...f, packageSize: parseFloat(e.target.value) || 0 }))}
+                />
+              </FormField>
               <div>
-                <label className="block">
-                  <span className="ui-label">Product Name *</span>
-                  <input
-                    className="text-sm"
-                    value={form.name}
-                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g. Engine Oil"
-                    data-autofocus
-                  />
-                </label>
+                <span className="ui-label">{t('addProduct.unit')}</span>
+                <SearchableSelect label={t('addProduct.unit')}
+                  value={form.unitOfMeasure}
+                  onChange={v => setForm(f => ({ ...f, unitOfMeasure: v as UnitOfMeasure }))}
+                  options={UNITS.map(u => ({ value: u, label: t(`units.${u}`) }))}
+                />
               </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Brand</span>
-                  <input
-                    className="text-sm"
-                    value={form.brand ?? ''}
-                    onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
-                    placeholder="e.g. Castrol"
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Variant</span>
-                  <input
-                    className="text-sm"
-                    value={form.variant ?? ''}
-                    onChange={e => setForm(f => ({ ...f, variant: e.target.value }))}
-                    placeholder="e.g. GTX 10W-40"
-                  />
-                </label>
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="block">
-                    <span className="ui-label">Package Size *</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      className="text-sm"
-                      value={form.packageSize}
-                      onChange={e => setForm(f => ({ ...f, packageSize: parseFloat(e.target.value) || 0 }))}
-                    />
-                  </label>
-                </div>
-                <div className="w-[132px]">
-                  <span className="ui-label">Unit *</span>
-                  <SearchableSelect label="Unit"
-                    value={form.unitOfMeasure}
-                    onChange={v => setForm(f => ({ ...f, unitOfMeasure: v as UnitOfMeasure }))}
-                    options={UNITS.map(u => ({ value: u, label: u }))}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">HSN Code</span>
-                  <input
-                    className="text-sm"
-                    inputMode="numeric"
-                    maxLength={8}
-                    value={form.hsnCode ?? ''}
-                    onChange={e => setForm(f => ({ ...f, hsnCode: e.target.value.replace(/\D/g, '') }))}
-                    placeholder="e.g. 27101980 — printed on invoices"
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Low Stock Alert (units)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    className="text-sm"
-                    value={form.lowStockThreshold ?? ''}
-                    onChange={e => setForm(f => ({ ...f, lowStockThreshold: e.target.value ? parseInt(e.target.value) : undefined }))}
-                    placeholder="Leave blank to disable"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
+              <FormField label={optional(t('addProduct.lowStock'))} help={t('addProduct.lowStockHelp')}>
+                <NumericInput
+                  unit={t('fields.unitsSuffix')}
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.lowStockThreshold ?? ''}
+                  onChange={e => setForm(f => ({ ...f, lowStockThreshold: e.target.value ? parseInt(e.target.value) : undefined }))}
+                />
+              </FormField>
+            </FormGrid>
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
 
         {step === 'review' && (
-          <div className="ui-modal-body space-y-4">
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error}</div>
-            )}
-            <div className="ui-card-plain ui-card-muted divide-y divide-slate-100 overflow-hidden text-sm">
-              <ReviewRow label="Product Name" value={normalizedName} />
-              <ReviewRow label="Brand" value={normalizedBrand ?? '—'} />
-              <ReviewRow label="Variant" value={normalizedVariant ?? '—'} />
-              <ReviewRow label="Package Size" value={String(form.packageSize)} />
-              <ReviewRow label="Unit" value={form.unitOfMeasure} />
-              <ReviewRow label="HSN Code" value={normalizedHsnCode ?? '—'} />
-              <ReviewRow label="Low Stock Alert" value={normalizedThreshold != null ? `${normalizedThreshold} units` : 'Disabled'} />
-            </div>
-          </div>
+          <>
+            <ReviewList>
+              <ReviewRow label={t('addProduct.name')} value={normalizedName} />
+              <ReviewRow label={t('addProduct.brand')} value={normalizedBrand ?? '—'} />
+              <ReviewRow label={t('addProduct.variant')} value={normalizedVariant ?? '—'} />
+              <ReviewRow label={t('addProduct.packageSize')} value={`${form.packageSize} ${t(`units.${form.unitOfMeasure}`)}`} />
+              <ReviewRow label={t('fields.hsnCode')} value={normalizedHsnCode ?? '—'} />
+              <ReviewRow label={t('addProduct.lowStock')} value={normalizedThreshold != null ? t('addProduct.lowStockValue', { value: normalizedThreshold }) : t('addProduct.lowStockDisabled')} />
+            </ReviewList>
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
-
-        <div className="ui-modal-footer">
-          {step === 'form' ? (
-            <>
-              <button onClick={onClose} className="ui-btn ui-btn-secondary">
-                Cancel
-              </button>
-              <button onClick={handleReview} className="ui-btn ui-btn-primary">
-                Review
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { setStep('form'); setError(null) }}
-                className="ui-btn ui-btn-secondary"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={createMutation.isPending}
-                className="ui-btn ui-btn-primary"
-              >
-                {createMutation.isPending
-                  ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Creating…</span>
-                  : 'Create Product'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+    </Modal>
   )
 }

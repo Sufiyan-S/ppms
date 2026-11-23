@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { pumpApi } from '../../../api/pumpApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
-import { Spinner } from '../../../components/Spinner'
-import { ModalPortal } from '../../../components/ModalPortal'
+import { Modal } from '../../../components/Modal'
+import { FormField } from '../../../components/FormField'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { StillNeeded } from '../../../components/StillNeeded'
 import { parseApiError } from '../../../utils/apiError'
-
-// ─── Reassign Credit Entry Modal ─────────────────────────────────────────────
 
 interface ReassignModalProps {
   entryId: number
@@ -17,14 +18,18 @@ interface ReassignModalProps {
 }
 
 export function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, transactionType, onClose }: ReassignModalProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
   const [toClientId, setToClientId] = useState<string>('')
   const [reason, setReason]         = useState('')
   const [error, setError]           = useState<string | null>(null)
+  const moveToLabelId = useId()
+  const stillNeededId = useId()
+  const isPayment = transactionType === 'PAYMENT'
 
   const { data: allClients = [] } = useQuery({
     queryKey: ['creditClients', pumpId],
-    queryFn:  () => pumpApi.getCreditClients(pumpId),
+    queryFn:  () => pumpApi.getCreditClientAccounts(pumpId),
   })
 
   // Restrict targets to within the same parent/child group only:
@@ -39,7 +44,7 @@ export function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, tra
   if (currentClient?.isParent) {
     targets = allClients.filter(c => c.parentClientId === currentClientId)
     if (targets.length === 0) {
-      noTargetsReason = 'This account has no sub-accounts yet. Add sub-accounts in Setup first.'
+      noTargetsReason = t('reassign.noSubAccounts')
     }
   } else if (currentClient?.parentClientId !== null && currentClient?.parentClientId !== undefined) {
     targets = allClients.filter(c =>
@@ -47,12 +52,17 @@ export function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, tra
       (c.id === currentClient.parentClientId || c.parentClientId === currentClient.parentClientId)
     )
   } else {
-    noTargetsReason = 'Entries can only be moved within a parent / sub-account group. This is a standalone account with no group.'
+    noTargetsReason = t('reassign.standalone')
   }
+
+  const stillNeeded = [
+    ...(toClientId === '' ? [t('reassign.moveTo')] : []),
+    ...(reason.trim() === '' ? [t('common:fields.reason')] : []),
+  ]
 
   const mutation = useMutation({
     mutationFn: ({ toId, rsn }: { toId: number; rsn: string }) =>
-      transactionType === 'PAYMENT'
+      isPayment
         ? pumpApi.reassignCreditPayment(pumpId, entryId, toId, rsn)
         : pumpApi.reassignCreditEntry(pumpId, entryId, toId, rsn),
     onSuccess: () => {
@@ -60,87 +70,65 @@ export function ReassignCreditEntryModal({ entryId, currentClientId, pumpId, tra
       qc.invalidateQueries({ queryKey: ['credit-transactions', pumpId] })
       onClose()
     },
-    onError: (err) => setError(parseApiError(err, `Failed to move ${transactionType === 'PAYMENT' ? 'payment' : 'entry'}`)),
+    onError: (err) => setError(parseApiError(err, isPayment ? t('reassign.failedPayment') : t('reassign.failedEntry'))),
   })
 
-  const handleSubmit = () => {
-    if (!toClientId)        { setError('Select a target client'); return }
-    if (!reason.trim())     { setError('Reason is required'); return }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!toClientId)        { setError(t('reassign.selectTarget')); return }
+    if (!reason.trim())     { setError(t('reassign.reasonRequired')); return }
     setError(null)
     mutation.mutate({ toId: Number(toClientId), rsn: reason.trim() })
   }
 
   return (
-    <ModalPortal onClose={onClose}>
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal-panel w-full max-w-sm">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h2 className="ui-modal-title">Move Credit Entry</h2>
-            <p className="ui-modal-subtitle">
-              {transactionType === 'PAYMENT'
-                ? 'Reassign this payment within the same account group.'
-                : 'Reassign this sale entry within the same account group.'}
-            </p>
+    <Modal
+      title={t('reassign.title')}
+      subtitle={isPayment ? t('reassign.subtitlePayment') : t('reassign.subtitleSale')}
+      tone="info"
+      size="md"
+      onClose={onClose}
+      canClose={!mutation.isPending}
+      onSubmit={noTargetsReason ? undefined : handleSubmit}
+      bodyClassName="space-y-4"
+      footer={noTargetsReason ? (
+        <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">{t('common:actions.close')}</button>
+      ) : (
+        <>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">{t('common:actions.cancel')}</button>
+          <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('reassign.moving')}
+            disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn-primary">
+            {t('reassign.submit')}
+          </LoadingButton>
+        </>
+      )}
+    >
+      {noTargetsReason ? (
+        <p className="text-sm text-ink-2">{noTargetsReason}</p>
+      ) : (
+        <>
+          <div>
+            <span id={moveToLabelId} className="ui-label">{t('reassign.moveTo')}</span>
+            <SearchableSelect aria-labelledby={moveToLabelId}
+              value={toClientId}
+              onChange={setToClientId}
+              placeholder={t('reassign.targetPlaceholder')}
+              searchThreshold={0}
+              options={targets.map(c => ({
+                value: String(c.id),
+                label: c.parentClientId === null ? t('reassign.parentOption', { name: c.name }) : c.name,
+              }))}
+            />
           </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
-        </div>
-        <div className="ui-modal-body space-y-4">
-          {noTargetsReason ? (
-            <div className="ui-alert ui-alert-warning">
-              <p className="text-sm text-amber-800">{noTargetsReason}</p>
-            </div>
-          ) : (
-            <>
-              <div className="ui-inline-form">
-                <span className="ui-label">
-                  Move to <span className="text-red-500">*</span>
-                </span>
-                <SearchableSelect label="Move to"
-                  value={toClientId}
-                  onChange={setToClientId}
-                  placeholder="Search and select account…"
-                  searchThreshold={0}
-                  options={targets.map(c => ({
-                    value: String(c.id),
-                    label: c.parentClientId === null ? `${c.name} (parent)` : c.name,
-                  }))}
-                />
-              </div>
-              <div className="ui-inline-form">
-                <label className="block">
-                  <span className="ui-label">
-                  Reason <span className="text-red-500">*</span>
-                </span>
-                  <textarea
-                    value={reason}
-                    onChange={e => setReason(e.target.value)}
-                    rows={2}
-                    placeholder={transactionType === 'PAYMENT'
-                      ? 'e.g. Payment was recorded under parent but belongs to sub-account'
-                      : 'e.g. Entry was logged under parent but belongs to sub-account'}
-                    className="resize-none text-sm"
-                  />
-                </label>
-              </div>
-              {error && <p role="alert" className="ui-error-text text-sm">{error}</p>}
-            </>
-          )}
-        </div>
-        <div className="ui-modal-footer">
-          <button onClick={onClose}
-            className="ui-btn ui-btn-secondary flex-1">
-            {noTargetsReason ? 'Close' : 'Cancel'}
-          </button>
-          {!noTargetsReason && (
-            <button onClick={handleSubmit} disabled={mutation.isPending}
-              className="ui-btn ui-btn-primary flex-1">
-              {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Moving…</span> : 'Move Entry'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+          <FormField label={t('common:fields.reason')}>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className="resize-none" />
+          </FormField>
+          {error && <p role="alert" className="ui-alert ui-alert-danger">{error}</p>}
+        </>
+      )}
+    </Modal>
   )
 }

@@ -1,5 +1,6 @@
 package com.ppms.shift;
 
+import com.ppms.fuel.FuelType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import jakarta.persistence.LockModeType;
@@ -71,6 +72,46 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     Page<Shift> findByPumpIdAndShiftDateBetweenAndDiscrepancyTypeInOrderByActualStartTimeDesc(
             Long pumpId, LocalDate from, LocalDate to, List<DiscrepancyType> discrepancyTypes, Pageable pageable);
 
+    /** Shifts in the date range that sold the given fuel, newest first. */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate BETWEEN :from AND :to
+              AND EXISTS (SELECT 1 FROM ShiftFuelReading r WHERE r.shiftId = s.id AND r.fuelType = :fuelType)
+            ORDER BY s.actualStartTime DESC
+            """)
+    Page<Shift> findHistoryForFuel(@Param("pumpId") Long pumpId,
+                                   @Param("from") LocalDate from,
+                                   @Param("to") LocalDate to,
+                                   @Param("fuelType") FuelType fuelType,
+                                   Pageable pageable);
+
+    /** One operator's shifts in the date range that sold the given fuel, newest first. */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.operatorId = :operatorId
+              AND s.shiftDate BETWEEN :from AND :to
+              AND EXISTS (SELECT 1 FROM ShiftFuelReading r WHERE r.shiftId = s.id AND r.fuelType = :fuelType)
+            ORDER BY s.actualStartTime DESC
+            """)
+    Page<Shift> findOperatorHistoryForFuel(@Param("pumpId") Long pumpId,
+                                           @Param("operatorId") Long operatorId,
+                                           @Param("from") LocalDate from,
+                                           @Param("to") LocalDate to,
+                                           @Param("fuelType") FuelType fuelType,
+                                           Pageable pageable);
+
+    // Operator-scoped history: an operator only sees their own shifts.
+    Page<Shift> findByPumpIdAndOperatorIdOrderByActualStartTimeDesc(Long pumpId, Long operatorId, Pageable pageable);
+
+    Page<Shift> findByPumpIdAndOperatorIdAndShiftDateBetweenOrderByActualStartTimeDesc(
+            Long pumpId, Long operatorId, LocalDate from, LocalDate to, Pageable pageable);
+
+    Page<Shift> findByPumpIdAndOperatorIdAndShiftDateBetweenAndDiscrepancyTypeInOrderByActualStartTimeDesc(
+            Long pumpId, Long operatorId, LocalDate from, LocalDate to, List<DiscrepancyType> discrepancyTypes,
+            Pageable pageable);
+
     // ── Operator deactivation guards (Business Rules 30, 45) ─────────────────
 
     /** True if operator has any open shift — blocks deactivation (Rule 45). */
@@ -81,20 +122,38 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             """)
     boolean hasOpenShift(Long operatorId);
 
-    /** True if operator has any unresolved discrepancy — blocks deactivation (Rule 30). */
+    /** True if operator has any unresolved discrepancy, escalated ones included — blocks deactivation (Rule 30). */
     @Query("""
             SELECT COUNT(s) > 0 FROM Shift s
             WHERE s.operatorId = :operatorId
-              AND s.status = 'CLOSED_DISCREPANCY_PENDING'
+              AND s.status IN ('CLOSED_DISCREPANCY_PENDING', 'CLOSED_DISCREPANCY_PENDING_APPROVAL')
             """)
     boolean hasUnresolvedDiscrepancy(Long operatorId);
 
+    /** Unresolved SHORT discrepancies of the pump, escalated ones included. */
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.status IN ('CLOSED_DISCREPANCY_PENDING', 'CLOSED_DISCREPANCY_PENDING_APPROVAL')
+              AND s.discrepancyType = 'SHORT'
+            """)
+    List<Shift> findUnresolvedShortagesByPumpId(@Param("pumpId") Long pumpId);
+
+    /** True if operator has a discrepancy escalated for owner approval — blocks deactivation (Rule 30). */
+    @Query("""
+            SELECT COUNT(s) > 0 FROM Shift s
+            WHERE s.operatorId = :operatorId
+              AND s.status = 'CLOSED_DISCREPANCY_PENDING_APPROVAL'
+            """)
+    boolean hasDiscrepancyPendingApproval(Long operatorId);
+
     // ── Overdue shift auto-close job ──────────────────────────────────────────
 
-    /** Ids of all OPEN or OPEN_OVERDUE shifts across all pumps. Used by the auto-close scheduler. */
+    /** Ids of all OPEN or OPEN_OVERDUE shifts on pumps that are not suspended. Used by the auto-close scheduler. */
     @Query("""
             SELECT s.id FROM Shift s
             WHERE s.status IN ('OPEN', 'OPEN_OVERDUE')
+              AND EXISTS (SELECT 1 FROM PumpLocation p WHERE p.id = s.pumpId AND p.enabled = true)
             ORDER BY s.actualStartTime ASC
             """)
     List<Long> findAllOpenShiftIds();
@@ -134,7 +193,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     List<Shift> findByPumpIdAndOperatorIdAndDateRange(Long pumpId, Long operatorId, LocalDate from, LocalDate to);
 
     /**
-     * Returns closed shifts for an operator in a date range where the discrepancy was resolved
+     * Returns closed shifts for an operator in a date range where a SHORT discrepancy was resolved
      * via SALARY_DEDUCTION and no payroll has already taken the deduction (payroll_resolved_shifts).
      * deductions = SUM(discrepancy_amount) for these shifts.
      *
@@ -148,6 +207,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
               AND operator_id = :operatorId
               AND shift_date BETWEEN :from AND :to
               AND discrepancy_resolution = 'SALARY_DEDUCTION'::discrepancy_resolution
+              AND discrepancy_type = 'SHORT'::discrepancy_type
               AND discrepancy_amount IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM payroll_resolved_shifts prs WHERE prs.shift_id = shifts.id)
             ORDER BY shift_date ASC
@@ -188,6 +248,25 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             """)
     List<Shift> findClosedShiftsByDate(Long pumpId, LocalDate shiftDate);
 
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate = :shiftDate
+              AND s.status IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            ORDER BY s.actualStartTime ASC
+            """)
+    List<Shift> findOpenShiftsByDate(Long pumpId, LocalDate shiftDate);
+
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.pumpId = :pumpId
+              AND s.shiftDate = :shiftDate
+              AND s.shiftDefinitionId = :shiftDefinitionId
+              AND s.status IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
+            ORDER BY s.actualStartTime ASC
+            """)
+    List<Shift> findOpenShiftsByDefinition(Long pumpId, LocalDate shiftDate, Long shiftDefinitionId);
+
     /**
      * Shifts that ended (closed by an operator or auto-closed by the overdue job) within (from, to].
      * Used by alert generation, which must see night shifts whose shift date is the previous day.
@@ -203,26 +282,6 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     List<Shift> findShiftsEndedBetween(@Param("pumpId") Long pumpId,
                                        @Param("from") OffsetDateTime from,
                                        @Param("to") OffsetDateTime to);
-
-    /**
-     * All closed shifts whose actualEndTime falls in (windowStart, windowEnd].
-     * Used for live DAY balance sheets — captures every shift that finished in
-     * the last 24 hours regardless of which calendar date they started on.
-     * Open/overdue shifts are excluded so a mid-day report never includes
-     * a shift that is still running.
-     */
-    @Query("""
-            SELECT s FROM Shift s
-            WHERE s.pumpId = :pumpId
-              AND s.actualEndTime > :windowStart
-              AND s.actualEndTime <= :windowEnd
-              AND s.status NOT IN ('OPEN', 'OPEN_OVERDUE', 'AUTO_CLOSED_OVERDUE')
-            ORDER BY s.actualEndTime ASC
-            """)
-    List<Shift> findClosedShiftsByEndTimeWindow(
-            @Param("pumpId") Long pumpId,
-            @Param("windowStart") OffsetDateTime windowStart,
-            @Param("windowEnd") OffsetDateTime windowEnd);
 
     // ── Settlement wallet queries ─────────────────────────────────────────────
 
@@ -318,7 +377,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
     boolean existsByShiftDefinitionIdIn(@Param("definitionIds") List<Long> definitionIds);
 
     /**
-     * All shifts for a user on a pump that still have an unresolved discrepancy.
+     * All shifts for a user on a pump that still have an unresolved SHORT discrepancy (OVER cannot be deducted).
      * Used by the payroll generation flow to present the owner with pending discrepancies
      * and offer to resolve them as SALARY_DEDUCTION in the current payroll run.
      */
@@ -327,6 +386,7 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             WHERE s.pumpId = :pumpId
               AND s.operatorId = :operatorId
               AND s.status IN ('CLOSED_DISCREPANCY_PENDING', 'CLOSED_DISCREPANCY_PENDING_APPROVAL')
+              AND s.discrepancyType = 'SHORT'
             ORDER BY s.shiftDate DESC
             """)
     List<Shift> findPendingDiscrepanciesByPumpAndOperator(
@@ -347,20 +407,6 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
               AND DATE(discrepancy_resolved_at AT TIME ZONE 'Asia/Kolkata') = :date
             """, nativeQuery = true)
     BigDecimal sumCashRecoveriesOnDate(@Param("pumpId") Long pumpId, @Param("date") LocalDate date);
-
-    /** Cash recoveries resolved within [from, to) — used by live DAY balance sheets. */
-    @Query(value = """
-            SELECT COALESCE(SUM(cash_recovery_amount), 0)
-            FROM shifts
-            WHERE pump_id = :pumpId
-              AND discrepancy_resolution = 'CASH_RECOVERY'::discrepancy_resolution
-              AND cash_recovery_amount IS NOT NULL
-              AND cash_recovery_amount > 0
-              AND discrepancy_resolved_at >= :from AND discrepancy_resolved_at < :to
-            """, nativeQuery = true)
-    BigDecimal sumCashRecoveriesBetween(@Param("pumpId") Long pumpId,
-                                        @Param("from") OffsetDateTime from,
-                                        @Param("to") OffsetDateTime to);
 
     /**
      * Counts shifts for the given nozzle, business date, and shift definition.

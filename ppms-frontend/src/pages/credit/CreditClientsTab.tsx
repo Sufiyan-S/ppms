@@ -1,17 +1,20 @@
-import { useState, useDeferredValue } from 'react'
+import { useId, useState, useDeferredValue } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { pumpApi } from '../../api/pumpApi'
 import type { CreateCreditClientRequest, CreditClient as PumpCreditClient } from '../../api/pumpApi'
+import { Pause, Users } from 'lucide-react'
 import { SkeletonRows } from '../../components/Skeleton'
+import { StatusBadge } from '../../components/StatusBadge'
 import { EmptyState } from '../../components/EmptyState'
-import { Spinner } from '../../components/Spinner'
+import { FormField } from '../../components/FormField'
+import { LoadingButton } from '../../components/LoadingButton'
 import { parseApiError } from '../../utils/apiError'
 import { onActivateKey } from '../../utils/keyboard'
-import { GSTIN_FORMAT_MESSAGE, isValidGstin, normaliseGstText } from '../../utils/gst'
+import { isValidGstin, normaliseGstText } from '../../utils/gst'
 import { EditCreditClientForm } from './EditCreditClientForm'
 import { PortalPinControl } from './PortalPinControl'
-
-// ─── Credit Clients Tab ───────────────────────────────────────────────────────
+import { FormGrid, FormGridFullRow } from '../../components/layout/FormGrid'
 
 interface CreditClientsTabProps {
   pumpId: number
@@ -20,6 +23,7 @@ interface CreditClientsTabProps {
 }
 
 export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins }: CreditClientsTabProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
 
   const [name, setName]               = useState('')
@@ -28,6 +32,11 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
   const [gstin, setGstin]             = useState('')
   const [billingAddress, setBillingAddress] = useState('')
   const [addError, setAddError]       = useState<string | null>(null)
+  const [addNameError, setAddNameError]   = useState<string | undefined>()
+  const [addPhoneError, setAddPhoneError] = useState<string | undefined>()
+  const [addGstinError, setAddGstinError] = useState<string | undefined>()
+  const addHeadingId = useId()
+  const optional = <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span>
 
   const [editingId, setEditingId]     = useState<number | null>(null)
 
@@ -46,7 +55,7 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['creditClients', pumpId],
-    queryFn:  () => pumpApi.getCreditClients(pumpId),
+    queryFn:  () => pumpApi.getCreditClientAccounts(pumpId),
   })
 
   const addMutation = useMutation({
@@ -58,7 +67,7 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
       qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
     },
     onError: (err, variables) => {
-      const msg = parseApiError(err, 'Failed to add client')
+      const msg = parseApiError(err, t('clients.addFailed'))
       if (variables.parentClientId != null) setAddSubError(msg)
       else setAddError(msg)
     },
@@ -68,17 +77,17 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
     mutationFn: ({ clientId, isActive }: { clientId: number; isActive: boolean }) =>
       pumpApi.toggleCreditClientStatus(pumpId, clientId, isActive),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['creditClients', pumpId] }),
-    onError: (err) => setAddError(parseApiError(err, 'Failed to update client status')),
+    onError: (err) => setAddError(parseApiError(err, t('clients.statusFailed'))),
   })
 
   const submitAdd = (e: React.FormEvent) => {
     e.preventDefault(); setAddError(null)
     const trimmedName = name.trim(); const trimmedPhone = phoneNumber.trim()
-    if (!/^\d{10}$/.test(trimmedPhone)) { setAddError('Phone number must be exactly 10 digits.'); return }
+    if (!/^\d{10}$/.test(trimmedPhone)) { setAddPhoneError(t('clients.phoneInvalid')); return }
     if (clients.some(c => c.name.toLowerCase() === trimmedName.toLowerCase())) {
-      setAddError(`A client named "${trimmedName}" already exists.`); return
+      setAddNameError(t('clients.duplicateName', { name: trimmedName })); return
     }
-    if (!isValidGstin(gstin)) { setAddError(GSTIN_FORMAT_MESSAGE); return }
+    if (!isValidGstin(gstin)) { setAddGstinError(t('common:gst.gstinFormat')); return }
     addMutation.mutate({
       name: trimmedName, phone: trimmedPhone, notes: notes.trim() || undefined,
       gstin: normaliseGstText(gstin) || undefined, billingAddress: billingAddress.trim() || undefined,
@@ -88,9 +97,9 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
   const submitAddSub = (e: React.FormEvent, parentId: number) => {
     e.preventDefault(); setAddSubError(null)
     const trimmedName = addSubName.trim(); const trimmedPhone = addSubPhone.trim()
-    if (!/^\d{10}$/.test(trimmedPhone)) { setAddSubError('Phone number must be exactly 10 digits.'); return }
+    if (!/^\d{10}$/.test(trimmedPhone)) { setAddSubError(t('clients.phoneInvalid')); return }
     if (clients.some(c => c.parentClientId === parentId && c.name.toLowerCase() === trimmedName.toLowerCase())) {
-      setAddSubError(`A sub-account named "${trimmedName}" already exists under this parent.`); return
+      setAddSubError(t('clients.duplicateSubAccount', { name: trimmedName })); return
     }
     addMutation.mutate({ name: trimmedName, phone: trimmedPhone, notes: addSubNotes.trim() || undefined, parentClientId: parentId })
   }
@@ -125,9 +134,9 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        Parties who take fuel on credit. Operators pick from this list when closing a shift.
-        {canManageClients ? ' Disabled clients are hidden from shift dropdowns. Client records are never deleted.' : ''}
+      <p className="text-xs text-ink-3">
+        {t('clients.intro')}
+        {canManageClients ? ` ${t('clients.introManage')}` : ''}
       </p>
 
       {rootClients.length > 0 && (
@@ -135,10 +144,10 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
           <svg className="ui-search-shell__icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
           </svg>
-          <input aria-label="Search clients"
+          <input aria-label={t('clients.searchLabel')}
             type="text"
             className="ui-search-shell__input"
-            placeholder="Search client or sub-account…"
+            placeholder={t('clients.searchPlaceholder')}
             value={clientSearch}
             onChange={e => setClientSearch(e.target.value)}
           />
@@ -147,7 +156,7 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
               type="button"
               onClick={() => setClientSearch('')}
               className="ui-search-shell__clear"
-              aria-label="Clear search"
+              aria-label={t('aging.clearSearch')}
             >
               ×
             </button>
@@ -176,26 +185,25 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
                       onKeyDown={hasChildren ? onActivateKey(() => toggleCollapse(parent.id)) : undefined}
                     >
                     {hasChildren && (
-                      <svg className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      <svg className={`w-3.5 h-3.5 text-ink-3 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                         fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                       </svg>
                     )}
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className={`text-sm font-semibold ${parent.isActive ? 'text-slate-700' : 'text-slate-500'}`}>{parent.name}</p>
+                        <p className={`text-sm font-semibold ${parent.isActive ? 'text-ink' : 'text-ink-3'}`}>{parent.name}</p>
                         {parent.isParent && (
-                          <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
-                            parent · {children.length} sub-account{children.length !== 1 ? 's' : ''}
-                          </span>
+                          <StatusBadge tone="info" icon={Users}
+                            label={t('clients.parentBadge', { count: children.length })} />
                         )}
                         {!parent.isActive && (
-                          <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Disabled</span>
+                          <StatusBadge tone="neutral" icon={Pause} label={t('clients.disabled')} />
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
-                        {parent.phone && <span className="text-xs text-slate-500">{parent.phone}</span>}
-                        {parent.notes && <span className="text-xs text-slate-500 italic truncate max-w-xs">{parent.notes}</span>}
+                        {parent.phone && <span className="text-xs text-ink-3">{parent.phone}</span>}
+                        {parent.notes && <span className="text-xs text-ink-3 italic truncate max-w-xs">{parent.notes}</span>}
                       </div>
                     </div>
                   </div>
@@ -209,26 +217,26 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
                           if (next === parent.id) setExpandedParentId(parent.id)
                           setAddSubName(''); setAddSubPhone(''); setAddSubNotes(''); setAddSubError(null)
                         }}
-                        className="ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400"
+                        className="ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs text-primary hover:text-primary-strong border border-border hover:border-primary"
                       >
-                        + Sub-account
+                        {t('clients.addSubAccountToggle')}
                       </button>
                       <button
                         onClick={() => setEditingId(editingId === parent.id ? null : parent.id)}
-                        className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
+                        className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-primary hover:text-primary-strong"
                       >
-                        {editingId === parent.id ? 'Cancel' : 'Edit'}
+                        {editingId === parent.id ? t('common:actions.cancel') : t('common:actions.edit')}
                       </button>
                       <button
                         onClick={() => toggleStatusMutation.mutate({ clientId: parent.id, isActive: !parent.isActive })}
                         disabled={toggleStatusMutation.isPending}
                         className={`ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs border ${
                           parent.isActive
-                            ? 'text-slate-500 hover:text-slate-700 border-slate-200'
-                            : 'text-emerald-600 hover:text-emerald-700 border-emerald-200'
+                            ? 'text-ink-3 hover:text-ink border-border'
+                            : 'text-ok border-ok/30 hover:bg-ok-bg'
                         }`}
                       >
-                        {parent.isActive ? 'Disable' : 'Enable'}
+                        {parent.isActive ? t('common:actions.disable') : t('common:actions.enable')}
                       </button>
                     </div>
                   )}
@@ -239,20 +247,20 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
                 )}
 
                 {isExpanded && children.map(child => (
-                  <div key={child.id} className="border-t border-slate-100">
+                  <div key={child.id} className="border-t border-border">
                     <div className="flex items-center justify-between pl-7 pr-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-slate-500 shrink-0">└</span>
+                        <span className="text-ink-3 shrink-0">└</span>
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className={`text-sm font-medium ${child.isActive ? 'text-slate-600' : 'text-slate-500'}`}>{child.name}</p>
+                            <p className={`text-sm font-medium ${child.isActive ? 'text-ink-2' : 'text-ink-3'}`}>{child.name}</p>
                             {!child.isActive && (
-                              <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Disabled</span>
+                              <StatusBadge tone="neutral" icon={Pause} label={t('clients.disabled')} />
                             )}
                           </div>
                           <div className="flex items-center gap-3">
-                            {child.phone && <span className="text-xs text-slate-500">{child.phone}</span>}
-                            {child.notes && <span className="text-xs text-slate-500 italic truncate max-w-xs">{child.notes}</span>}
+                            {child.phone && <span className="text-xs text-ink-3">{child.phone}</span>}
+                            {child.notes && <span className="text-xs text-ink-3 italic truncate max-w-xs">{child.notes}</span>}
                           </div>
                         </div>
                       </div>
@@ -261,19 +269,19 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
                           {canManagePortalPins && <PortalPinControl pumpId={pumpId} client={child} />}
                           <button
                             onClick={() => setEditingId(editingId === child.id ? null : child.id)}
-                            className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800">
-                            {editingId === child.id ? 'Cancel' : 'Edit'}
+                            className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-primary hover:text-primary-strong">
+                            {editingId === child.id ? t('common:actions.cancel') : t('common:actions.edit')}
                           </button>
                           <button
                             onClick={() => toggleStatusMutation.mutate({ clientId: child.id, isActive: !child.isActive })}
                             disabled={toggleStatusMutation.isPending}
                             className={`ui-btn ui-btn-ghost min-h-0 px-2 py-1 text-xs border ${
                               child.isActive
-                                ? 'text-slate-500 hover:text-slate-700 border-slate-200'
-                                : 'text-emerald-600 hover:text-emerald-700 border-emerald-200'
+                                ? 'text-ink-3 hover:text-ink border-border'
+                                : 'text-ok border-ok/30 hover:bg-ok-bg'
                             }`}
                           >
-                            {child.isActive ? 'Disable' : 'Enable'}
+                            {child.isActive ? t('common:actions.disable') : t('common:actions.enable')}
                           </button>
                         </div>
                       )}
@@ -286,41 +294,34 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
 
                 {canManageClients && addSubParentId === parent.id && (
                   <form onSubmit={e => submitAddSub(e, parent.id)}
-                    className="border-t border-blue-100 bg-blue-50/40 px-3 py-3 space-y-2">
-                    <p className="text-xs font-semibold text-blue-700">Add sub-account under {parent.name}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block">
-                          <span className="ui-label">Name <span className="text-red-500">*</span></span>
-                          <input required value={addSubName} onChange={e => setAddSubName(e.target.value)}
-                            placeholder="e.g. Driver 1" className="text-xs min-h-10" />
-                        </label>
-                      </div>
-                      <div>
-                        <label className="block">
-                          <span className="ui-label">Phone <span className="text-red-500">*</span></span>
-                          <input required value={addSubPhone}
-                            onChange={e => setAddSubPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                            inputMode="numeric" maxLength={10} placeholder="e.g. 9876543210" className="text-xs min-h-10" />
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block">
-                        <span className="ui-label">Notes <span className="text-slate-500">(optional)</span></span>
-                        <input value={addSubNotes} onChange={e => setAddSubNotes(e.target.value)}
-                          placeholder="e.g. truck number, driver name" className="text-xs min-h-10" />
-                      </label>
-                    </div>
+                    aria-label={t('clients.addSubAccountUnder', { name: parent.name })}
+                    className="space-y-3 border-t border-border bg-surface-sunken px-3 py-3">
+                    <p className="text-sm font-semibold text-ink">{t('clients.addSubAccountUnder', { name: parent.name })}</p>
+                    <FormGrid>
+                      <FormField label={t('clientForm.name')}>
+                        <input required value={addSubName} onChange={e => setAddSubName(e.target.value)}
+                          placeholder={t('clients.subNamePlaceholder')} />
+                      </FormField>
+                      <FormField label={t('clientForm.phone')}>
+                        <input required value={addSubPhone} type="tel" autoComplete="off"
+                          onChange={e => setAddSubPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          inputMode="numeric" maxLength={10} placeholder={t('clients.phonePlaceholder')} />
+                      </FormField>
+                      <FormGridFullRow>
+                        <FormField label={<>{t('common:fields.notes')} {optional}</>}>
+                          <input value={addSubNotes} onChange={e => setAddSubNotes(e.target.value)}
+                            placeholder={t('clients.subNotesPlaceholder')} />
+                        </FormField>
+                      </FormGridFullRow>
+                    </FormGrid>
                     {addSubError && <p role="alert" className="ui-error-text">{addSubError}</p>}
-                    <div className="flex gap-2">
-                      <button type="submit" disabled={addMutation.isPending}
-                        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs">
-                        {addMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Adding…</span> : 'Add Sub-account'}
-                      </button>
-                      <button type="button" onClick={() => setAddSubParentId(null)}
-                        className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs">
-                        Cancel
+                    <div className="flex flex-wrap gap-2">
+                      <LoadingButton type="submit" isLoading={addMutation.isPending} loadingLabel={t('clients.adding')}
+                        className="ui-btn-primary">
+                        {t('clients.addSubAccount')}
+                      </LoadingButton>
+                      <button type="button" onClick={() => setAddSubParentId(null)} className="ui-btn ui-btn-secondary">
+                        {t('common:actions.cancel')}
                       </button>
                     </div>
                   </form>
@@ -330,62 +331,49 @@ export function CreditClientsTab({ pumpId, canManageClients, canManagePortalPins
           })}
         </div>
       ) : q ? (
-        <p className="text-sm text-slate-500 py-2">No clients match "{deferredSearch}".</p>
+        <p className="text-sm text-ink-3 py-2">{t('clients.noMatch', { query: deferredSearch })}</p>
       ) : null}
 
       {canManageClients && (
-        <div className={clients.length > 0 ? 'border-t border-slate-200 pt-4' : ''}>
-          <p className="ui-label mb-3">
-            {clients.length === 0 ? 'Add the first credit client' : 'Add another client'}
-          </p>
-          <form onSubmit={submitAdd} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block">
-                  <span className="ui-label">Client Name <span className="text-red-500">*</span></span>
-                  <input required value={name} onChange={e => setName(e.target.value)}
-                    placeholder="e.g. ABC Transports" className="text-sm" />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Phone <span className="text-red-500">*</span></span>
-                  <input required value={phoneNumber}
-                    onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    placeholder="e.g. 9876543210" inputMode="numeric" maxLength={10} className="text-sm" />
-                </label>
-              </div>
-            </div>
-            <div>
-              <label className="block">
-                <span className="ui-label">Notes <span className="text-slate-500">(optional)</span></span>
-                <input value={notes} onChange={e => setNotes(e.target.value)}
-                  placeholder="e.g. Fleet manager, lorry owner" className="text-sm" />
-              </label>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="ui-label">GSTIN <span className="text-slate-500">(blank if unregistered)</span></span>
-                <input value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())}
-                  maxLength={15} autoCapitalize="characters" placeholder="e.g. 27ABCDE1234F1Z5" className="text-sm" />
-              </label>
-              <label className="block">
-                <span className="ui-label">Billing address <span className="text-slate-500">(optional)</span></span>
-                <input value={billingAddress} onChange={e => setBillingAddress(e.target.value)}
-                  maxLength={500} placeholder="Printed on invoices" className="text-sm" />
-              </label>
-            </div>
+        <div className={clients.length > 0 ? 'border-t border-border pt-4' : ''}>
+          <h3 id={addHeadingId} className="mb-3 text-sm font-semibold text-ink">
+            {clients.length === 0 ? t('clients.addFirst') : t('clients.addAnother')}
+          </h3>
+          <form onSubmit={submitAdd} aria-labelledby={addHeadingId} className="space-y-3">
+            <FormGrid>
+              <FormField label={t('clients.clientName')} error={addNameError}>
+                <input required value={name} onChange={e => { setName(e.target.value); setAddNameError(undefined) }}
+                  placeholder={t('clients.clientNamePlaceholder')} />
+              </FormField>
+              <FormField label={t('clientForm.phone')} error={addPhoneError}>
+                <input required value={phoneNumber} type="tel" autoComplete="off"
+                  onChange={e => { setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10)); setAddPhoneError(undefined) }}
+                  placeholder={t('clients.phonePlaceholder')} inputMode="numeric" maxLength={10} />
+              </FormField>
+              <FormGridFullRow>
+                <FormField label={<>{t('common:fields.notes')} {optional}</>}>
+                  <input value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('clientForm.notesPlaceholder')} />
+                </FormField>
+              </FormGridFullRow>
+              <FormField label={<>GSTIN {optional}</>} help={t('clientForm.gstinHelp')} error={addGstinError}>
+                <input value={gstin} onChange={e => { setGstin(e.target.value.toUpperCase()); setAddGstinError(undefined) }}
+                  maxLength={15} autoCapitalize="characters" placeholder={t('common:gst.gstinPlaceholder')} />
+              </FormField>
+              <FormField label={<>{t('clientForm.billingAddress')} {optional}</>} help={t('clientForm.billingAddressHelp')}>
+                <input value={billingAddress} onChange={e => setBillingAddress(e.target.value)} maxLength={500} />
+              </FormField>
+            </FormGrid>
             {addError && <p role="alert" className="ui-error-text">{addError}</p>}
-            <button type="submit" disabled={addMutation.isPending} className="ui-btn ui-btn-primary">
-              {addMutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Adding…</span> : 'Add Client'}
-            </button>
+            <LoadingButton type="submit" isLoading={addMutation.isPending} loadingLabel={t('clients.adding')} className="ui-btn-primary">
+              {t('clients.addClient')}
+            </LoadingButton>
           </form>
         </div>
       )}
 
       {!canManageClients && rootClients.length === 0 && (
-        <EmptyState icon="generic" title="No credit clients yet"
-          subtitle="Contact the Owner or Admin to add credit clients." />
+        <EmptyState icon="generic" title={t('aging.noClients')}
+          subtitle={t('clients.emptyReadOnlyHint')} />
       )}
     </div>
   )

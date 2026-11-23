@@ -1,24 +1,36 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Landmark } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { paymentSettlementApi } from '../../api/paymentSettlementApi'
 import type { Settlement, SettlementPaymentType } from '../../api/paymentSettlementApi'
-import { Reveal } from '../../components/Reveal'
 import { EmptyState } from '../../components/EmptyState'
-import { RefreshIndicator } from '../../components/RefreshIndicator'
 import { canPerformAction } from '../../permissions/permissions'
+import { Page } from '../../components/layout/Page'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { PageSection } from '../../components/layout/PageSection'
+import { PageTabs } from '../../components/layout/PageTabs'
+import { useActiveTab } from '../../components/layout/useActiveTab'
+import { useUrlParam } from '../../components/layout/useUrlParam'
 import { useSettlementHistory } from './useSettlementHistory'
 import { WalletCards } from './WalletCards'
 import { SettlementRecordsTab } from './SettlementRecordsTab'
 import { SettlementConfigTab } from './SettlementConfigTab'
 import { RecordSettlementDialog } from './RecordSettlementDialog'
 import { VoidSettlementDialog } from './VoidSettlementDialog'
+import { PendingByAgeCard } from './PendingByAgeCard'
+import { SettlementDetailsPanel } from './SettlementDetailsPanel'
 
-// ── Page ───────────────────────────────────────────────────────────────────
+const TAB_IDS = ['records', 'config'] as const
 
+/**
+ * Money collected by UPI, card and fleet card until it reaches the bank. The address holds the tab (?tab=config),
+ * an open settlement (?settlement=12) and the record form (?action=record-settlement).
+ */
 export default function PaymentSettlementsPage() {
+  const { t } = useTranslation('settlements')
   const { user }                   = useAuthStore()
   const { selectedPumpId: pumpId } = usePumpStore()
 
@@ -26,8 +38,10 @@ export default function PaymentSettlementsPage() {
   const canConfigure = canPerformAction('settlement:configure', user?.role)
   const canVoid      = canPerformAction('settlement:void', user?.role)
 
-  const [activeTab, setActiveTab]   = useState<'records' | 'config'>('records')
-  const [recordType, setRecordType] = useState<SettlementPaymentType | null>(null)
+  const activeTab = useActiveTab(TAB_IDS, 'records')
+  const recordAction = useUrlParam('action')
+  const openSettlement = useUrlParam('settlement')
+  const [recordType, setRecordType] = useState<SettlementPaymentType>('UPI')
   const [voidTarget, setVoidTarget] = useState<Settlement | null>(null)
 
   const history = useSettlementHistory(pumpId)
@@ -37,74 +51,78 @@ export default function PaymentSettlementsPage() {
     enabled:  !!pumpId,
   })
 
-  if (!pumpId) return <EmptyState icon="generic" title="Select a pump to view settlement records." />
+  const pendingByAge = useQuery({
+    queryKey: ['settlements-pending-age', pumpId],
+    queryFn:  () => paymentSettlementApi.getPendingByAge(pumpId!),
+    enabled:  !!pumpId,
+  })
+
+  if (!pumpId) {
+    return (
+      <Page>
+        <PageHeader title={t('page.title')} />
+        <EmptyState icon="generic" title={t('page.noPump')} />
+      </Page>
+    )
+  }
+
+  const openRecordForm = (type: SettlementPaymentType) => {
+    setRecordType(type)
+    recordAction.set('record-settlement')
+  }
+  const startVoid = (settlement: Settlement) => {
+    openSettlement.remove()
+    setVoidTarget(settlement)
+  }
+  const shownSettlement = history.dailySummary
+    .flatMap(entry => entry.settlements)
+    .find(settlement => String(settlement.id) === openSettlement.value)
+  const tabs = TAB_IDS.map(id => ({ id, label: id === 'records' ? t('page.historyTab') : t('page.alertsTab') }))
 
   return (
-    <Reveal>
-      <div className="ui-page ui-page--narrow">
-
-        {/* ── Header ── */}
-        <div className="ui-page-header mb-6">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="ui-title-sm">Payment Settlements</h1>
-              <RefreshIndicator isFetching={history.fetchingList} dataUpdatedAt={history.listUpdatedAt ?? 0} />
-            </div>
-            <p className="ui-subtitle">
-              Track when UPI, Card &amp; Fleet Card payments arrive in your bank account.
-            </p>
-          </div>
-          {canWrite && (
-            <button
-              onClick={() => setRecordType('UPI')}
-              className="ui-btn ui-btn-primary"
-            >
-              <Landmark size={16} strokeWidth={2} />
-              Record Settlement
-            </button>
-          )}
-        </div>
-
-        <WalletCards wallet={wallet} loadingWallet={loadingWallet} canWrite={canWrite} onRecord={setRecordType} />
-
-        {/* ── Tabs ── */}
-        <div className="flex gap-0 mb-5 border-b border-slate-200">
-          {(['records', 'config'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
-                activeTab === tab
-                  ? 'border-blue-600 text-blue-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {tab === 'records' ? 'Settlement History' : 'Alert Settings'}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'records' && (
-          <SettlementRecordsTab history={history} canVoid={canVoid} onVoid={setVoidTarget} />
+    <Page>
+      <PageHeader
+        title={t('page.title')}
+        description={t('page.subtitle')}
+        primaryAction={canWrite && (
+          <button type="button" onClick={() => openRecordForm('UPI')} className="ui-btn ui-btn-primary">
+            <Landmark size={16} strokeWidth={2} aria-hidden="true" />
+            {t('page.record')}
+          </button>
         )}
+        tabs={<PageTabs label={t('page.views')} tabs={tabs} activeTab={activeTab} resetParams={['settlement']} />}
+      />
 
-        {activeTab === 'config' && (
+      {activeTab === 'records' ? (
+        <>
+          <WalletCards wallet={wallet} loadingWallet={loadingWallet} canWrite={canWrite} onRecord={openRecordForm} />
+          <PendingByAgeCard ranges={pendingByAge.data} isLoading={pendingByAge.isLoading} error={pendingByAge.error} />
+          <SettlementRecordsTab history={history} canVoid={canVoid} onVoid={startVoid}
+            onOpenDetails={settlement => openSettlement.set(String(settlement.id))} />
+        </>
+      ) : (
+        <PageSection title={t('page.alertsTab')} description={t('alerts.intro')}>
           <SettlementConfigTab pumpId={pumpId} canConfigure={canConfigure} />
-        )}
-      </div>
+        </PageSection>
+      )}
 
-      {recordType && (
+      {recordAction.value === 'record-settlement' && canWrite && (
         <RecordSettlementDialog
           pumpId={pumpId}
           wallet={wallet}
+          pendingRanges={pendingByAge.data ?? []}
           initialType={recordType}
-          onClose={() => setRecordType(null)}
+          onClose={recordAction.remove}
         />
+      )}
+
+      {shownSettlement && (
+        <SettlementDetailsPanel settlement={shownSettlement} canVoid={canVoid} onVoid={startVoid} onClose={openSettlement.remove} />
       )}
 
       {voidTarget && (
         <VoidSettlementDialog pumpId={pumpId} voidTarget={voidTarget} onClose={() => setVoidTarget(null)} />
       )}
-    </Reveal>
+    </Page>
   )
 }

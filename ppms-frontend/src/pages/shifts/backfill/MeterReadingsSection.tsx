@@ -1,80 +1,70 @@
+import { useTranslation } from 'react-i18next'
+import { FormField } from '../../../components/FormField'
+import { FormGrid } from '../../../components/layout/FormGrid'
+import { NumericInput } from '../../../components/NumericInput'
+import { FUEL_UNIT } from '../../../constants/fuel'
+import { codeLabel } from '../../../constants/labels'
+import { formatCurrency } from '../../../utils/format'
 import { roundToPaise } from '../../../utils/money'
-import { FUEL_LABELS } from '../../../constants/fuel'
-import { SectionLabel } from './SectionLabel'
-import { fmt } from './backfillHelpers'
+import { formatUnits } from '../close/closeShiftTotals'
 import type { BackfillForm } from './useBackfillForm'
 
-export function MeterReadingsSection({ form }: { form: BackfillForm }) {
-  const { selectedNozzleIds, openingReadings, setOpeningReadings, closingReadings, setClosingReadings, availableNozzles, litersForNozzle, getEffectiveRate, nozzleExpected } = form
+function ReadingResult({ form, nozzleId, unit }: { form: BackfillForm; nozzleId: number; unit: string }) {
+  const { t } = useTranslation('shifts')
+  const { openingReadings, closingReadings, litersForNozzle, getEffectiveRate, availableNozzles } = form
+  const opening = parseFloat(openingReadings[nozzleId] ?? '')
+  const closing = parseFloat(closingReadings[nozzleId] ?? '')
+  if (isFinite(opening) && isFinite(closing) && closing < opening) {
+    return <span role="alert" className="font-medium text-bad">{t('backfill.meter.closingBelowOpening')}</span>
+  }
+  const liters = litersForNozzle(nozzleId)
+  if (liters === null) return null
+  const fuelType = availableNozzles.find((n) => n.id === nozzleId)?.fuelType ?? ''
+  const rate = getEffectiveRate(fuelType)
+  if (rate === null) {
+    return <span className="text-ink-2">{t('backfill.meter.soldNoRate', { sold: formatUnits(liters, unit, 3) })}</span>
+  }
   return (
-    <>
-      {selectedNozzleIds.size > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-          <SectionLabel>Meter Readings</SectionLabel>
-          {[...selectedNozzleIds].map((nozzleId) => {
-            const nozzle = availableNozzles.find((n) => n.id === nozzleId)
-            if (!nozzle) return null
-            const liters = litersForNozzle(nozzleId)
-            const rate   = getEffectiveRate(nozzle.fuelType)
-            const amount = nozzleExpected[nozzleId]
-            return (
-              <div key={nozzleId} className="bg-white rounded-lg border border-slate-200 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-slate-600">
-                    Nozzle #{nozzle.nozzleNumber} · {FUEL_LABELS[nozzle.fuelType] ?? nozzle.fuelType}
-                  </p>
-                  {amount !== null && (
-                    <span className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 rounded px-2 py-0.5">
-                      ₹{fmt(amount)}
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block">
-                      <span className="ui-label text-xs">Opening <span className="text-red-500">*</span></span>
-                      <input
-                        type="number" min="0" step="0.001" placeholder="0.000"
-                        value={openingReadings[nozzleId] ?? ''}
-                        onChange={(e) => setOpeningReadings((r) => ({ ...r, [nozzleId]: e.target.value }))}
-                        className="ui-input"
-                        required
-                      />
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block">
-                      <span className="ui-label text-xs">Closing <span className="text-red-500">*</span></span>
-                      <input
-                        type="number" min="0" step="0.001" placeholder="0.000"
-                        value={closingReadings[nozzleId] ?? ''}
-                        onChange={(e) => setClosingReadings((r) => ({ ...r, [nozzleId]: e.target.value }))}
-                        className="ui-input"
-                        required
-                      />
-                    </label>
-                  </div>
-                </div>
-                {liters !== null && liters >= 0 && rate !== null && (
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">{liters.toFixed(3)} L</span>
-                    {' × '}
-                    <span className="font-semibold text-slate-700">₹{rate.toFixed(2)}</span>
-                    {' = '}
-                    <span className="font-bold text-emerald-700">₹{fmt(roundToPaise(liters * rate))}</span>
-                  </p>
-                )}
-                {liters !== null && liters >= 0 && rate === null && (
-                  <p className="mt-1.5 text-xs text-amber-600">{liters.toFixed(3)} L sold — enter fuel rate above to see expected amount</p>
-                )}
-                {liters !== null && liters < 0 && (
-                  <p className="mt-1.5 text-xs text-red-600">Closing must be ≥ opening.</p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </>
+    <span className="tabular-nums text-ink-2">
+      = {formatUnits(liters, unit, 3)} × {formatCurrency(rate)} ={' '}
+      <span className="font-semibold text-ink">{formatCurrency(roundToPaise(liters * rate))}</span>
+    </span>
+  )
+}
+
+/** Opening and closing meter for each chosen nozzle, with litres × rate worked out as they are typed. */
+export function MeterReadingsSection({ form }: { form: BackfillForm }) {
+  const { t } = useTranslation('shifts')
+  const { selectedNozzleIds, openingReadings, setOpeningReadings, closingReadings, setClosingReadings, availableNozzles } = form
+  if (selectedNozzleIds.size === 0) return null
+  return (
+    <div className="divide-y divide-border rounded-card border border-border">
+      {[...selectedNozzleIds].map((nozzleId) => {
+        const nozzle = availableNozzles.find((n) => n.id === nozzleId)
+        if (!nozzle) return null
+        const unit = FUEL_UNIT[nozzle.fuelType] ?? 'L'
+        const name = t('backfill.meter.nozzle', { number: nozzle.nozzleNumber, fuel: codeLabel(nozzle.fuelType) })
+        return (
+          <div key={nozzleId} className="space-y-2 p-3">
+            <p className="text-sm font-medium text-ink">{name}</p>
+            <FormGrid>
+              <FormField label={t('backfill.meter.opening')}>
+                <NumericInput min="0" step="0.001" unit={unit} required
+                  aria-label={t('backfill.meter.openingAria', { nozzle: name })}
+                  value={openingReadings[nozzleId] ?? ''}
+                  onChange={(e) => setOpeningReadings((r) => ({ ...r, [nozzleId]: e.target.value }))} />
+              </FormField>
+              <FormField label={t('backfill.meter.closing')}>
+                <NumericInput min="0" step="0.001" unit={unit} required
+                  aria-label={t('backfill.meter.closingAria', { nozzle: name })}
+                  value={closingReadings[nozzleId] ?? ''}
+                  onChange={(e) => setClosingReadings((r) => ({ ...r, [nozzleId]: e.target.value }))} />
+              </FormField>
+            </FormGrid>
+            <p className="text-xs"><ReadingResult form={form} nozzleId={nozzleId} unit={unit} /></p>
+          </div>
+        )
+      })}
+    </div>
   )
 }

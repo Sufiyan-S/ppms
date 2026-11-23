@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { withToggled } from '../../../utils/setToggle'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { pumpApi } from '../../../api/pumpApi'
 import type { PumpSummary } from '../../../api/pumpApi'
@@ -14,6 +15,7 @@ import { CreateDuForm } from './CreateDuForm'
 // ── DU / Nozzle content ───────────────────────────────────────────────────────
 
 export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => void }) {
+  const { t } = useTranslation('setup')
   const { addToast } = useToastStore()
   const invalidate = useInvalidateNozzles(pump.id)
 
@@ -37,17 +39,11 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
     queryFn: () => pumpApi.getTanks(pump.id),
   })
 
-  // Current prices — needed to compute dip loss preview
-  const { data: currentPrices = [] } = useQuery({
-    queryKey: ['currentPrices', pump.id],
-    queryFn: () => pumpApi.getCurrentPrices(pump.id),
-  })
-
   const statusMutation = useMutation({
     mutationFn: ({ pumpId, duId, nozzleId, status }: { pumpId: number; duId: number; nozzleId: number; status: 'ACTIVE' | 'INACTIVE' }) =>
       pumpApi.updateNozzleStatus(pumpId, duId, nozzleId, status),
-    onSuccess: (_, { status }) => { setOpenPanel(null); setStatusError(null); addToast(status === 'ACTIVE' ? 'Nozzle enabled' : 'Nozzle disabled', 'success'); invalidate() },
-    onError: (err) => { const msg = parseApiError(err, 'Failed to update nozzle status'); setStatusError(msg); addToast(msg, 'error') },
+    onSuccess: (_, { status }) => { setOpenPanel(null); setStatusError(null); addToast(status === 'ACTIVE' ? t('nozzles.enabled') : t('nozzles.disabled'), 'success'); invalidate() },
+    onError: (err) => { const msg = parseApiError(err, t('nozzles.statusFailed')); setStatusError(msg); addToast(msg, 'error') },
   })
 
   // Per-DU collapse state — all collapsed by default
@@ -74,9 +70,8 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        Each Dispensary Unit (DU) is a physical MPD machine. Add one or more nozzles to each DU — each nozzle carries exactly one fuel type with its own meter counter.
-        CNG nozzles cannot share a DU with other fuel types.
+      <p className="text-xs text-ink-3">
+        {t('nozzles.intro')}
       </p>
 
       {/* Existing DUs (active + inactive) */}
@@ -90,7 +85,6 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
               isExpanded={expandedDuIds.has(du.id)}
               onToggle={() => toggleDU(du.id)}
               tanks={tanks}
-              currentPrices={currentPrices}
               openPanelFor={panelFor}
               onOpenPanel={openPanelFor}
               onClosePanel={() => setOpenPanel(null)}

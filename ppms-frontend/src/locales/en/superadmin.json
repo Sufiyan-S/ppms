@@ -1,0 +1,111 @@
+{
+  "header": {
+    "portal": "Super Admin Portal",
+    "tagline": "Platform management — onboard new pump owners",
+    "role": "Super Admin",
+    "openProfileMenu": "Open profile menu",
+    "resetPassword": "Change password",
+    "loggingOut": "Logging out…",
+    "logout": "Log out",
+    "passwordUpdated": "Password updated successfully. Please log in with your new password."
+  },
+  "page": {
+    "title": "Platform administration",
+    "pumpOwners": "Pump Owners",
+    "pumps": "Pumps",
+    "staffMembers": "Staff Members",
+    "copiedCredentials": "PPMS Login Credentials\nPhone: {{phone}}\nPassword: {{password}}\nPump: {{pump}}",
+    "description": "Onboard pump owners and look after their pumps and setup.",
+    "totalsLabel": "Platform totals"
+  },
+  "created": {
+    "title": "Owner account created — share these login details",
+    "body": "{{name}} can now log in and set up their pump.",
+    "phone": "Phone",
+    "password": "Password",
+    "hidePassword": "Hide password",
+    "revealPassword": "Reveal password",
+    "hide": "Hide",
+    "show": "Show",
+    "pump": "Pump",
+    "employeeId": "Employee ID",
+    "copy": "Copy"
+  },
+  "fields": {
+    "pumpName": "Pump name",
+    "pumpAddress": "Pump address",
+    "maxDuCount": "Max DU count",
+    "maxDuHelp": "1 to 20"
+  },
+  "onboard": {
+    "title": "Onboard new owner",
+    "subtitle": "Creates the owner account and their first pump.",
+    "ownerDetails": "Owner details",
+    "fullName": "Full name",
+    "phoneNumber": "Phone number",
+    "initialPassword": "Initial password",
+    "pumpDetails": "Pump details",
+    "creating": "Creating…",
+    "submit": "Onboard owner",
+    "failed": "Failed to create owner. Please try again.",
+    "backToOwners": "Back to owners",
+    "phoneHelp": "10-digit mobile number"
+  },
+  "owners": {
+    "title": "Onboarded owners",
+    "subtitle": "All pump owners currently on the platform.",
+    "count_one": "{{count}} owner",
+    "count_other": "{{count}} owners",
+    "empty": "No owners yet.",
+    "emptyHint": "Use Onboard new owner to add your first pump owner.",
+    "statusActive": "active",
+    "statusInactive": "inactive",
+    "pumpCount_one": "{{count}} pump",
+    "pumpCount_other": "{{count}} pumps",
+    "disabledCount": "· {{value}} disabled",
+    "resetPassword": "Reset password",
+    "addPump": "Add pump",
+    "noPumps": "No pumps added yet.",
+    "idLabel": "ID:",
+    "joined": "Joined {{date}}",
+    "updatePumpFailed": "Failed to update pump. Please try again.",
+    "listLabel": "Owners",
+    "detailLabel": "Owner details",
+    "selectOwner": "Choose an owner to see their pumps and setup progress.",
+    "notFound": "This owner is not in the list.",
+    "pumpsTitle": "Pumps",
+    "setupDone": "{{done}} of {{total}} pumps set up"
+  },
+  "addPump": {
+    "title": "Add a new pump for {{name}}",
+    "copy": "Adds another pump under this owner.",
+    "adding": "Adding…",
+    "submit": "Add pump",
+    "failed": "Failed to add pump. Please try again."
+  },
+  "pump": {
+    "disabled": "disabled",
+    "staff": "{{value}} staff",
+    "setup": "Setup {{done}} of {{required}} done",
+    "saveChanges": "Save changes",
+    "editTitle": "Edit {{name}}",
+    "disableTitle": "Disable {{name}}?",
+    "disableConsequence": "The owner and staff can't use this pump until you enable it again. Not allowed while a shift is open.",
+    "disableConfirm": "Disable pump"
+  },
+  "validation": {
+    "pumpNameRequired": "Pump name is required",
+    "pumpAddressRequired": "Pump address is required",
+    "atLeastOne": "Must be at least 1",
+    "atMostTwenty": "Cannot exceed 20",
+    "fullNameRequired": "Full name is required",
+    "phoneLength": "Phone number must be exactly 10 digits",
+    "digitsOnly": "Must be digits only",
+    "passwordLength": "Password must be at least 8 characters",
+    "passwordUppercase": "Must contain at least one uppercase letter",
+    "passwordLowercase": "Must contain at least one lowercase letter",
+    "passwordDigit": "Must contain at least one digit",
+    "atLeastOneDu": "Must be at least 1 DU",
+    "atMostTwentyDus": "Cannot exceed 20 DUs"
+  }
+}

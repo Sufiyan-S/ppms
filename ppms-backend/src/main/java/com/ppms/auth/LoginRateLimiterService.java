@@ -4,12 +4,14 @@ import com.ppms.common.time.BusinessClock;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.ppms.common.exception.TooManyRequestsException;
+import com.ppms.common.exception.ErrorCodes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -73,7 +75,8 @@ public class LoginRateLimiterService {
     public boolean isResetEmailAllowed(String phoneNumber, String ipAddress) {
         if (ipAddress != null && incrementAndCheck("ip:" + ipAddress, MAX_RESET_REQUESTS_PER_IP)) {
             log.warn("Password reset request blocked by IP limit: ip={}", ipAddress);
-            throw new TooManyRequestsException(
+            throw new TooManyRequestsException(ErrorCodes.TOO_MANY_PASSWORD_RESET_REQUESTS,
+                    Map.of("minutes", WINDOW_MINUTES),
                     "Too many password reset requests. Please wait " + WINDOW_MINUTES + " minutes before trying again.");
         }
         if (incrementAndCheck("phone:" + phoneNumber, MAX_RESET_REQUESTS_PER_PHONE)) {
@@ -92,12 +95,19 @@ public class LoginRateLimiterService {
                 .build());
     }
 
+    /** Lets a user whose password was just reset by an admin sign in at once, even after a lockout. */
+    @Transactional
+    public void clearFailedLogins(String phoneNumber) {
+        int cleared = attemptRepository.deleteFailuresByPhoneNumber(phoneNumber);
+        log.info("Cleared {} failed login attempts for phone={}", cleared, PhoneNumberMasking.mask(phoneNumber));
+    }
+
     private boolean incrementAndCheck(String key, int limit) {
         return resetRequestCounts.get(key, k -> new AtomicInteger()).incrementAndGet() > limit;
     }
 
     private TooManyRequestsException tooManyRequests() {
-        return new TooManyRequestsException(
+        return new TooManyRequestsException(ErrorCodes.TOO_MANY_LOGIN_ATTEMPTS, Map.of("minutes", WINDOW_MINUTES),
                 "Too many failed login attempts. Please wait " + WINDOW_MINUTES + " minutes before trying again.");
     }
 }

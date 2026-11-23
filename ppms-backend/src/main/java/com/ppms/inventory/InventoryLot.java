@@ -59,6 +59,10 @@ public class InventoryLot {
     @Column(name = "is_dip_adjustment", nullable = false)
     private Boolean isDipAdjustment;
 
+    /** The dip check whose extra fuel this lot holds; null for delivery lots. */
+    @Column(name = "dip_check_id")
+    private Long dipCheckId;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", nullable = false)

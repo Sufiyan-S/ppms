@@ -29,6 +29,8 @@ export interface PumpSummary {
   pumpAddress: string
   enabled: boolean
   staffCount: number
+  setupDoneCount: number
+  setupRequiredCount: number
 }
 
 export interface OwnerSummary {

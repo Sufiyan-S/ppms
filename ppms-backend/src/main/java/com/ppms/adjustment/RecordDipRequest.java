@@ -12,8 +12,9 @@ import java.time.LocalDate;
 @Data
 public class RecordDipRequest {
 
-    @NotBlank(message = "fuelType is required")
-    private String fuelType;
+    /** The tank the fuel was drained from; its fuel type is the entry's fuel type. */
+    @NotNull(message = "tankId is required")
+    private Long tankId;
 
     @NotNull(message = "litresRemoved is required")
     @DecimalMin(value = "0.001", message = "litresRemoved must be greater than 0")
@@ -22,7 +23,7 @@ public class RecordDipRequest {
     @NotBlank(message = "reason is required")
     private String reason;
 
-    /** Defaults to today if not provided. */
+    /** Defaults to today; any other date is refused because the drain reduces today's stock. */
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate dipDate;
 }

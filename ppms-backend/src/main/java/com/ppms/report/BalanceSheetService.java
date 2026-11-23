@@ -4,10 +4,14 @@ import com.ppms.adjustment.FuelDipEntry;
 import com.ppms.adjustment.FuelDipEntryRepository;
 import com.ppms.adjustment.NozzleReadingAdjustment;
 import com.ppms.adjustment.NozzleReadingAdjustmentRepository;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.inventory.DipCheck;
 import com.ppms.inventory.DipCheckRepository;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.common.text.CodedText;
+import com.ppms.common.text.ServerTextCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.credit.CreditPaymentRepository;
 import com.ppms.fuel.FuelType;
@@ -75,13 +79,9 @@ public class BalanceSheetService {
         LocalDate reportDate = req.getReportDate();
         boolean isShift = req.getReportType() == BalanceSheetReportType.SHIFT;
 
-        // Live DAY report: reportDate == today → a rolling 24-hour window ending now, so that
-        // cross-midnight shifts (e.g. 11pm→9am) are captured. Every DAY query uses the same period.
-        // SHIFT reports use the calendar day of reportDate for dip and amendment lookups.
-        boolean isLiveDay = !isShift && reportDate.equals(businessClock.today());
-        ReportPeriod period = isLiveDay
-                ? livePeriod(reportDate, businessClock.now())
-                : businessDayPeriod(reportDate);
+        // Every sheet covers its own business day, today's only up to now, so sheets of consecutive days
+        // never share a shift, sale or payment however late in the day they are generated.
+        ReportPeriod period = businessDayPeriod(reportDate, businessClock.now());
 
         PumpShiftDefinition shiftDef = isShift
                 ? shiftDefinitionService.getByIdAndPump(req.getShiftDefinitionId(), pumpId)
@@ -91,7 +91,20 @@ public class BalanceSheetService {
             rejectDuplicateSheet(pumpId, reportDate, shiftDef);
         }
 
-        List<Shift> shifts = findClosedShiftsForReport(pumpId, reportDate, shiftDef, isLiveDay, period);
+        List<Shift> openShifts = shiftDef != null
+                ? shiftRepository.findOpenShiftsByDefinition(pumpId, reportDate, shiftDef.getId())
+                : shiftRepository.findOpenShiftsByDate(pumpId, reportDate);
+        boolean isLiveSheet = reportDate.equals(businessClock.today());
+        if (!openShifts.isEmpty() && !isLiveSheet) {
+            String listedShifts = listOpenShifts(openShifts);
+            throw new BusinessException(ErrorCodes.BALANCE_SHEET_BLOCKED_BY_OPEN_SHIFTS,
+                    Map.of("reportDate", reportDate.toString(),
+                           "openShiftCount", openShifts.size(),
+                           "shifts", listedShifts),
+                    describeOpenShifts(reportDate, openShifts.size(), listedShifts));
+        }
+
+        List<Shift> shifts = findClosedShiftsForReport(pumpId, reportDate, shiftDef);
         List<Long> shiftIds = shifts.stream().map(Shift::getId).toList();
 
         FuelSales fuelSales = inputs.sumFuelSales(shiftIds);
@@ -101,8 +114,8 @@ public class BalanceSheetService {
         Deliveries deliveries = isShift ? Deliveries.NONE : inputs.sumDeliveries(pumpId, period);
         Map<FuelType, BigDecimal> creditByFuel = inputs.sumCreditSoldByFuel(shiftIds);
 
-        Recoveries recoveries = isShift ? Recoveries.NONE : sumRecoveries(pumpId, reportDate, isLiveDay, period);
-        StockLevels stock = inputs.stockLevels(pumpId, reportDate, isShift, isLiveDay, period, shifts);
+        Recoveries recoveries = isShift ? Recoveries.NONE : sumRecoveries(pumpId, reportDate);
+        StockLevels stock = inputs.stockLevels(pumpId, reportDate, isShift, period, shifts);
 
         Map<Long, FuelType> tankFuelTypeMap = inputs.tankFuelTypesFor(pumpId);
         List<FuelDipEntry> dipEntries = inputs.dipEntriesFor(pumpId, period);
@@ -131,15 +144,15 @@ public class BalanceSheetService {
         // The pump row lock is taken only around the final duplicate check and insert, so the
         // aggregation above does not block cash-outs and settlements on this pump.
         pumpLocationRepository.findByIdForUpdate(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found: " + pumpId));
         if (!req.isForceRegenerate()) {
             rejectDuplicateSheet(pumpId, reportDate, shiftDef);
         }
 
         BalanceSheet bs = balanceSheetRepository.save(buildSheet(pumpId, req, shiftDef, generatedBy,
-                buildPeriodLabel(req, pumpId, shiftDef, isLiveDay, period.start(), period.end()),
+                buildPeriodLabel(req, pumpId, shiftDef, period),
                 shifts, fuelSales, costOfGoods, deliveries, recoveries.creditRecovered(), recoveries.cashRecovery(),
-                dipLosses, dipNetAmount, productSalesSummary, expenseSummary));
+                dipLosses, dipNetAmount, productSalesSummary, expenseSummary, openShifts.size()));
 
         List<BsFuelLine> fuelLines = BalanceSheetFuelLineBuilder.build(bs.getId(), fuelSales, costOfGoods, deliveries,
                 stock, dipLosses, priceMap, creditByFuel, dipVarianceByFuel);
@@ -172,49 +185,60 @@ public class BalanceSheetService {
         static final Recoveries NONE = new Recoveries(BigDecimal.ZERO, BigDecimal.ZERO);
     }
 
-    private Recoveries sumRecoveries(Long pumpId, LocalDate reportDate, boolean isLiveDay, ReportPeriod period) {
-        BigDecimal creditRecovered = isLiveDay
-                ? creditPaymentRepository.sumApprovedAmountByPumpIdRecordedBetween(pumpId, period.start(), period.end())
-                : creditPaymentRepository.sumAmountByPumpIdAndDate(pumpId, reportDate);
-        BigDecimal cashRecovery = supportService.orZero(isLiveDay
-                ? shiftRepository.sumCashRecoveriesBetween(pumpId, period.start(), period.end())
-                : shiftRepository.sumCashRecoveriesOnDate(pumpId, reportDate));
+    private Recoveries sumRecoveries(Long pumpId, LocalDate reportDate) {
+        BigDecimal creditRecovered = creditPaymentRepository.sumAmountByPumpIdAndDate(pumpId, reportDate);
+        BigDecimal cashRecovery = supportService.orZero(shiftRepository.sumCashRecoveriesOnDate(pumpId, reportDate));
         return new Recoveries(creditRecovered, cashRecovery);
     }
 
     private void rejectDuplicateSheet(Long pumpId, LocalDate reportDate, PumpShiftDefinition shiftDef) {
         if (shiftDef != null) {
             balanceSheetRepository.findFirstByPumpIdAndReportDateAndShiftDefinitionId(pumpId, reportDate, shiftDef.getId())
-                    .ifPresent(bs -> { throw new BusinessException(
+                    .ifPresent(bs -> { throw new BusinessException(ErrorCodes.SHIFT_BALANCE_SHEET_ALREADY_EXISTS,
+                            Map.of("shiftName", shiftDef.getName(),
+                                   "reportDate", reportDate.toString(),
+                                   "balanceSheetId", bs.getId()),
                             "A balance sheet for \"" + shiftDef.getName() + "\" on " + reportDate +
                             " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
         } else {
             balanceSheetRepository.findFirstByPumpIdAndReportDateAndReportType(pumpId, reportDate, BalanceSheetReportType.DAY)
-                    .ifPresent(bs -> { throw new BusinessException(
+                    .ifPresent(bs -> { throw new BusinessException(ErrorCodes.DAY_BALANCE_SHEET_ALREADY_EXISTS,
+                            Map.of("reportDate", reportDate.toString(), "balanceSheetId", bs.getId()),
                             "A day-end balance sheet for " + reportDate + " already exists (ID " + bs.getId() + "). Delete it first to regenerate."); });
         }
     }
 
-    /**
-     * Live DAY: shifts that ended in the rolling 24-hour window (captures cross-midnight shifts).
-     * Historical DAY / SHIFT: by business date, or by shift definition.
-     */
-    private List<Shift> findClosedShiftsForReport(Long pumpId, LocalDate reportDate, PumpShiftDefinition shiftDef,
-                                                  boolean isLiveDay, ReportPeriod period) {
+    /** DAY: closed shifts by business date (a night shift belongs to the day it started). SHIFT: by definition. */
+    private List<Shift> findClosedShiftsForReport(Long pumpId, LocalDate reportDate, PumpShiftDefinition shiftDef) {
         List<Shift> shifts = shiftDef != null
                 ? shiftRepository.findClosedShiftsByDefinition(pumpId, reportDate, shiftDef.getId())
-                : isLiveDay
-                        ? shiftRepository.findClosedShiftsByEndTimeWindow(pumpId, period.start(), period.end())
-                        : shiftRepository.findClosedShiftsByDate(pumpId, reportDate);
+                : shiftRepository.findClosedShiftsByDate(pumpId, reportDate);
 
         if (shifts.isEmpty()) {
             String shiftLabel = shiftDef != null ? "\"" + shiftDef.getName() + "\" on " : "";
-            String windowHint = isLiveDay
-                    ? " (window: last 24 hrs ending now — ensure all shifts for this period are closed)"
-                    : "";
-            throw new BusinessException("No closed shifts found for " + shiftLabel + reportDate + windowHint + ". Close all shifts before generating a balance sheet.");
+            String code = shiftDef != null ? ErrorCodes.NO_CLOSED_SHIFTS_FOR_SHIFT_REPORT : ErrorCodes.NO_CLOSED_SHIFTS_FOR_DAY_REPORT;
+            Map<String, Object> params = shiftDef != null
+                    ? Map.of("shiftName", shiftDef.getName(), "reportDate", reportDate.toString())
+                    : Map.of("reportDate", reportDate.toString());
+            throw new BusinessException(code, params,
+                    "No closed shifts found for " + shiftLabel + reportDate + ". Close all shifts before generating a balance sheet.");
         }
         return shifts;
+    }
+
+    private String listOpenShifts(List<Shift> openShifts) {
+        Map<Long, String> operatorNames = userRepository
+                .findAllById(openShifts.stream().map(Shift::getOperatorId).collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(User::getId, User::getFullName));
+        return openShifts.stream()
+                .map(shift -> "Shift #" + shift.getId() + " (" + operatorNames.getOrDefault(shift.getOperatorId(), "Unknown") +
+                        ", " + shift.getStatus() + ")")
+                .collect(Collectors.joining(", "));
+    }
+
+    private String describeOpenShifts(LocalDate reportDate, int openShiftCount, String listed) {
+        return "The balance sheet for " + reportDate + " cannot be generated while " + openShiftCount +
+                " shift(s) of that day are still open: " + listed + ". Close them first.";
     }
 
 
@@ -226,12 +250,13 @@ public class BalanceSheetService {
 
 
     private BalanceSheet buildSheet(Long pumpId, GenerateBalanceSheetRequest req, PumpShiftDefinition shiftDef,
-                                    User generatedBy, String periodLabel, List<Shift> shifts,
+                                    User generatedBy, CodedText periodLabel, List<Shift> shifts,
                                     FuelSales fuelSales, CostOfGoods costOfGoods, Deliveries deliveries,
                                     BigDecimal creditRecovered, BigDecimal totalCashRecovery,
                                     DipLosses dipLosses, BigDecimal dipNetAmount,
                                     BalanceSheetDetailResponse.ProductSalesSummary productSalesSummary,
-                                    BalanceSheetDetailResponse.ExpenseSummary expenseSummary) {
+                                    BalanceSheetDetailResponse.ExpenseSummary expenseSummary,
+                                    int openShiftCount) {
         BigDecimal totalCash      = sumShiftAmounts(shifts, Shift::getCashCollected);
         BigDecimal totalUpi       = sumShiftAmounts(shifts, Shift::getUpiCollected);
         BigDecimal totalCard      = sumShiftAmounts(shifts, Shift::getCardCollected);
@@ -253,7 +278,9 @@ public class BalanceSheetService {
                 .reportDate(req.getReportDate())
                 .shiftWindow(shiftDef != null ? shiftDef.getName() : null)
                 .shiftDefinitionId(shiftDef != null ? shiftDef.getId() : null)
-                .periodLabel(periodLabel)
+                .periodLabel(periodLabel.text())
+                .periodLabelCode(periodLabel.code())
+                .periodLabelParams(periodLabel.params())
                 .generatedByUserId(generatedBy.getId())
                 .generatedAt(businessClock.now())
                 .notes(req.getNotes())
@@ -276,6 +303,7 @@ public class BalanceSheetService {
                         ? supportService.orZero(productSalesSummary.getGrossProfit()) : BigDecimal.ZERO)
                 .totalExpensesAmount(expenseSummary != null
                         ? supportService.orZero(expenseSummary.getTotalAmount()) : BigDecimal.ZERO)
+                .openShiftCount(openShiftCount)
                 .build();
     }
 
@@ -396,9 +424,16 @@ public class BalanceSheetService {
                     .reportDate(bs.getReportDate())
                     .shiftWindow(bs.getShiftWindow())
                     .periodLabel(bs.getPeriodLabel())
+                    .periodLabelCode(bs.getPeriodLabelCode())
+                    .periodLabelParams(Objects.requireNonNullElse(bs.getPeriodLabelParams(), Map.of()))
                     .generatedByUserName(userName)
                     .generatedAt(bs.getGeneratedAt())
                     .shiftCount(shiftCount)
+                    .stale(bs.isStale())
+                    .staleReason(bs.getStaleReason())
+                    .staleReasonCode(bs.getStaleReasonCode())
+                    .staleReasonParams(Objects.requireNonNullElse(bs.getStaleReasonParams(), Map.of()))
+                    .openShiftCount(bs.getOpenShiftCount())
                     .totalLitresSold(bs.getTotalLitresSold())
                     .totalExpectedRevenue(bs.getTotalExpectedRevenue())
                     .totalGrossProfit(bs.getTotalGrossProfit())
@@ -413,7 +448,7 @@ public class BalanceSheetService {
     public BalanceSheetDetailResponse getById(Long pumpId, Long id) {
         BalanceSheet bs = balanceSheetRepository.findById(id)
                 .filter(found -> found.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Balance sheet not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.BALANCE_SHEET, "Balance sheet not found"));
         List<BsFuelLine>  fuelLines  = bsFuelLineRepository.findByBalanceSheetIdOrderByFuelType(id);
         List<BsShiftLine> shiftLines = bsShiftLineRepository.findByBalanceSheetIdOrderByDuNumber(id);
         String userName = bs.getGeneratedByUserId() != null
@@ -421,14 +456,9 @@ public class BalanceSheetService {
                 : "System";
 
         // Amendments, dip checks and line items are re-read for the report's period; the totals that
-        // feed net profit come from the values stored at generation. A live DAY report re-derives the
-        // same 24-hour window anchored to generatedAt.
-        LocalDate generatedDate = bs.getGeneratedAt().atZoneSameInstant(businessClock.zone()).toLocalDate();
-        boolean isLiveDayReport = bs.getReportType() == BalanceSheetReportType.DAY
-                && bs.getReportDate().equals(generatedDate);
-        ReportPeriod period = isLiveDayReport
-                ? livePeriod(bs.getReportDate(), bs.getGeneratedAt())
-                : businessDayPeriod(bs.getReportDate());
+        // feed net profit come from the values stored at generation. A sheet generated on its own day
+        // re-derives the same period, cut off at generatedAt.
+        ReportPeriod period = businessDayPeriod(bs.getReportDate(), bs.getGeneratedAt());
         OffsetDateTime from = period.start();
         OffsetDateTime to   = period.end();
 
@@ -466,21 +496,45 @@ public class BalanceSheetService {
     public void delete(Long pumpId, Long id) {
         BalanceSheet bs = balanceSheetRepository.findById(id)
                 .filter(found -> found.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Balance sheet not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.BALANCE_SHEET, "Balance sheet not found"));
         balanceSheetRepository.delete(bs);
         log.info("Balance sheet deleted: id={}, pump={}", id, pumpId);
+    }
+
+    /**
+     * Replaces a saved sheet with a freshly generated one for the same day, type, shift and notes.
+     * The old sheet is kept if the new one cannot be generated, e.g. while that day still has open shifts.
+     */
+    @Transactional
+    public BalanceSheetDetailResponse regenerate(Long pumpId, Long id, User regeneratedBy) {
+        BalanceSheet old = balanceSheetRepository.findById(id)
+                .filter(found -> found.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.BALANCE_SHEET, "Balance sheet not found"));
+
+        GenerateBalanceSheetRequest request = new GenerateBalanceSheetRequest();
+        request.setReportType(old.getReportType());
+        request.setReportDate(old.getReportDate());
+        request.setShiftDefinitionId(old.getShiftDefinitionId());
+        request.setNotes(old.getNotes());
+
+        balanceSheetRepository.delete(old);
+        balanceSheetRepository.flush();
+        boolean otherRevisionsRemain = old.getShiftDefinitionId() != null
+                ? balanceSheetRepository.countByPumpIdAndReportDateAndShiftDefinitionId(pumpId, old.getReportDate(), old.getShiftDefinitionId()) > 0
+                : balanceSheetRepository.countByPumpIdAndReportDateAndReportType(pumpId, old.getReportDate(), BalanceSheetReportType.DAY) > 0;
+        request.setForceRegenerate(otherRevisionsRemain);
+
+        BalanceSheetDetailResponse regenerated = generate(pumpId, request, regeneratedBy);
+        log.info("Balance sheet regenerated: pump={}, oldId={}, newId={}, by={}", pumpId, id, regenerated.getId(), regeneratedBy.getId());
+        return regenerated;
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
 
-    private ReportPeriod livePeriod(LocalDate reportDate, OffsetDateTime end) {
-        return new ReportPeriod(reportDate, end.minusHours(24), end, true);
-    }
-
-    private ReportPeriod businessDayPeriod(LocalDate reportDate) {
-        return new ReportPeriod(reportDate, supportService.startOfBusinessDay(reportDate),
-                supportService.startOfBusinessDay(reportDate.plusDays(1)), false);
+    private ReportPeriod businessDayPeriod(LocalDate reportDate, OffsetDateTime cutOff) {
+        return ReportPeriod.ofBusinessDay(reportDate, supportService.startOfBusinessDay(reportDate),
+                supportService.startOfBusinessDay(reportDate.plusDays(1)), cutOff);
     }
 
 
@@ -490,36 +544,44 @@ public class BalanceSheetService {
     private void validateRequest(GenerateBalanceSheetRequest req) {
         if (req.getReportType() == BalanceSheetReportType.SHIFT) {
             if (req.getShiftDefinitionId() == null) {
-                throw new BusinessException("shiftDefinitionId is required for SHIFT reports. Select a shift from the dropdown.");
+                throw new BusinessException(ErrorCodes.SHIFT_REPORT_REQUIRES_SHIFT_DEFINITION, Map.of(),
+                        "shiftDefinitionId is required for SHIFT reports. Select a shift from the dropdown.");
             }
         }
     }
 
-    private String buildPeriodLabel(GenerateBalanceSheetRequest req, Long pumpId,
-                                     com.ppms.pump.PumpShiftDefinition shiftDef,
-                                     boolean isLiveDay, OffsetDateTime windowStart, OffsetDateTime windowEnd) {
+    private CodedText buildPeriodLabel(GenerateBalanceSheetRequest req, Long pumpId,
+                                       com.ppms.pump.PumpShiftDefinition shiftDef, ReportPeriod period) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        String code;
         String base;
-        if (isLiveDay) {
-            // Show the actual 24-hour window so the label is unambiguous.
-            // Example: "Day End · 21 Apr 15:05 → 22 Apr 15:05"
-            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMM HH:mm");
-            String from = windowStart.atZoneSameInstant(businessClock.zone()).format(fmt);
-            String to   = windowEnd.atZoneSameInstant(businessClock.zone()).format(fmt);
-            base = "Day End · " + from + " → " + to;
+        if (req.getReportType() == BalanceSheetReportType.DAY) {
+            params.put("date", req.getReportDate().toString());
+            code = ServerTextCodes.PERIOD_DAY_END;
+            base = "Day End · " + req.getReportDate();
+            if (period.endsBeforeDayEnd()) {
+                // Example: "Day End · 2026-04-22 (up to 15:05)"
+                String upTo = period.end().atZoneSameInstant(businessClock.zone()).format(DateTimeFormatter.ofPattern("HH:mm"));
+                params.put("time", upTo);
+                code = ServerTextCodes.PERIOD_DAY_END_UP_TO;
+                base += " (up to " + upTo + ")";
+            }
         } else {
-            base = req.getReportType() == BalanceSheetReportType.DAY
-                    ? "Day End · " + req.getReportDate()
-                    : shiftDef.getName() + " · " + req.getReportDate();
+            params.put("shiftName", shiftDef.getName());
+            params.put("date", req.getReportDate().toString());
+            code = ServerTextCodes.PERIOD_SHIFT;
+            base = shiftDef.getName() + " · " + req.getReportDate();
         }
 
-        if (!req.isForceRegenerate()) return base;
+        if (!req.isForceRegenerate()) return new CodedText(code, params, base);
 
         // Count existing reports for this period to determine the next revision number.
         long existing = req.getReportType() == BalanceSheetReportType.DAY
                 ? balanceSheetRepository.countByPumpIdAndReportDateAndReportType(pumpId, req.getReportDate(), BalanceSheetReportType.DAY)
                 : balanceSheetRepository.countByPumpIdAndReportDateAndShiftDefinitionId(pumpId, req.getReportDate(), req.getShiftDefinitionId());
 
-        return base + " #" + (existing + 1);
+        params.put("revision", existing + 1);
+        return new CodedText(code + "_REVISION", params, base + " #" + (existing + 1));
     }
 
     /**

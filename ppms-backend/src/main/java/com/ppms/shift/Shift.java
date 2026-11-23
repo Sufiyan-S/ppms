@@ -124,6 +124,15 @@ public class Shift {
     @Column(name = "discrepancy_resolved_at")
     private OffsetDateTime discrepancyResolvedAt;
 
+    @Column(name = "investigation_note")
+    private String investigationNote;
+
+    @Column(name = "investigation_started_by_id")
+    private Long investigationStartedById;
+
+    @Column(name = "investigation_started_at")
+    private OffsetDateTime investigationStartedAt;
+
     /**
      * Amount physically returned as cash when a SHORT discrepancy is resolved via CASH_RECOVERY.
      * Always equals discrepancyAmount for that resolution. Null for all other cases.

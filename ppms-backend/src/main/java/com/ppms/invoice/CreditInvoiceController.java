@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Map;
 
 @RestController
@@ -85,6 +86,19 @@ public class CreditInvoiceController {
                 "clientsSkipped", result.clientsSkipped(),
                 "clientsFailed", result.clientsFailed(),
                 "failedClientIds", result.failedClientIds()));
+    }
+
+    /**
+     * GET /api/pumps/{pumpId}/credit-invoices/generate-all/preview?periodFrom=&periodTo=
+     * How many clients and how much generate-all would invoice for the period; issues nothing.
+     */
+    @GetMapping("/generate-all/preview")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
+    public ResponseEntity<InvoiceRunPreview> previewInvoicesForAllClients(
+            @PathVariable Long pumpId,
+            @RequestParam LocalDate periodFrom,
+            @RequestParam LocalDate periodTo) {
+        return ResponseEntity.ok(invoiceService.previewForAllClients(pumpId, periodFrom, periodTo));
     }
 
     /** POST /api/pumps/{pumpId}/credit-invoices/{invoiceId}/cancel — keeps the invoice and its number, frees its sales. */

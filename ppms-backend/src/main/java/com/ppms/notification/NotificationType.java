@@ -5,6 +5,8 @@ public enum NotificationType {
     PRICE_STALE,
     DOCUMENT_EXPIRING,
     CALIBRATION_DUE,
+    /** Fired once per nozzle and due date when the next calibration falls due within 7 days. */
+    CALIBRATION_DUE_SOON,
     SHIFT_OVERDUE,
     /** Fired when a shift closes with ₹0 in sales but was open for more than 30 minutes. */
     ZERO_SALE_SHIFT,

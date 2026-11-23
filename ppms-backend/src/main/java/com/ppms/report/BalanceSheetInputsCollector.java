@@ -159,10 +159,7 @@ class BalanceSheetInputsCollector {
     }
 
     List<FuelDipEntry> dipEntriesFor(Long pumpId, ReportPeriod period) {
-        return period.live()
-                ? fuelDipEntryRepository.findByPumpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-                        pumpId, period.start(), period.end())
-                : fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, period.reportDate(), period.reportDate());
+        return fuelDipEntryRepository.findByPumpIdAndDipDateBetween(pumpId, period.reportDate(), period.reportDate());
     }
 
     /** Litres held per fuel type at {@code asOf}: lots received before it minus what had been consumed by then. */
@@ -193,20 +190,16 @@ class BalanceSheetInputsCollector {
 
     /**
      * Rebuilt from the lot ledger so historical reports show the stock of their own period, measured the
-     * same way the report picks its shifts: SHIFT and live DAY by shift end time, historical DAY by shift
-     * date. SHIFT reports span from the first included shift's start to the last one's end.
+     * same way the report picks its shifts: SHIFT by shift time, DAY by shift date. SHIFT reports span
+     * from the first included shift's start to the last one's end.
      */
-    StockLevels stockLevels(Long pumpId, LocalDate reportDate, boolean isShift, boolean isLiveDay,
-                            ReportPeriod period, List<Shift> shifts) {
+    StockLevels stockLevels(Long pumpId, LocalDate reportDate, boolean isShift, ReportPeriod period, List<Shift> shifts) {
         if (isShift) {
             OffsetDateTime stockFrom = shifts.stream().map(Shift::getActualStartTime).filter(Objects::nonNull)
                     .min(Comparator.naturalOrder()).orElse(period.start());
             OffsetDateTime stockTo = shifts.stream().map(Shift::getActualEndTime).filter(Objects::nonNull)
                     .max(Comparator.naturalOrder()).orElse(period.end());
             return new StockLevels(stockByFuelTypeAt(pumpId, stockFrom), stockByFuelTypeAt(pumpId, stockTo));
-        }
-        if (isLiveDay) {
-            return new StockLevels(stockByFuelTypeAt(pumpId, period.start()), stockByFuelTypeAt(pumpId, period.end()));
         }
         return new StockLevels(stockByFuelTypeBeforeDay(pumpId, reportDate),
                 stockByFuelTypeBeforeDay(pumpId, reportDate.plusDays(1)));

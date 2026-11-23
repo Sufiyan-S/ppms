@@ -1,115 +1,127 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import type { BsFuelLine, BsShiftLine, NozzleReadingLine } from '../../api/balanceSheetApi'
-import { FUEL_BADGE, fmtLitres, fmtMoney } from './bsFormat'
+import { LitresText, MoneyText } from '../../components/AmountText'
+import { FUEL_BADGE } from './bsFormat'
 import { codeLabel } from '../../constants/labels'
+import { shiftUrl } from '../../utils/drillDown'
 
 // ── Table sub-components ────────────────────────────────────────────────────────
 
-export function Th({ children, right, colSpan }: { children?: ReactNode; right?: boolean; colSpan?: number }) {
-  return (
-    <th scope="col" colSpan={colSpan} className={`px-2 py-2 print:px-1 print:py-1 text-[11px] font-semibold text-slate-500 whitespace-nowrap ${right ? 'text-right' : ''}`}>
-      {children}
-    </th>
-  )
-}
-
 export function Td({ children, right, colSpan }: { children?: ReactNode; right?: boolean; colSpan?: number }) {
   return (
-    <td colSpan={colSpan} className={`px-2 py-2 print:px-1 print:py-1 text-slate-700 ${right ? 'text-right whitespace-nowrap tabular-nums' : ''}`}>
+    <td colSpan={colSpan} className={`px-2 py-2 print:px-1 print:py-1 text-ink ${right ? 'text-right whitespace-nowrap tabular-nums' : ''}`}>
       {children}
     </td>
   )
 }
 
 export function DiscrepancyTd({ value }: { value: number }) {
-  const color = value === 0 ? 'text-emerald-600' : value < 0 ? 'text-red-600' : 'text-amber-600'
+  const { t } = useTranslation('balancesheet')
+  const color = value === 0 ? 'text-ok' : value < 0 ? 'text-bad' : 'text-warn'
   return (
     <td className={`px-2 py-2 print:px-1 print:py-1 text-right font-medium whitespace-nowrap tabular-nums ${color}`}>
-      {value === 0 ? '—' : fmtMoney(Math.abs(value))}
-      {value !== 0 && <span className="text-xs ml-1">{value < 0 ? 'Short' : 'Over'}</span>}
+      {value === 0 ? '—' : <MoneyText value={Math.abs(value)} />}
+      {value !== 0 && <span className="text-xs ml-1">{value < 0 ? t('summary.short') : t('summary.over')}</span>}
     </td>
   )
 }
 
-export function FuelLineRow({ line }: { line: BsFuelLine }) {
+/** shiftsHref opens shift history for this fuel over the sheet's period. */
+export function FuelLineRow({ line, shiftsHref }: { line: BsFuelLine; shiftsHref?: string }) {
+  const { t } = useTranslation('balancesheet')
   const { user } = useAuthStore()
   const isOwnerOrAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN'
-  const badge = FUEL_BADGE[line.fuelType] ?? 'bg-slate-100 text-slate-600'
-  const profitColor = line.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'
+  const badge = FUEL_BADGE[line.fuelType] ?? 'bg-surface-sunken text-ink-2'
 
   return (
-    <tr className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+    <tr>
       <Td>
-        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${badge}`}>
+        <span className={`inline-block px-2 py-0.5 rounded-badge text-xs font-medium ${badge}`}>
           {codeLabel(line.fuelType)}
         </span>
+        {shiftsHref && (
+          <Link to={shiftsHref} className="ui-link ml-2 text-xs print:hidden" aria-label={t('fuel.viewShifts', { fuel: codeLabel(line.fuelType) })}>
+            {t('fuel.shiftsLink')}
+          </Link>
+        )}
       </Td>
-      <Td right>{fmtLitres(line.openingStock)}</Td>
-      <Td right>{line.deliveredLitres > 0 ? fmtLitres(line.deliveredLitres) : <span className="text-slate-500">—</span>}</Td>
-      <Td right>{fmtLitres(line.soldLitres)}</Td>
-      <Td right>{fmtLitres(line.closingStock)}</Td>
-      <Td right>{fmtMoney(line.sellingPrice)}<span className="text-slate-500 text-xs">/L</span></Td>
-      <Td right>{fmtMoney(line.expectedRevenue)}</Td>
-      {isOwnerOrAdmin && <Td right>{fmtMoney(line.costOfGoods)}</Td>}
-      {isOwnerOrAdmin && <Td right><span className={`font-medium ${profitColor}`}>{fmtMoney(line.grossProfit)}</span></Td>}
+      <Td right><LitresText value={line.openingStock} decimals={1} /></Td>
+      <Td right>{line.deliveredLitres > 0 ? <LitresText value={line.deliveredLitres} decimals={1} /> : <span className="text-ink-3">—</span>}</Td>
+      <Td right><LitresText value={line.soldLitres} decimals={1} /></Td>
+      <Td right><LitresText value={line.closingStock} decimals={1} /></Td>
+      <Td right><MoneyText value={line.sellingPrice} /><span className="text-ink-3 text-xs">/L</span></Td>
+      <Td right><MoneyText value={line.expectedRevenue} /></Td>
+      {isOwnerOrAdmin && <Td right><MoneyText value={line.costOfGoods} /></Td>}
+      {isOwnerOrAdmin && <Td right><MoneyText value={line.grossProfit} tone={line.grossProfit >= 0 ? 'ok' : 'bad'} className="font-medium" /></Td>}
       <Td right>
         {line.stockVariance === 0 ? (
-          <span className="text-slate-500">—</span>
+          <span className="text-ink-3">—</span>
         ) : (
-          <span className={`font-medium ${line.stockVariance > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+          <span className={`font-medium ${line.stockVariance > 0 ? 'text-warn' : 'text-bad'}`}>
             {line.stockVariance > 0 ? '+' : ''}{line.stockVariance.toFixed(1)} L
           </span>
         )}
       </Td>
       {isOwnerOrAdmin && <Td right>
         {line.dipLossAmount > 0
-          ? <span className="text-red-600 font-medium">-{fmtMoney(line.dipLossAmount)}</span>
-          : <span className="text-slate-500">—</span>}
+          ? <MoneyText value={-line.dipLossAmount} showSign tone="bad" className="font-medium" />
+          : <span className="text-ink-3">—</span>}
       </Td>}
-      <Td right>{line.creditSoldAmount > 0 ? fmtMoney(line.creditSoldAmount) : <span className="text-slate-500">—</span>}</Td>
+      <Td right>{line.creditSoldAmount > 0 ? <MoneyText value={line.creditSoldAmount} /> : <span className="text-ink-3">—</span>}</Td>
     </tr>
   )
 }
 
+function AmountOrDash({ value }: { value: number }) {
+  return value > 0 ? <MoneyText value={value} /> : <span className="text-ink-3">—</span>
+}
+
 export function ShiftLineRow({ line }: { line: BsShiftLine }) {
+  const { t } = useTranslation('balancesheet')
   const fleetCard = line.fleetCardCollected ?? 0
   return (
     <>
       {/* Shift summary row — shows operator, DU, and all payment totals */}
-      <tr className="border-t border-slate-200 hover:bg-slate-50 transition-colors">
-        <Td>{line.operatorName}</Td>
+      <tr>
         <Td>
-          <span className="font-medium text-slate-700">DU #{line.duNumber}</span>
-          {line.duName && <span className="text-xs text-slate-500 ml-1">· {line.duName}</span>}
+          <Link to={shiftUrl(line.shiftId)} className="ui-link" aria-label={t('shifts.openShift', { id: line.shiftId, name: line.operatorName })}>
+            {line.operatorName}
+          </Link>
         </Td>
-        <Td><span className="text-xs text-slate-500 block max-w-[100px]">{line.fuelTypesSummary}</span></Td>
-        <Td right>{fmtLitres(line.litresSold)}</Td>
-        <Td right>{fmtMoney(line.expectedRevenue)}</Td>
-        <Td right><span className="font-medium text-slate-800">{fmtMoney(line.cashCollected + line.upiCollected + line.cardCollected + fleetCard)}</span></Td>
-        <Td right>{line.cashCollected > 0 ? fmtMoney(line.cashCollected) : <span className="text-slate-500">—</span>}</Td>
-        <Td right>{line.upiCollected > 0 ? fmtMoney(line.upiCollected) : <span className="text-slate-500">—</span>}</Td>
-        <Td right>{line.cardCollected > 0 ? fmtMoney(line.cardCollected) : <span className="text-slate-500">—</span>}</Td>
-        <Td right>{fleetCard > 0 ? fmtMoney(fleetCard) : <span className="text-slate-500">—</span>}</Td>
-        <Td right>{line.creditAmount > 0 ? fmtMoney(line.creditAmount) : <span className="text-slate-500">—</span>}</Td>
+        <Td>
+          <span className="font-medium text-ink">{t('shifts.duNumber', { number: line.duNumber })}</span>
+          {line.duName && <span className="text-xs text-ink-3 ml-1">· {line.duName}</span>}
+        </Td>
+        <Td><span className="text-xs text-ink-3 block max-w-25">{line.fuelTypesSummary}</span></Td>
+        <Td right><LitresText value={line.litresSold} decimals={1} /></Td>
+        <Td right><MoneyText value={line.expectedRevenue} /></Td>
+        <Td right><MoneyText value={line.cashCollected + line.upiCollected + line.cardCollected + fleetCard} className="font-medium text-ink" /></Td>
+        <Td right><AmountOrDash value={line.cashCollected} /></Td>
+        <Td right><AmountOrDash value={line.upiCollected} /></Td>
+        <Td right><AmountOrDash value={line.cardCollected} /></Td>
+        <Td right><AmountOrDash value={fleetCard} /></Td>
+        <Td right><AmountOrDash value={line.creditAmount} /></Td>
         <DiscrepancyTd value={line.discrepancy} />
       </tr>
       {/* Per-nozzle breakdown rows — one row per nozzle showing fuel type and litres only */}
       {(line.nozzleReadings ?? []).map((nr: NozzleReadingLine, i: number) => {
-        const badge = FUEL_BADGE[nr.fuelType] ?? 'bg-slate-100 text-slate-600'
+        const badge = FUEL_BADGE[nr.fuelType] ?? 'bg-surface-sunken text-ink-2'
         return (
-          <tr key={i} className="border-t border-slate-100 bg-slate-50/40">
+          <tr key={i} className="bg-surface-sunken">
             <Td></Td>
             <Td>
-              <span className="text-xs text-slate-500 ml-3">↳ Nozzle #{nr.nozzleNumber}</span>
+              <span className="text-xs text-ink-3 ml-3">{t('shifts.nozzle', { number: nr.nozzleNumber })}</span>
             </Td>
             <Td>
-              <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${badge}`}>
+              <span className={`inline-block px-1.5 py-0.5 rounded-badge text-xs font-medium ${badge}`}>
                 {codeLabel(nr.fuelType)}
               </span>
             </Td>
-            <Td right><span className="text-xs text-slate-500">{fmtLitres(nr.litresSold)}</span></Td>
-            <Td right><span className="text-xs text-slate-500">{fmtMoney(nr.expectedRevenue)}</span></Td>
+            <Td right><LitresText value={nr.litresSold} decimals={1} className="text-xs text-ink-3" /></Td>
+            <Td right><MoneyText value={nr.expectedRevenue} className="text-xs text-ink-3" /></Td>
             <Td colSpan={7}></Td>
           </tr>
         )
@@ -122,23 +134,23 @@ export function ShiftLineRow({ line }: { line: BsShiftLine }) {
 
 interface SummaryTileProps {
   label: string
-  value: string
+  value: ReactNode
   sublabel?: string
   accent?: 'green' | 'red' | 'amber' | 'blue'
 }
 
 export function SummaryTile({ label, value, sublabel, accent }: SummaryTileProps) {
   const accentMap = {
-    green: 'text-emerald-600',
-    red:   'text-red-600',
-    amber: 'text-amber-600',
-    blue:  'text-blue-600',
+    green: 'text-ok',
+    red:   'text-bad',
+    amber: 'text-warn',
+    blue:  'text-primary',
   }
-  const valueColor = accent ? accentMap[accent] : 'text-slate-800'
+  const valueColor = accent ? accentMap[accent] : 'text-ink'
 
   return (
-    <div className="ui-card-plain bg-white px-4 py-3">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
+    <div className="ui-card-plain bg-surface px-4 py-3">
+      <p className="text-xs text-ink-3 mb-1">{label}</p>
       <p className={`text-base font-semibold ${valueColor}`}>{value}</p>
       {sublabel && <p className={`text-xs mt-0.5 ${valueColor}`}>{sublabel}</p>}
     </div>

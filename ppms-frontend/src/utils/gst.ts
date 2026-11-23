@@ -22,5 +22,3 @@ export function isValidInvoicePrefix(value: string): boolean {
   const prefix = normaliseGstText(value)
   return prefix === '' || INVOICE_PREFIX_PATTERN.test(prefix)
 }
-
-export const GSTIN_FORMAT_MESSAGE = 'GSTIN must be 15 characters in the format 27ABCDE1234F1Z5.'

@@ -3,6 +3,8 @@ package com.ppms.pump;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -81,11 +83,12 @@ public class PumpClosureController {
         requireOwner(currentUser);
 
         pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         // Duplicate guard — gives a friendly error instead of a DB constraint violation
         closureRepository.findByPumpIdAndClosureDate(pumpId, request.closureDate()).ifPresent(existing -> {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PUMP_CLOSURE_ALREADY_EXISTS,
+                    Map.of("closureDate", String.valueOf(request.closureDate())),
                     "A closure already exists for " + request.closureDate() +
                     ". Delete the existing record first if you want to update the reason.");
         });
@@ -125,10 +128,10 @@ public class PumpClosureController {
         requireOwner(currentUser);
 
         PumpClosure closure = closureRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Closure record not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP_CLOSURE, "Closure record not found"));
 
         if (!closure.getPumpId().equals(pumpId)) {
-            throw new ResourceNotFoundException("Closure not found");
+            throw new ResourceNotFoundException(EntityType.PUMP_CLOSURE, "Closure not found");
         }
 
         closureRepository.delete(closure);
@@ -146,7 +149,8 @@ public class PumpClosureController {
 
     private void requireOwner(User user) {
         if (user.getRole() != UserRole.OWNER) {
-            throw new BusinessException("Only Owner can manage pump closures.");
+            throw new BusinessException(ErrorCodes.PUMP_CLOSURE_OWNER_ONLY, Map.of(),
+                    "Only Owner can manage pump closures.");
         }
     }
 

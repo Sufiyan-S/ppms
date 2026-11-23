@@ -1,6 +1,8 @@
 export const pageLoaders = {
   dashboard:      () => import('../pages/dashboard/DashboardPage'),
   overview:       () => import('../pages/dashboard/OverviewPage'),
+  approvals:      () => import('../pages/approvals/ApprovalsPage'),
+  myShift:        () => import('../pages/shifts/MyShiftPage'),
   shifts:         () => import('../pages/shifts/ShiftsPage'),
   shiftPlanning:  () => import('../pages/shifts/ShiftPlanningPage'),
   setup:          () => import('../pages/setup/SetupPage'),
@@ -17,10 +19,13 @@ export const pageLoaders = {
   payroll:        () => import('../pages/payroll/PayrollPage'),
   ancillary:      () => import('../pages/ancillary/AncillaryProductsPage'),
   settlements:    () => import('../pages/settlements/PaymentSettlementsPage'),
+  notifications:  () => import('../pages/notifications/NotificationsPage'),
 }
 
 const PAGE_BY_PATH: Record<string, keyof typeof pageLoaders> = {
   '/dashboard':                'overview',
+  '/dashboard/approvals':      'approvals',
+  '/dashboard/my-shift':       'myShift',
   '/dashboard/shifts':         'shifts',
   '/dashboard/shift-planning': 'shiftPlanning',
   '/dashboard/inventory':      'inventory',
@@ -33,6 +38,7 @@ const PAGE_BY_PATH: Record<string, keyof typeof pageLoaders> = {
   '/dashboard/ancillary':      'ancillary',
   '/dashboard/audit':          'audit',
   '/dashboard/settlements':    'settlements',
+  '/dashboard/notifications':  'notifications',
   '/dashboard/balance-sheets': 'balanceSheets',
   '/dashboard/reports':        'reports',
   '/dashboard/setup':          'setup',

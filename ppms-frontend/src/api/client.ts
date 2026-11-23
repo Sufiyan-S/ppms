@@ -1,5 +1,6 @@
 import axios, { isAxiosError } from 'axios'
 import type { InternalAxiosRequestConfig } from 'axios'
+import { translateKey } from '../i18n'
 import { useAuthStore } from '../store/authStore'
 import { usePumpStore } from '../store/usePumpStore'
 import type { ApiErrorBody } from '../utils/apiError'
@@ -12,7 +13,10 @@ const apiClient = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+  timeout: 20_000,
 })
+
+export const REPORT_TIMEOUT_MS = 60_000
 
 // Patterns that indicate a raw Java exception or SQL error leaked through.
 // Any message matching these is replaced with a generic string before it reaches
@@ -36,7 +40,7 @@ function sanitizeErrorMessage(error: unknown): void {
   const message = data.message
   const isLeaking = DANGEROUS_MESSAGE_PATTERNS.some((p) => p.test(message))
   if (isLeaking) {
-    data.message = 'Something went wrong. Please try again.'
+    data.message = translateKey('errors:generic')
   }
 }
 
@@ -49,6 +53,16 @@ function recordSuspendedPump(error: unknown): void {
   const pumpIdInUrl = PUMP_ID_IN_URL.exec(error.config?.url ?? '')?.[1]
   const pumpId = pumpIdInUrl ? Number(pumpIdInUrl) : usePumpStore.getState().selectedPumpId
   if (pumpId !== null) usePumpStore.getState().markPumpSuspended(pumpId)
+}
+
+const PASSWORD_CHANGE_REQUIRED_CODE = 'PASSWORD_CHANGE_REQUIRED'
+
+// ProtectedRoute sends a flagged user to the change-password screen, so recording the flag is enough.
+function recordPasswordChangeRequired(error: unknown): void {
+  if (!isAxiosError<ApiErrorBody>(error)) return
+  if (error.response?.status !== 403 || error.response.data?.code !== PASSWORD_CHANGE_REQUIRED_CODE) return
+  if (!useAuthStore.getState().isAuthenticated) return
+  useAuthStore.getState().updateUser({ mustChangePassword: true })
 }
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
@@ -131,6 +145,7 @@ apiClient.interceptors.response.use(
     const failedAt = Date.now()
     sanitizeErrorMessage(error)
     recordSuspendedPump(error)
+    recordPasswordChangeRequired(error)
     if (error.response?.status !== 401 || !useAuthStore.getState().isAuthenticated) {
       return Promise.reject(error)
     }

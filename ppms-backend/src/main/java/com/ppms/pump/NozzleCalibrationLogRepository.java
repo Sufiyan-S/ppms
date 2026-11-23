@@ -53,4 +53,19 @@ public interface NozzleCalibrationLogRepository extends JpaRepository<NozzleCali
             """)
     List<NozzleCalibrationLog> findOverdueCalibrations(@Param("pumpId") Long pumpId,
                                                        @Param("date") LocalDate date);
+
+    /** Latest calibration per nozzle of the pump whose next due date falls between {@code from} and {@code to}. */
+    @Query("""
+            SELECT c FROM NozzleCalibrationLog c
+            WHERE c.pumpId = :pumpId
+              AND c.nextCalibrationDue BETWEEN :from AND :to
+              AND c.nozzleId NOT IN (
+                  SELECT c2.nozzleId FROM NozzleCalibrationLog c2
+                  WHERE c2.pumpId = :pumpId
+                    AND c2.calibrationDate > c.calibrationDate
+              )
+            """)
+    List<NozzleCalibrationLog> findCalibrationsDueBetween(@Param("pumpId") Long pumpId,
+                                                          @Param("from") LocalDate from,
+                                                          @Param("to") LocalDate to);
 }

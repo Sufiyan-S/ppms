@@ -1,0 +1,97 @@
+{
+  "page": {
+    "title": "वेतन",
+    "subtitle": "शिफ्ट इतिहास के आधार पर स्टाफ़ के वेतन भुगतान की गणना करें और उन पर नज़र रखें",
+    "loadFailed": "वेतन रिकॉर्ड लोड नहीं हो सके। अपना कनेक्शन जाँचें और पेज रीफ़्रेश करें।"
+  },
+  "generate": {
+    "title": "वेतन बनाएँ",
+    "subtitle": "ड्राफ्ट वेतन के लिए स्टाफ़ सदस्य और वेतन अवधि चुनें",
+    "staffMember": "स्टाफ़ सदस्य",
+    "selectStaff": "स्टाफ़ चुनें…",
+    "periodFrom": "अवधि से",
+    "periodTo": "अवधि तक",
+    "howCalculated": "ऑपरेटर: हर बंद शिफ्ट के असली घंटे × प्रति घंटा दर (रात/दिन अलग-अलग)। मैनेजर और एडमिन: दैनिक दर × (अवधि के दिन − छुट्टी के दिन)। दरें सेटअप → स्टाफ़ → ₹ दरें में सेट करें।",
+    "review": "जाँचें",
+    "generated": "वेतन ड्राफ्ट बन गया",
+    "failed": "वेतन नहीं बन सका",
+    "staffRequired": "कृपया स्टाफ़ सदस्य चुनें",
+    "periodRequired": "अवधि की तारीखें ज़रूरी हैं",
+    "stillNeeded": {
+      "staff": "स्टाफ़ सदस्य",
+      "period": "वेतन अवधि की तारीखें"
+    },
+    "payPeriod": "वेतन अवधि",
+    "periodDays_one": "{{from}} – {{to}} · {{count}} दिन",
+    "periodDays_other": "{{from}} – {{to}} · {{count}} दिन"
+  },
+  "review": {
+    "title": "वेतन जाँचें",
+    "generate": "वेतन बनाएँ",
+    "staffMember": "स्टाफ़ सदस्य",
+    "period": "अवधि",
+    "checking": "बाकी अंतर जाँचे जा रहे हैं…",
+    "pendingTitle": "बाकी अंतर ({{count}})",
+    "toggleHint": "इस वेतन से काटने के लिए कमी पर टिक करें।",
+    "duNumber": "DU #{{number}}",
+    "deduct": "काटें",
+    "notDeductible": "काटा नहीं जा सकता",
+    "deductionsSelected_one": "{{count}} कटौती चुनी गई",
+    "deductionsSelected_other": "{{count}} कटौतियाँ चुनी गईं",
+    "allSkipped": "कुछ टिक नहीं किया — ये अगली वेतन गणना के लिए बाकी रहेंगे।",
+    "noDiscrepancies": "इस स्टाफ़ सदस्य का कोई अंतर बाकी नहीं है।",
+    "deductAria": "#{{id}} वेतन से काटें",
+    "deductionsLabel": "शुद्ध वेतन से कटौती"
+  },
+  "records": {
+    "title": "वेतन रिकॉर्ड",
+    "searchLabel": "स्टाफ़ खोजें",
+    "searchPlaceholder": "स्टाफ़ खोजें…",
+    "month": "महीना",
+    "allMonths": "सभी महीने",
+    "emptyTitle": "अभी कोई वेतन रिकॉर्ड नहीं",
+    "emptySubtitle": "पहला ड्राफ्ट बनाने के लिए \"वेतन बनाएँ\" दबाएँ।",
+    "emptyMonthTitle": "इस महीने का कोई रिकॉर्ड नहीं",
+    "emptyMonthSubtitle": "कोई दूसरा महीना चुनकर देखें।",
+    "deleted": "वेतन रिकॉर्ड हटाया गया",
+    "deleteFailed": "वेतन रिकॉर्ड नहीं हटाया जा सका",
+    "statusFailed": "स्थिति नहीं बदली जा सकी",
+    "statusUpdated": {
+      "DRAFT": "स्थिति बदलकर ड्राफ्ट की गई",
+      "APPROVED": "स्थिति बदलकर मंज़ूर की गई",
+      "PAID": "स्थिति बदलकर 'भुगतान हुआ' की गई"
+    },
+    "filtersLabel": "वेतन के फ़िल्टर",
+    "count_one": "{{count}} रिकॉर्ड",
+    "count_other": "{{count}} रिकॉर्ड"
+  },
+  "group": {
+    "records_one": "{{count}} रिकॉर्ड",
+    "records_other": "{{count}} रिकॉर्ड",
+    "staffNumber": "स्टाफ़ #{{id}}",
+    "totalDays": "अवधि के कुल दिन",
+    "leaveDays": "कटे छुट्टी के दिन",
+    "daysWorked": "काम के दिन",
+    "perDay": "@ {{rate}}/दिन",
+    "days_one": "{{count}} दिन",
+    "days_other": "{{count}} दिन",
+    "night": "रात (12AM–8AM)",
+    "day": "दिन (8AM–12AM)",
+    "shiftsHours_one": "{{count}} शिफ्ट · {{hours}} घंटे",
+    "shiftsHours_other": "{{count}} शिफ्ट · {{hours}} घंटे",
+    "perHour": "@ {{rate}}/घंटा",
+    "noShifts": "इस अवधि में कोई बंद शिफ्ट नहीं।",
+    "deductions": "वेतन से कटौती",
+    "shortfall": "(अंतर की कमी)",
+    "daysWorkedTotal_one": "{{count}} दिन काम किया",
+    "daysWorkedTotal_other": "{{count}} दिन काम किया",
+    "shiftsTotal_one": "कुल {{count}} शिफ्ट",
+    "shiftsTotal_other": "कुल {{count}} शिफ्ट",
+    "deleting": "हटाया जा रहा है…",
+    "mark": {
+      "DRAFT": "ड्राफ्ट करें",
+      "APPROVED": "मंज़ूर करें",
+      "PAID": "भुगतान हुआ मार्क करें"
+    }
+  }
+}

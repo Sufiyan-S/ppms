@@ -1,77 +1,50 @@
-import { FUEL_LABELS } from '../../../constants/fuel'
-import { SectionLabel } from './SectionLabel'
+import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
+import { SearchableSelect } from '../../../components/SearchableSelect'
+import { codeLabel } from '../../../constants/labels'
 import type { BackfillForm } from './useBackfillForm'
 
+/** The dispensary unit and which of its nozzles the shift covered. */
 export function StaffNozzlesSection({ form }: { form: BackfillForm }) {
-  const { selectedDU, operatorId, setOperatorId, operatorSearch, setOperatorSearch, selectedNozzleIds, operatorsLoading, filteredOperators, availableNozzles, toggleNozzle, selectedOperator } = form
+  const { t } = useTranslation(['shifts', 'common'])
+  const duLabelId = useId()
+  const nozzlesLabelId = useId()
+  const { selectedDU, dus, dusLoading, selectDU, selectedNozzleIds, availableNozzles, toggleNozzle } = form
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-      <SectionLabel>Staff &amp; Nozzles</SectionLabel>
-
+    <div className="space-y-4">
       <div>
-        <span className="ui-label">Operator on Duty <span className="text-red-500">*</span></span>
-        {operatorsLoading ? (
-          <div className="ui-input text-slate-500 text-sm">Loading operators…</div>
-        ) : (
-          <>
-            <input aria-label="Operator on Duty"
-              type="text"
-              placeholder="Search by name or ID…"
-              value={operatorSearch}
-              onChange={(e) => setOperatorSearch(e.target.value)}
-              className="ui-input mb-1.5"
-            />
-            <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white">
-              {filteredOperators.length === 0 ? (
-                <p className="text-xs text-slate-500 px-3 py-2">No operators found.</p>
-              ) : (
-                filteredOperators.map((op) => (
-                  <button
-                    key={op.id}
-                    type="button"
-                    onClick={() => { setOperatorId(op.id); setOperatorSearch('') }}
-                    className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                      operatorId === op.id
-                        ? 'bg-violet-50 text-violet-700 font-semibold'
-                        : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {op.fullName}
-                    <span className="ml-2 text-xs text-slate-500 font-mono">{op.employeeId}</span>
-                  </button>
-                ))
-              )}
-            </div>
-            {selectedOperator && (
-              <p className="text-xs text-violet-700 mt-1 font-medium">
-                Selected: {selectedOperator.fullName}
-              </p>
-            )}
-          </>
-        )}
+        <span id={duLabelId} className="ui-label">{t('backfill.details.du')}</span>
+        <SearchableSelect aria-labelledby={duLabelId}
+          value={String(selectedDU?.id ?? '')}
+          onChange={(v) => selectDU(dus.find((d) => String(d.id) === v) ?? null)}
+          options={dus.map((du) => ({ value: String(du.id), label: t('backfill.details.duOption', { name: du.name, number: du.duNumber }) }))}
+          placeholder={dusLoading ? t('common:loading.short') : t('backfill.details.selectDu')}
+          disabled={dusLoading}
+        />
       </div>
 
       {selectedDU && (
         <div>
-          <span className="ui-label">Nozzles <span className="text-red-500">*</span></span>
+          <span id={nozzlesLabelId} className="ui-label">{t('backfill.staff.nozzles')}</span>
           {availableNozzles.length === 0 ? (
-            <p className="text-xs text-slate-500">No nozzles configured on this DU.</p>
+            <p className="ui-help mt-0">{t('backfill.staff.noNozzles')}</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div role="group" aria-labelledby={nozzlesLabelId} className="flex flex-wrap gap-2">
               {availableNozzles.map((nozzle) => {
                 const selected = selectedNozzleIds.has(nozzle.id)
                 return (
                   <button
                     key={nozzle.id}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => toggleNozzle(nozzle.id)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                    className={`min-h-11 rounded-control border px-3 text-sm font-medium transition-colors ${
                       selected
-                        ? 'bg-violet-600 border-violet-600 text-white shadow-sm'
-                        : 'border-slate-300 text-slate-600 bg-white hover:border-violet-400 hover:text-violet-700'
+                        ? 'border-primary bg-primary text-on-primary'
+                        : 'border-control bg-surface text-ink-2 hover:border-primary hover:text-primary'
                     }`}
                   >
-                    #{nozzle.nozzleNumber} · {FUEL_LABELS[nozzle.fuelType] ?? nozzle.fuelType}
+                    #{nozzle.nozzleNumber} · {codeLabel(nozzle.fuelType)}
                   </button>
                 )
               })}

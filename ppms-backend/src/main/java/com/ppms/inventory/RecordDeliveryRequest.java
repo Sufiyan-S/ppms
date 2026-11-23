@@ -18,7 +18,7 @@ public class RecordDeliveryRequest {
     @DecimalMin(value = "0.001", message = "Quantity must be greater than 0")
     private BigDecimal quantityDelivered;
 
-    @NotNull(message = "Cost price per unit is required")
+    /** Required from an owner or admin; a manager must leave it out and the tank's last cost is used. */
     @DecimalMin(value = "0.0001", message = "Cost price must be greater than 0")
     private BigDecimal costPricePerUnit;
 

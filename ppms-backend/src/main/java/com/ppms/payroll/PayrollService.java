@@ -1,5 +1,7 @@
 package com.ppms.payroll;
 
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
@@ -7,6 +9,7 @@ import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.planning.StaffLeaveRepository;
 import com.ppms.shift.DiscrepancyResolution;
+import com.ppms.shift.DiscrepancyType;
 import com.ppms.shift.Shift;
 import com.ppms.shift.ShiftRepository;
 import com.ppms.shift.ShiftStatus;
@@ -24,6 +27,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -49,18 +53,26 @@ public class PayrollService {
     @Transactional
     public PayrollRecord generate(Long pumpId, GeneratePayrollRequest req, User currentUser) {
         if (req.getPeriodTo().isBefore(req.getPeriodFrom())) {
-            throw new BusinessException("periodTo must be on or after periodFrom");
+            throw new BusinessException(ErrorCodes.PAYROLL_PERIOD_END_BEFORE_START,
+                    Map.of(),
+                    "periodTo must be on or after periodFrom");
         }
 
         // The staff row lock serialises payroll generation per person, so two overlapping runs cannot both pass the check.
         User staff = userRepository.findByIdForUpdate(req.getUserId())
                 .filter(found -> pumpId.equals(found.getAssignedPumpId()))
-                .orElseThrow(() -> new ResourceNotFoundException("Staff member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.USER, "Staff member not found"));
 
         payrollRepository.findFirstByPumpIdAndUserIdAndPeriodFromLessThanEqualAndPeriodToGreaterThanEqual(
                         pumpId, req.getUserId(), req.getPeriodTo(), req.getPeriodFrom())
                 .ifPresent(existing -> {
-                    throw new BusinessException("A payroll record for " + staff.getFullName() + " already covers "
+                    throw new BusinessException(ErrorCodes.PAYROLL_PERIOD_OVERLAPS,
+                            Map.of("staffName", staff.getFullName(),
+                                    "existingFrom", existing.getPeriodFrom().toString(),
+                                    "existingTo", existing.getPeriodTo().toString(),
+                                    "periodFrom", req.getPeriodFrom().toString(),
+                                    "periodTo", req.getPeriodTo().toString()),
+                            "A payroll record for " + staff.getFullName() + " already covers "
                             + existing.getPeriodFrom() + " to " + existing.getPeriodTo()
                             + ", which overlaps " + req.getPeriodFrom() + " to " + req.getPeriodTo() + ".");
                 });
@@ -90,9 +102,12 @@ public class PayrollService {
     public void deleteDraft(Long pumpId, Long recordId, User currentUser) {
         PayrollRecord record = payrollRepository.findById(recordId)
                 .filter(found -> found.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Payroll record not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PAYROLL_RECORD,
+                        "Payroll record not found"));
         if (record.getStatus() != PayrollStatus.DRAFT) {
-            throw new BusinessException("Only draft payroll records can be deleted.");
+            throw new BusinessException(ErrorCodes.PAYROLL_DELETE_ONLY_DRAFT,
+                    Map.of(),
+                    "Only draft payroll records can be deleted.");
         }
 
         for (PayrollResolvedShift link : resolvedShiftRepository.findByPayrollId(recordId)) {
@@ -108,11 +123,14 @@ public class PayrollService {
 
     private void restoreDiscrepancy(PayrollResolvedShift link) {
         Shift shift = shiftRepository.findByIdForUpdate(link.getShiftId())
-                .orElseThrow(() -> new ResourceNotFoundException("Shift #" + link.getShiftId() + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT,
+                        "Shift #" + link.getShiftId() + " not found"));
         boolean stillResolvedByPayroll = shift.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_RESOLVED
                 && shift.getDiscrepancyResolution() == DiscrepancyResolution.SALARY_DEDUCTION;
         if (!stillResolvedByPayroll) {
-            throw new BusinessException("Shift #" + shift.getId() + " was changed after this payroll was generated ("
+            throw new BusinessException(ErrorCodes.PAYROLL_SHIFT_CHANGED_SINCE_GENERATION,
+                    Map.of("shiftId", shift.getId(), "statusCode", shift.getStatus().name()),
+                    "Shift #" + shift.getId() + " was changed after this payroll was generated ("
                     + shift.getStatus() + "); resolve it manually before deleting the draft.");
         }
         shift.setStatus(link.getPreviousStatus());
@@ -137,12 +155,20 @@ public class PayrollService {
         for (Long shiftId : ids.stream().distinct().sorted().toList()) {
             Shift shift = shiftRepository.findByIdForUpdate(shiftId)
                     .filter(found -> found.getPumpId().equals(pumpId) && found.getOperatorId().equals(req.getUserId()))
-                    .orElseThrow(() -> new BusinessException(
+                    .orElseThrow(() -> new BusinessException(ErrorCodes.PAYROLL_SHIFT_NOT_OF_PUMP_OR_OPERATOR,
+                            Map.of("shiftId", shiftId),
                             "Shift #" + shiftId + " does not belong to this pump / operator."));
             boolean isPending = shift.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING
                     || shift.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING_APPROVAL;
             if (!isPending) {
-                throw new BusinessException("Shift #" + shiftId + " is not in a pending discrepancy state.");
+                throw new BusinessException(ErrorCodes.PAYROLL_SHIFT_DISCREPANCY_NOT_PENDING,
+                        Map.of("shiftId", shiftId),
+                        "Shift #" + shiftId + " is not in a pending discrepancy state.");
+            }
+            if (shift.getDiscrepancyType() != DiscrepancyType.SHORT) {
+                throw new BusinessException(ErrorCodes.PAYROLL_SHIFT_DISCREPANCY_IS_OVER, Map.of("shiftId", shiftId),
+                        "Shift #" + shiftId + " has an OVER discrepancy; only SHORT discrepancies " +
+                        "can be deducted from salary.");
             }
 
             links.add(PayrollResolvedShift.builder()
@@ -172,7 +198,8 @@ public class PayrollService {
         BigDecimal standardRate = staff.getStandardHourlyRate();
         if (shift1Rate == null || shift1Rate.compareTo(BigDecimal.ZERO) <= 0
                 || standardRate == null || standardRate.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PAYROLL_HOURLY_RATES_MISSING,
+                    Map.of("staffName", staff.getFullName()),
                     staff.getFullName() + " does not have hourly rates configured. " +
                     "Set their Shift 1 (night) and standard hourly rates in Setup → Staff before generating payroll.");
         }
@@ -221,7 +248,7 @@ public class PayrollService {
     private PayrollRecord buildDailyPayroll(Long pumpId, GeneratePayrollRequest req, User staff) {
         BigDecimal dailyRate = staff.getDailyRate();
         if (dailyRate == null || dailyRate.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PAYROLL_DAILY_RATE_MISSING, Map.of("staffName", staff.getFullName()),
                     staff.getFullName() + " does not have a daily rate configured. " +
                     "Set their daily rate in Setup → Staff before generating payroll.");
         }

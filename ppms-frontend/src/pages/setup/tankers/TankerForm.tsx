@@ -1,69 +1,77 @@
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { FormField } from '../../../components/FormField'
+import { FormGrid } from '../../../components/layout/FormGrid'
+import { NumericInput } from '../../../components/NumericInput'
+import { formatNumberIn } from '../../../i18n/format'
+
+export interface TankerFieldErrors {
+  name?: string
+  capacity?: string
+}
 
 export function TankerForm({
-  name, setName, capacity, setCapacity, tankerType, setTankerType, makeDefault, setMakeDefault, error,
+  name, setName, capacity, setCapacity, tankerType, setTankerType, makeDefault, setMakeDefault, fieldErrors, error,
 }: {
   name: string; setName: (v: string) => void
   capacity: string; setCapacity: (v: string) => void
   tankerType: 'OWN' | 'COMPANY'; setTankerType: (v: 'OWN' | 'COMPANY') => void
   makeDefault: boolean; setMakeDefault: (v: boolean) => void
+  fieldErrors: TankerFieldErrors
   error: string | null
 }) {
+  const { t } = useTranslation('setup')
+  const nameRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { nameRef.current?.focus() }, [])
+
+  const litres = Number(capacity)
+  const capacityHelp = capacity.trim() !== '' && Number.isFinite(litres) && litres > 0
+    ? t('tankers.capacityHelp', { litres: formatNumberIn(litres) })
+    : undefined
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="block">
-            <span className="ui-label">Tanker Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Company Tanker 1"
-              className="text-sm"
-            />
-          </label>
-        </div>
-        <div className="space-y-1">
-          <label className="block">
-            <span className="ui-label">Capacity (Litres)</span>
-            <input
-              type="number"
-              min="100"
-              step="100"
-              value={capacity}
-              onChange={e => setCapacity(e.target.value)}
-              placeholder="e.g. 12000"
-              className="text-sm"
-            />
-          </label>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="block">
-            <span className="ui-label">Type</span>
-            <select
-              value={tankerType}
-              onChange={e => setTankerType(e.target.value as 'OWN' | 'COMPANY')}
-              className="ui-input text-sm"
-            >
-              <option value="COMPANY">Company Tanker</option>
-              <option value="OWN">Own Tanker</option>
-            </select>
-          </label>
-        </div>
-        <div className="flex items-end pb-2">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+      <FormGrid>
+        <FormField label={t('tankers.name')} error={fieldErrors.name}>
+          <input
+            ref={nameRef}
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={t('tankers.namePlaceholder')}
+            className="text-sm"
+          />
+        </FormField>
+        <FormField label={t('tankers.capacity')} help={capacityHelp} error={fieldErrors.capacity}>
+          <NumericInput
+            min="100"
+            step="100"
+            unit="L"
+            value={capacity}
+            onChange={e => setCapacity(e.target.value)}
+          />
+        </FormField>
+        <FormField label={t('tankers.type')}>
+          <select
+            value={tankerType}
+            onChange={e => setTankerType(e.target.value as 'OWN' | 'COMPANY')}
+            className="ui-input text-sm"
+          >
+            <option value="COMPANY">{t('tankers.companyTanker')}</option>
+            <option value="OWN">{t('tankers.ownTanker')}</option>
+          </select>
+        </FormField>
+        <div className="flex items-end">
+          <label className="ui-inline-check">
             <input
               type="checkbox"
               checked={makeDefault}
               onChange={e => setMakeDefault(e.target.checked)}
-              className="rounded"
             />
-            <span className="text-sm text-slate-700">Set as default</span>
+            <span>{t('tankers.setAsDefault')}</span>
           </label>
         </div>
-      </div>
+      </FormGrid>
       {error && <p role="alert" className="ui-error-text">{error}</p>}
     </div>
   )

@@ -5,7 +5,7 @@ import { useLedgerFilters } from './useLedgerFilters'
 
 function tx(referenceId: number, type: MergedTx['type'], businessDate: string, occurredAt = `${businessDate}T06:00:00Z`): MergedTx {
   return {
-    type, referenceId, reference: null, detail: null, amount: 100, runningBalance: 100,
+    type, referenceId, reference: null, referenceCode: null, referenceParams: {}, detail: null, amount: 100, runningBalance: 100,
     occurredAt, businessDate, status: 'ACTIVE', countedInBalance: true, sourceClientId: 1,
   }
 }
@@ -50,6 +50,13 @@ describe('useLedgerFilters', () => {
     expect(result.current.filtered.map(t => t.referenceId)).toEqual([1, 4])
     expect(result.current.filteredOwn.map(t => t.referenceId)).toEqual([1, 4])
     expect(result.current.childFilteredTxs[0].map(t => t.referenceId)).toEqual([1])
+  })
+
+  it('counts a shop sale on credit as a sale', () => {
+    const withShopSale = [...transactions, tx(5, 'COUNTER_SALE', '2026-04-01')]
+    const { result } = renderHook(() => useLedgerFilters(withShopSale, withShopSale, [], 0, 10))
+    act(() => result.current.setTxTypeFilter('SALE'))
+    expect(result.current.filtered.map(t => t.referenceId)).toEqual([1, 4, 5])
   })
 
   it('filters by the month of the business date', () => {

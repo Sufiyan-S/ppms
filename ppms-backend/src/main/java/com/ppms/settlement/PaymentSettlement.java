@@ -52,6 +52,10 @@ public class PaymentSettlement {
     @Column(name = "notes")
     private String notes;
 
+    /** Bank reference or UTR of the credit; unique per pump among active settlements. */
+    @Column(name = "bank_reference")
+    private String bankReference;
+
     /**
      * Cumulative wallet balance for this payment type at the moment this record was saved.
      * Null for settlements recorded before this field was introduced.

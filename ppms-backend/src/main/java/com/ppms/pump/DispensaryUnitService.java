@@ -3,6 +3,8 @@ package com.ppms.pump;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.fuel.FuelType;
 import com.ppms.shift.ShiftRepository;
@@ -53,16 +55,18 @@ public class DispensaryUnitService {
     @Transactional
     public DUResponse createDU(Long pumpId, CreateDURequest request, User currentUser) {
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         long existingCount = duRepository.countByPumpId(pumpId);
         if (existingCount >= pump.getMaxDuCount()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.DU_LIMIT_REACHED,
+                    Map.of("maxDuCount", String.valueOf(pump.getMaxDuCount())),
                     "Pump already has the maximum number of Dispensary Units (" + pump.getMaxDuCount() + "). " +
                     "Increase the limit in Setup → Pump Settings if needed.");
         }
         if (duRepository.existsByPumpIdAndName(pumpId, request.getName().trim())) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.DU_NAME_ALREADY_EXISTS,
+                    Map.of("duName", String.valueOf(request.getName())),
                     "A Dispensary Unit named '" + request.getName() + "' already exists on this pump.");
         }
         validateNozzleInputs(request.getNozzles());
@@ -94,13 +98,17 @@ public class DispensaryUnitService {
     public DUResponse updateDUStatus(Long pumpId, Long duId, NozzleStatus status, User currentUser) {
         DispensaryUnit du = findDuForPump(pumpId, duId);
         if (du.getStatus() == status) {
-            throw new BusinessException("Dispensary Unit is already " + status.name().toLowerCase() + ".");
+            throw new BusinessException(ErrorCodes.DU_ALREADY_IN_STATUS, Map.of("statusCode", status.name()),
+                    "Dispensary Unit is already " + status.name().toLowerCase() + ".");
         }
 
         if (status == NozzleStatus.INACTIVE) {
             for (Nozzle nozzle : nozzleRepository.findByDuIdOrderByNozzleNumberAsc(duId)) {
                 shiftRepository.findOpenShiftByNozzle(nozzle.getId()).ifPresent(shift -> {
-                    throw new BusinessException(
+                    throw new BusinessException(ErrorCodes.DU_DISABLE_BLOCKED_BY_OPEN_SHIFT,
+                            Map.of("duName", du.getName(),
+                                   "nozzleNumber", nozzle.getNozzleNumber(),
+                                   "shiftId", shift.getId()),
                             "Cannot disable DU '" + du.getName() + "' — Nozzle #" + nozzle.getNozzleNumber() +
                             " has an active shift (Shift #" + shift.getId() + "). Close all shifts first.");
                 });
@@ -118,20 +126,25 @@ public class DispensaryUnitService {
         DispensaryUnit du = findDuForPump(pumpId, duId);
 
         if (nozzleRepository.existsByDuIdAndNozzleNumber(duId, request.getNozzleNumber())) {
-            throw new BusinessException("Nozzle #" + request.getNozzleNumber() + " already exists on this DU.");
+            throw new BusinessException(ErrorCodes.NOZZLE_NUMBER_ALREADY_ON_DU,
+                    Map.of("nozzleNumber", String.valueOf(request.getNozzleNumber())),
+                    "Nozzle #" + request.getNozzleNumber() + " already exists on this DU.");
         }
 
         boolean addingCng = request.getFuelType() == FuelType.CNG;
         boolean duHasCng = nozzleRepository.existsByDuIdAndFuelType(duId, FuelType.CNG);
         long existingNozzleCount = nozzleRepository.countByDuId(duId);
         if (addingCng && existingNozzleCount > 0 && !duHasCng) {
-            throw new BusinessException("Cannot add CNG to a DU that already has non-CNG nozzles.");
+            throw new BusinessException(ErrorCodes.DU_HAS_NON_CNG_NOZZLES, Map.of(),
+                    "Cannot add CNG to a DU that already has non-CNG nozzles.");
         }
         if (!addingCng && duHasCng) {
-            throw new BusinessException("Cannot add non-CNG fuel to a CNG-only DU.");
+            throw new BusinessException(ErrorCodes.DU_IS_CNG_ONLY, Map.of(),
+                    "Cannot add non-CNG fuel to a CNG-only DU.");
         }
         if (existingNozzleCount >= MAX_NOZZLES_PER_DU) {
-            throw new BusinessException("A DU can have at most 9 nozzles.");
+            throw new BusinessException(ErrorCodes.DU_NOZZLE_LIMIT_REACHED, Map.of(),
+                    "A DU can have at most 9 nozzles.");
         }
 
         saveNewNozzle(duId, request);
@@ -149,13 +162,16 @@ public class DispensaryUnitService {
         DispensaryUnit du = findDuForPump(pumpId, duId);
         Nozzle nozzle = findNozzleOnDu(duId, nozzleId);
         if (nozzle.getStatus() == status) {
-            throw new BusinessException("Nozzle #" + nozzle.getNozzleNumber() +
+            throw new BusinessException(ErrorCodes.NOZZLE_ALREADY_IN_STATUS,
+                    Map.of("nozzleNumber", nozzle.getNozzleNumber(), "statusCode", status.name()),
+                    "Nozzle #" + nozzle.getNozzleNumber() +
                     " is already " + status.name().toLowerCase() + ".");
         }
 
         if (status == NozzleStatus.INACTIVE) {
             shiftRepository.findOpenShiftByNozzle(nozzleId).ifPresent(shift -> {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.NOZZLE_DISABLE_BLOCKED_BY_OPEN_SHIFT,
+                        Map.of("nozzleNumber", nozzle.getNozzleNumber(), "shiftId", shift.getId()),
                         "Nozzle #" + nozzle.getNozzleNumber() + " has an active shift (Shift #" + shift.getId() + "). " +
                         "The operator must close the shift before this nozzle can be disabled.");
             });
@@ -176,9 +192,12 @@ public class DispensaryUnitService {
 
         if (tankId != null) {
             UndergroundTank tank = tankRepository.findByIdAndPumpId(tankId, pumpId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Tank not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException(EntityType.TANK, "Tank not found"));
             if (tank.getFuelType() != nozzle.getFuelType()) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.NOZZLE_TANK_FUEL_MISMATCH,
+                        Map.of("nozzleFuelTypeCode", nozzle.getFuelType().name(),
+                               "tankIdentifier", tank.getTankIdentifier(),
+                               "tankFuelTypeCode", tank.getFuelType().name()),
                         "Fuel type mismatch: nozzle dispenses " + nozzle.getFuelType() +
                         " but tank '" + tank.getTankIdentifier() + "' holds " + tank.getFuelType() +
                         ". Map this nozzle to a " + nozzle.getFuelType() + " tank.");
@@ -194,26 +213,15 @@ public class DispensaryUnitService {
         return toDUResponse(du);
     }
 
-    /** Manually corrects a nozzle's last reading, used when a meter is replaced or reset. */
-    @Transactional
-    public DUResponse updateNozzleReading(Long pumpId, Long duId, Long nozzleId, BigDecimal reading) {
-        DispensaryUnit du = findDuForPump(pumpId, duId);
-        Nozzle nozzle = findNozzleOnDu(duId, nozzleId);
-        if (reading != null) {
-            nozzle.setLastReading(reading);
-            nozzleRepository.save(nozzle);
-        }
-        return toDUResponse(du);
-    }
-
     private DispensaryUnit findDuForPump(Long pumpId, Long duId) {
         return duRepository.findByIdAndPumpId(duId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Dispensary Unit not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.DISPENSARY_UNIT,
+                        "Dispensary Unit not found"));
     }
 
     private Nozzle findNozzleOnDu(Long duId, Long nozzleId) {
         return nozzleRepository.findByIdAndDuId(nozzleId, duId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nozzle not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.NOZZLE, "Nozzle not found"));
     }
 
     private void saveNewNozzle(Long duId, CreateDURequest.NozzleInput input) {
@@ -268,17 +276,20 @@ public class DispensaryUnitService {
     private void validateNozzleInputs(List<CreateDURequest.NozzleInput> nozzles) {
         List<Integer> numbers = nozzles.stream().map(CreateDURequest.NozzleInput::getNozzleNumber).toList();
         if (numbers.size() != numbers.stream().distinct().count()) {
-            throw new BusinessException("Duplicate nozzle numbers in the request.");
+            throw new BusinessException(ErrorCodes.DUPLICATE_NOZZLE_NUMBERS, Map.of(),
+                    "Duplicate nozzle numbers in the request.");
         }
 
         List<FuelType> fuelTypes = nozzles.stream().map(CreateDURequest.NozzleInput::getFuelType).toList();
         boolean hasCng = fuelTypes.contains(FuelType.CNG);
         boolean hasNonCng = fuelTypes.stream().anyMatch(f -> f != FuelType.CNG);
         if (hasCng && hasNonCng) {
-            throw new BusinessException("CNG cannot be mixed with other fuel types on the same DU.");
+            throw new BusinessException(ErrorCodes.DU_CNG_MIXED_WITH_OTHER_FUELS, Map.of(),
+                    "CNG cannot be mixed with other fuel types on the same DU.");
         }
         if (nozzles.size() > MAX_NOZZLES_PER_DU) {
-            throw new BusinessException("A DU can have at most 9 nozzles.");
+            throw new BusinessException(ErrorCodes.DU_NOZZLE_LIMIT_REACHED, Map.of(),
+                    "A DU can have at most 9 nozzles.");
         }
     }
 }

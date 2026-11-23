@@ -1,0 +1,28 @@
+{
+  "title": "Credit balance portal",
+  "subtitle": "Check your outstanding fuel credit balance",
+  "form": {
+    "pumpId": "Pump ID",
+    "pumpIdHelp": "Ask the pump manager for the Pump ID",
+    "phone": "Registered phone number",
+    "pin": "Portal PIN",
+    "pinHelp": "4 to 6 digits, given by the pump. Ask them if you don't have one.",
+    "showPin": "Show PIN",
+    "checking": "Checking…",
+    "check": "Check balance",
+    "phoneHelp": "10-digit mobile number"
+  },
+  "result": {
+    "account": "Your credit account",
+    "outstanding": "Outstanding balance",
+    "creditLimit": "Credit limit",
+    "settled": "Your account is fully settled."
+  },
+  "errors": {
+    "incomplete": "Enter the Pump ID, your 10-digit phone number and your 4 to 6 digit PIN.",
+    "noMatch": "Details don't match. Check your phone number and PIN, or ask the pump for a PIN.",
+    "tooManyAttempts": "Too many attempts. Please wait 15 minutes and try again.",
+    "lookupFailed": "Could not check your balance. Please try again."
+  },
+  "footer": "Powered by PPMS — Petrol Pump Management System"
+}

@@ -3,10 +3,15 @@ package com.ppms.report;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -39,4 +44,32 @@ public interface BalanceSheetRepository extends JpaRepository<BalanceSheet, Long
 
     /** Count of DAY reports for this period — used to compute revision numbers */
     long countByPumpIdAndReportDateAndReportType(Long pumpId, LocalDate reportDate, BalanceSheetReportType reportType);
+
+    /** Marks every sheet of the pump on the given dates; a sheet already stale keeps its first reason. */
+    @Modifying
+    @Query("""
+            UPDATE BalanceSheet b SET b.stale = true, b.staleReason = :reason, b.staleReasonCode = :reasonCode,
+                   b.staleReasonParams = :reasonParams
+            WHERE b.pumpId = :pumpId AND b.reportDate IN :dates AND b.stale = false
+            """)
+    int markStaleOnDates(@Param("pumpId") Long pumpId,
+                         @Param("dates") Collection<LocalDate> dates,
+                         @Param("reason") String reason,
+                         @Param("reasonCode") String reasonCode,
+                         @Param("reasonParams") Map<String, Object> reasonParams);
+
+    /** Marks the DAY sheets of the dates and, when a definition is given, that definition's SHIFT sheets. */
+    @Modifying
+    @Query("""
+            UPDATE BalanceSheet b SET b.stale = true, b.staleReason = :reason, b.staleReasonCode = :reasonCode,
+                   b.staleReasonParams = :reasonParams
+            WHERE b.pumpId = :pumpId AND b.reportDate IN :dates AND b.stale = false
+              AND (b.shiftDefinitionId IS NULL OR b.shiftDefinitionId = :shiftDefinitionId)
+            """)
+    int markDayAndShiftSheetsStale(@Param("pumpId") Long pumpId,
+                                   @Param("dates") Collection<LocalDate> dates,
+                                   @Param("shiftDefinitionId") Long shiftDefinitionId,
+                                   @Param("reason") String reason,
+                                   @Param("reasonCode") String reasonCode,
+                                   @Param("reasonParams") Map<String, Object> reasonParams);
 }

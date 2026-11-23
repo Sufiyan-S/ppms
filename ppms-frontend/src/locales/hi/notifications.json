@@ -1,0 +1,34 @@
+{
+  "page": {
+    "title": "सूचनाएँ",
+    "subtitle": "इस पंप की हर सूचना, पढ़ी और बिना पढ़ी। सूचना खोलें, वह आपको वहाँ ले जाएगी जहाँ उस पर काम हो सकता है।",
+    "noPump": "कोई पंप नहीं चुना गया।",
+    "allCount": "सभी सूचनाएँ ({{total}})",
+    "typeFilter": "प्रकार",
+    "allTypes": "सभी प्रकार",
+    "loadFailed": "सूचनाएँ लोड नहीं हो सकीं।",
+    "emptyForType": "इस प्रकार की कोई सूचना नहीं है।",
+    "empty": "अभी कोई सूचना नहीं है।",
+    "listTitle": "अलर्ट",
+    "filtersLabel": "सूचना फ़िल्टर",
+    "readFilter": "पढ़ी या बिना पढ़ी",
+    "readFilterAll": "सभी",
+    "unreadSummary_one": "{{count}} बिना पढ़ी सूचना",
+    "unreadSummary_other": "{{count}} बिना पढ़ी सूचनाएँ",
+    "unreadLimit": "सबसे नई {{count}} बिना पढ़ी सूचनाएँ दिख रही हैं। पुरानी देखने के लिए कुछ खोलें या पढ़ें।",
+    "emptyUnread": "कोई बिना पढ़ी सूचना नहीं।"
+  },
+  "types": {
+    "LOW_STOCK": "टैंक में स्टॉक कम",
+    "PRICE_STALE": "ईंधन कीमतें सेट नहीं",
+    "DOCUMENT_EXPIRING": "दस्तावेज़ की समय-सीमा",
+    "CALIBRATION_DUE": "कैलिब्रेशन का समय पार",
+    "CALIBRATION_DUE_SOON": "कैलिब्रेशन जल्द होना है",
+    "SHIFT_OVERDUE": "शिफ्ट का समय पार",
+    "ZERO_SALE_SHIFT": "बिना बिक्री वाली शिफ्ट",
+    "PRICE_CHANGE_OPEN_SHIFT": "शिफ्ट के दौरान कीमत बदली",
+    "ANCILLARY_LOW_STOCK": "उत्पाद स्टॉक कम",
+    "AUTO_CLOSED_SHIFT": "शिफ्ट ज़बरदस्ती बंद हुई",
+    "SETTLEMENT_REMINDER": "सेटलमेंट रिमाइंडर"
+  }
+}

@@ -1,4 +1,4 @@
-const IST_TIME_ZONE = 'Asia/Kolkata'
+import { IST_TIME_ZONE, formatDateTimeIn } from '../i18n/format'
 
 const IST_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
   timeZone: IST_TIME_ZONE,
@@ -30,18 +30,6 @@ export function mondayOf(isoDate: string): string {
   return addDays(isoDate, weekday === 0 ? -6 : 1 - weekday)
 }
 
-const istFormatters = new Map<string, Intl.DateTimeFormat>()
-
-function istFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = JSON.stringify(options)
-  let formatter = istFormatters.get(key)
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat('en-IN', { timeZone: IST_TIME_ZONE, ...options })
-    istFormatters.set(key, formatter)
-  }
-  return formatter
-}
-
 export function formatIstDate(
   value: string | Date,
   options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' },
@@ -52,7 +40,7 @@ export function formatIstDate(
       ? new Date(`${value}T00:00:00+05:30`)
       : new Date(value)
 
-  return istFormatter(options).format(date)
+  return formatDateTimeIn(date, options)
 }
 
 export function formatIstDateTime(
@@ -66,7 +54,7 @@ export function formatIstDateTime(
   },
 ): string {
   const date = value instanceof Date ? value : new Date(value)
-  return istFormatter(options).format(date)
+  return formatDateTimeIn(date, options)
 }
 
 /** Rewrites machine dates (YYYY-MM-DD) inside server-written text as readable dates, e.g. "30 Nov 2026". */

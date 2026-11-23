@@ -1,5 +1,7 @@
 package com.ppms.planning;
 
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
@@ -11,6 +13,7 @@ import com.ppms.user.UserRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -40,7 +43,7 @@ public class ShiftPlanningService {
         ruleService.validateOperatorForPump(userId, pumpId);
         if (req.preferredShiftDefinitionId() != null
                 && shiftDefinitionRepository.findByIdAndPumpId(req.preferredShiftDefinitionId(), pumpId).isEmpty()) {
-            throw new ResourceNotFoundException("Shift definition not found");
+            throw new ResourceNotFoundException(EntityType.SHIFT_DEFINITION, "Shift definition not found");
         }
         StaffPreference pref = preferenceRepository.findByUserId(userId)
                 .orElseGet(() -> StaffPreference.builder().userId(userId).pumpId(pumpId).build());
@@ -60,7 +63,9 @@ public class ShiftPlanningService {
     public StaffLeave addLeave(Long pumpId, Long userId, AddLeaveRequest req) {
         ruleService.validateOperatorForPump(userId, pumpId);
         if (leaveRepository.existsByUserIdAndLeaveDate(userId, req.leaveDate())) {
-            throw new BusinessException("Leave already recorded for " + req.leaveDate());
+            throw new BusinessException(ErrorCodes.LEAVE_ALREADY_RECORDED,
+                    Map.of("leaveDate", req.leaveDate().toString()),
+                    "Leave already recorded for " + req.leaveDate());
         }
         StaffLeave leave = StaffLeave.builder()
                 .userId(userId)
@@ -75,7 +80,7 @@ public class ShiftPlanningService {
     public void removeLeave(Long leaveId, Long pumpId) {
         StaffLeave leave = leaveRepository.findById(leaveId)
                 .filter(found -> found.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Leave record not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.LEAVE_RECORD, "Leave record not found"));
         leaveRepository.delete(leave);
     }
 
@@ -108,7 +113,7 @@ public class ShiftPlanningService {
 
         // Reject if the entire week is already in the past — nothing to plan
         if (weekEnd.isBefore(today)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.SHIFT_PLAN_WEEK_IN_PAST, Map.of(),
                     "Cannot generate a plan for a week entirely in the past. " +
                     "Navigate to the current or a future week.");
         }
@@ -116,7 +121,8 @@ public class ShiftPlanningService {
         // Reject regeneration of a published plan
         planRepository.findByPumpIdAndWeekStart(pumpId, weekStart).ifPresent(existing -> {
             if (existing.getStatus() == ShiftPlanStatus.PUBLISHED) {
-                throw new BusinessException("This week's plan is already published and cannot be regenerated.");
+                throw new BusinessException(ErrorCodes.SHIFT_PLAN_PUBLISHED_CANNOT_REGENERATE, Map.of(),
+                        "This week's plan is already published and cannot be regenerated.");
             }
             // Delete draft so we can recreate cleanly
             planRepository.delete(existing);
@@ -127,7 +133,8 @@ public class ShiftPlanningService {
         List<User> staff = userRepository.findByAssignedPumpIdAndRoleAndStatus(
                 pumpId, UserRole.OPERATOR, com.ppms.user.UserStatus.ACTIVE);
         if (staff.isEmpty()) {
-            throw new BusinessException("No active operators are assigned to this pump.");
+            throw new BusinessException(ErrorCodes.NO_ACTIVE_OPERATORS, Map.of(),
+                    "No active operators are assigned to this pump.");
         }
 
         // Load preferences keyed by userId
@@ -160,7 +167,8 @@ public class ShiftPlanningService {
         List<PumpShiftDefinition> definitions = shiftDefinitionRepository
                 .findActiveForPumpOnDate(plan.getPumpId(), definitionLookupDate);
         if (definitions.isEmpty()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.NO_SHIFT_DEFINITIONS_FOR_PLAN_DATE,
+                    Map.of("date", definitionLookupDate.toString()),
                     "No shift definitions are configured for this pump effective " + definitionLookupDate +
                     ". Ask an admin to set up shift definitions first.");
         }
@@ -207,13 +215,16 @@ public class ShiftPlanningService {
         // Duplicate check
         entryRepository.findByShiftPlanIdAndShiftDateAndShiftDefinitionIdAndOperatorUserId(
                 planId, req.shiftDate(), req.shiftDefinitionId(), req.operatorUserId())
-                .ifPresent(e -> { throw new BusinessException("Operator is already assigned to this slot."); });
+                .ifPresent(e -> {
+                    throw new BusinessException(ErrorCodes.OPERATOR_ALREADY_IN_SLOT, Map.of(),
+                            "Operator is already assigned to this slot.");
+                });
 
         // Consecutive shift check
         Set<Integer> existing = slotService.buildSlotSet(planId, req.operatorUserId(), plan.getWeekStart());
         int slotIndex = slotService.slotIndex(plan.getWeekStart(), req.shiftDate(), req.shiftDefinitionId());
         if (slotService.wouldCreateThreeConsecutive(existing, slotIndex)) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.THREE_CONSECUTIVE_SHIFTS, Map.of(),
                     "Cannot assign: this would give the operator 3 consecutive shifts. " +
                     "A minimum rest period is required between every 2 shifts.");
         }
@@ -242,7 +253,8 @@ public class ShiftPlanningService {
             int si = slotService.slotIndex(plan.getWeekStart(), entry.getShiftDate(), entry.getShiftDefinitionId());
             slots.remove(si);
             if (slotService.wouldCreateThreeConsecutive(slots, si)) {
-                throw new BusinessException("Swapping to this operator would create 3 consecutive shifts.");
+                throw new BusinessException(ErrorCodes.SWAP_CREATES_THREE_CONSECUTIVE_SHIFTS, Map.of(),
+                        "Swapping to this operator would create 3 consecutive shifts.");
             }
         }
 
@@ -258,13 +270,31 @@ public class ShiftPlanningService {
         entryRepository.delete(entry);
     }
 
+    /**
+     * Clears a person's planning at a pump they are leaving from the given day on: their planned shifts in draft
+     * and published plans (those slots become unassigned), their leave and their preference. Earlier days stay.
+     *
+     * @return the number of planned shifts removed
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int removeStaffFromPumpFrom(Long userId, Long pumpId, LocalDate from) {
+        int removedShifts = entryRepository.deleteForOperatorAtPumpFrom(userId, pumpId, from);
+        int removedLeave = leaveRepository.deleteForUserAtPumpFrom(userId, pumpId, from);
+        int removedPreferences = preferenceRepository.deleteForUserAtPump(userId, pumpId);
+        log.info("Shift planning cleared for staff leaving pump: userId={}, pumpId={}, from={}, shifts={}, leave={}, preferences={}",
+                userId, pumpId, from, removedShifts, removedLeave, removedPreferences);
+        return removedShifts;
+    }
+
     // ── Publish ────────────────────────────────────────────────────────────────
 
     @Transactional
     public ShiftPlan publishPlan(Long pumpId, Long planId) {
         ShiftPlan plan = loadPlan(planId, pumpId);
         if (plan.getStatus() == ShiftPlanStatus.PUBLISHED) {
-            throw new BusinessException("Plan is already published.");
+            throw new BusinessException(ErrorCodes.SHIFT_PLAN_ALREADY_PUBLISHED,
+                    Map.of(),
+                    "Plan is already published.");
         }
         plan.setStatus(ShiftPlanStatus.PUBLISHED);
         ShiftPlan saved = planRepository.save(plan);
@@ -297,13 +327,13 @@ public class ShiftPlanningService {
 
     private ShiftPlan loadPlan(Long planId, Long pumpId) {
         return planRepository.findByIdAndPumpId(planId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Shift plan not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT_PLAN, "Shift plan not found"));
     }
 
     private ShiftPlanEntry loadEntry(Long entryId, Long planId) {
         return entryRepository.findById(entryId)
                 .filter(found -> found.getShiftPlanId().equals(planId))
-                .orElseThrow(() -> new ResourceNotFoundException("Plan entry not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT_PLAN_ENTRY, "Plan entry not found"));
     }
 
 }

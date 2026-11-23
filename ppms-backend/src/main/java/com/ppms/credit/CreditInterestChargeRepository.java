@@ -13,34 +13,44 @@ import java.util.Optional;
 @Repository
 public interface CreditInterestChargeRepository extends JpaRepository<CreditInterestCharge, Long> {
 
-    /** All interest charges for a client, newest first — used for the ledger transaction list. */
+    /** All interest charges for a client, waived ones included, newest first — used for the ledger transaction list. */
     List<CreditInterestCharge> findByClientIdOrderByCreatedAtDesc(Long clientId);
 
-    /** Total interest charged to a client — included in outstanding balance calculation. */
-    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM CreditInterestCharge c WHERE c.clientId = :clientId")
+    /** Total live (not waived) interest charged to a client — included in outstanding balance calculation. */
+    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM CreditInterestCharge c WHERE c.clientId = :clientId AND c.voidedAt IS NULL")
     BigDecimal sumAmountByClientId(@Param("clientId") Long clientId);
 
     /**
-     * Date of the most recent interest charge for a client.
-     * Used to determine the start of the next chargeable period (last period_to + 1 day).
+     * Last day covered by a live (not waived) charge of any of the given clients; the next chargeable period
+     * starts the day after, so a waived latest charge leaves its period open to be charged again.
      */
-    @Query("SELECT MAX(c.periodTo) FROM CreditInterestCharge c WHERE c.clientId = :clientId")
-    Optional<java.time.LocalDate> findLastPeriodToByClientId(@Param("clientId") Long clientId);
+    @Query("SELECT MAX(c.periodTo) FROM CreditInterestCharge c WHERE c.clientId IN :clientIds AND c.voidedAt IS NULL")
+    Optional<LocalDate> findLastPeriodToByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
-    /** Batch sum of interest charges per client — used for efficient outstanding balance calculation across all clients. */
-    @Query("SELECT c.clientId, COALESCE(SUM(c.amount), 0) FROM CreditInterestCharge c WHERE c.clientId IN :clientIds GROUP BY c.clientId")
+    /** Live charges of the given clients whose period ends on or after {@code date}, oldest period first. */
+    @Query("""
+            SELECT c FROM CreditInterestCharge c
+            WHERE c.clientId IN :clientIds AND c.voidedAt IS NULL AND c.periodTo >= :date
+            ORDER BY c.periodFrom ASC, c.periodTo ASC
+            """)
+    List<CreditInterestCharge> findLiveEndingOnOrAfter(@Param("clientIds") java.util.Collection<Long> clientIds,
+                                                       @Param("date") LocalDate date);
+
+    /** Batch sum of live interest charges per client — used for efficient outstanding balance calculation across all clients. */
+    @Query("SELECT c.clientId, COALESCE(SUM(c.amount), 0) FROM CreditInterestCharge c WHERE c.clientId IN :clientIds AND c.voidedAt IS NULL GROUP BY c.clientId")
     List<Object[]> sumAmountsByClientIds(@Param("clientIds") java.util.Collection<Long> clientIds);
 
-    /** All interest charges for a set of clients — used for chronological interest-first allocation simulation. */
-    List<CreditInterestCharge> findByClientIdIn(java.util.Collection<Long> clientIds);
+    /** Live interest charges for a set of clients — used for chronological interest-first allocation simulation. */
+    List<CreditInterestCharge> findByClientIdInAndVoidedAtIsNull(java.util.Collection<Long> clientIds);
 
     /**
-     * All interest charges for a pump within a period_from date range, sorted oldest first.
+     * Live interest charges for a pump within a period_from date range, sorted oldest first.
      * Used by the Interest Accrual Report — finds charges whose period starts within [from, to].
      */
     @Query("""
             SELECT c FROM CreditInterestCharge c
             WHERE c.pumpId = :pumpId
+              AND c.voidedAt IS NULL
               AND c.periodFrom >= :from
               AND c.periodFrom <= :to
             ORDER BY c.periodFrom ASC, c.clientId ASC

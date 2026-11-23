@@ -83,16 +83,4 @@ public class DispensaryUnitController {
             @RequestBody MapOutletToTankRequest request) {
         return ResponseEntity.ok(dispensaryUnitService.mapNozzleToTank(pumpId, duId, nozzleId, request.tankId()));
     }
-
-    /** PUT /api/pumps/{pumpId}/dus/{duId}/nozzles/{nozzleId}/reading — corrects a nozzle's last reading. */
-    @PutMapping("/{duId}/nozzles/{nozzleId}/reading")
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
-    public ResponseEntity<DUResponse> updateNozzleReading(
-            @PathVariable Long pumpId,
-            @PathVariable Long duId,
-            @PathVariable Long nozzleId,
-            @RequestBody UpdateNozzleReadingRequest request) {
-        return ResponseEntity.ok(
-                dispensaryUnitService.updateNozzleReading(pumpId, duId, nozzleId, request.getReading()));
-    }
 }

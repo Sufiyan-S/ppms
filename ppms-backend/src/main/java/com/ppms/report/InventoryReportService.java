@@ -1,5 +1,6 @@
 package com.ppms.report;
 
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.common.time.DateRangeBounds;
@@ -47,7 +48,7 @@ public class InventoryReportService {
     /** Every lot of a tank with its consumption history, for auditing FIFO deductions and cost accounting. */
     public InventoryLotsReport buildInventoryLotsReport(Long pumpId, Long tankId) {
         if (undergroundTankRepository.findByIdAndPumpId(tankId, pumpId).isEmpty()) {
-            throw new ResourceNotFoundException("Tank not found");
+            throw new ResourceNotFoundException(EntityType.TANK, "Tank not found");
         }
         List<InventoryLot> lots = inventoryLotRepository.findAllByTankIdOrdered(tankId);
 

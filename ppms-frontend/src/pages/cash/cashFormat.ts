@@ -1,19 +1,24 @@
+import { ArrowDown, ArrowUp, Lock, Wallet } from 'lucide-react'
 import type { CashEventType } from '../../api/cashApi'
+import type { StatusBadgeSpec } from '../../components/statusBadges'
 
-export const EVENT_TYPES: { value: CashEventType; label: string }[] = [
-  { value: 'OPENING_BALANCE', label: 'Opening Balance' },
-  { value: 'CASH_IN',         label: 'Cash In' },
-  { value: 'CASH_OUT',        label: 'Cash Out' },
-  { value: 'CLOSING_BALANCE', label: 'Closing Balance' },
-]
+/** Labels are cash.json eventTypes.<value>. */
+export const EVENT_TYPES: CashEventType[] = ['OPENING_BALANCE', 'CASH_IN', 'CASH_OUT', 'CLOSING_BALANCE']
 
-export const EVENT_STYLES: Record<CashEventType, string> = {
-  OPENING_BALANCE: 'bg-blue-100 text-blue-700',
-  CASH_IN:         'bg-emerald-100 text-emerald-700',
-  CASH_OUT:        'bg-red-100 text-red-700',
-  CLOSING_BALANCE: 'bg-slate-100 text-slate-700',
+export const EVENT_BADGES: Record<CashEventType, Omit<StatusBadgeSpec, 'label'>> = {
+  OPENING_BALANCE: { tone: 'info', icon: Wallet },
+  CASH_IN:         { tone: 'ok', icon: ArrowDown },
+  CASH_OUT:        { tone: 'bad', icon: ArrowUp },
+  CLOSING_BALANCE: { tone: 'neutral', icon: Lock },
 }
 
 export { formatCurrency as fmtAmt } from '../../utils/format'
 
 export { formatIstDate as fmtDate } from '../../utils/date'
+
+/** The safe's balance once this movement is saved; null for the balance events, which do not move money. */
+export function balanceAfter(eventType: CashEventType, balance: number, amount: number): number | null {
+  if (eventType === 'CASH_IN') return balance + amount
+  if (eventType === 'CASH_OUT') return balance - amount
+  return null
+}

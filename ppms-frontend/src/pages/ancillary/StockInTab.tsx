@@ -1,27 +1,33 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { History } from 'lucide-react'
 import { ancillaryApi } from '../../api/ancillaryApi'
-import type { AncillaryProduct } from '../../api/ancillaryApi'
+import type { AncillaryStockDelivery, AncillaryProduct } from '../../api/ancillaryApi'
 import { Pagination } from '../../components/Pagination'
 import { EmptyState } from '../../components/EmptyState'
 import { StockInDialog } from './StockInDialog'
-import { fmtCurrency, fmtDate } from './ancillaryFormat'
-import { ScrollRegion } from '../../components/ScrollRegion'
-
-// ── Stock In Tab ─────────────────────────────────────────────────────────────
+import { fmtDate } from './ancillaryFormat'
+import { DataTable } from '../../components/DataTable'
+import type { DataTableColumn } from '../../components/DataTable'
+import { StatusBadge } from '../../components/StatusBadge'
+import { MoneyText } from '../../components/AmountText'
+import { PageSection } from '../../components/layout/PageSection'
 
 export function StockInTab({
-  pumpId, products, isManagerOrAbove, onRefresh,
+  pumpId, products, isManagerOrAbove, isRecording, onRecordClosed, onRefresh,
 }: {
   pumpId: number
   products: AncillaryProduct[]
   isManagerOrAbove: boolean
+  isRecording: boolean
+  onRecordClosed: () => void
   onRefresh: () => void
 }) {
+  const { t } = useTranslation('ancillary')
   const qc = useQueryClient()
   const [deliveryPage, setDeliveryPage] = useState(0)
   const [deliveryPageSize, setDeliveryPageSize] = useState(10)
-  const [stockInOpen, setStockInOpen] = useState(false)
   const productMap = new Map(products.map((product) => [product.id, product]))
 
   const { data: deliveriesPage } = useQuery({
@@ -30,31 +36,36 @@ export function StockInTab({
   })
   const deliveries = deliveriesPage?.content ?? []
 
+  const columns: DataTableColumn<AncillaryStockDelivery>[] = [
+    { key: 'date', header: t('fields.date'), className: 'px-5 text-ink-2', cell: (d) => fmtDate(d.deliveryDate) },
+    { key: 'product', header: t('fields.product'), className: 'px-5', cell: (d) => (
+      <div className="flex flex-col">
+        <span className="font-medium text-ink">{productMap.get(d.productId)?.displayName ?? t('stockInTab.productFallback', { id: d.productId })}</span>
+        <span className="text-xs text-ink-3">#{d.productId}</span>
+      </div>
+    ) },
+    { key: 'qty', header: t('fields.qty'), numeric: true, className: 'px-5 font-medium', cell: (d) => d.quantityUnits },
+    { key: 'costPerUnit', header: t('stockInTab.costPerUnit'), numeric: true, className: 'px-5', cell: (d) => <MoneyText value={d.costPricePerUnit} /> },
+    { key: 'totalCost', header: t('stockInTab.totalCost'), numeric: true, className: 'px-5 font-medium', cell: (d) => <MoneyText value={d.costPricePerUnit * d.quantityUnits} /> },
+    { key: 'invoice', header: t('stockInTab.invoice'), className: 'px-5 text-ink-3', cell: (d) => d.invoiceReference ?? '—' },
+    { key: 'type', header: t('fields.type'), className: 'px-5', cell: (d) => d.isBackfilled && <StatusBadge tone="info" icon={History} label={t('fields.backfilled')} /> },
+  ]
+
   return (
-    <div className="space-y-5">
-      {/* Stock-in form */}
-      {isManagerOrAbove ? (
-        <div className="flex justify-end">
-          <button
-            onClick={() => setStockInOpen(true)}
-            className="ui-btn ui-btn-primary"
-          >
-            Record Stock Delivery
-          </button>
-        </div>
-      ) : (
+    <div className="flex flex-col gap-(--density-gap)">
+      {!isManagerOrAbove && (
         <div className="ui-alert ui-alert-warning text-sm">
-          Only Managers, Admins, and Owners can record deliveries.
+          {t('stockInTab.onlyManagers')}
         </div>
       )}
 
-      {stockInOpen && (
+      {isRecording && (
         <StockInDialog
           pumpId={pumpId}
           products={products}
-          onClose={() => setStockInOpen(false)}
+          onClose={onRecordClosed}
           onSuccess={() => {
-            setStockInOpen(false)
+            onRecordClosed()
             setDeliveryPage(0)
             qc.invalidateQueries({ queryKey: ['ancillaryDeliveries', pumpId] })
             onRefresh()
@@ -62,58 +73,19 @@ export function StockInTab({
         />
       )}
 
-      {/* Delivery history */}
-      <div className="ui-card p-0">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h3 className="text-sm font-semibold text-slate-700">Recent Deliveries</h3>
-        </div>
+      <PageSection title={t('stockInTab.recent')} flush>
         {deliveries.length === 0 ? (
-          <EmptyState icon="generic" title="No deliveries recorded yet" subtitle="Record stock deliveries using the button above." />
+          <EmptyState icon="generic" title={t('stockInTab.emptyTitle')} subtitle={t('stockInTab.emptySubtitle')} />
         ) : (
           <>
-          <ScrollRegion label="Stock-in history" className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-slate-500 uppercase border-b border-slate-100">
-                  <th scope="col" className="px-5 py-3 text-left">Date</th>
-                  <th scope="col" className="px-5 py-3 text-left">Product</th>
-                  <th scope="col" className="px-5 py-3 text-right">Qty</th>
-                  <th scope="col" className="px-5 py-3 text-right">Cost/Unit</th>
-                  <th scope="col" className="px-5 py-3 text-right">Total Cost</th>
-                  <th scope="col" className="px-5 py-3 text-left">Invoice</th>
-                  <th scope="col" className="px-5 py-3 text-left">Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deliveries.map(d => {
-                  const product = productMap.get(d.productId)
-                  return (
-                  <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="px-5 py-3 text-slate-600">{fmtDate(d.deliveryDate)}</td>
-                    <td className="px-5 py-3 text-slate-600">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-700">{product?.displayName ?? `Product #${d.productId}`}</span>
-                        <span className="text-xs text-slate-500">#{d.productId}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-right font-medium">{d.quantityUnits}</td>
-                    <td className="px-5 py-3 text-right">{fmtCurrency(d.costPricePerUnit)}</td>
-                    <td className="px-5 py-3 text-right font-medium">
-                      {fmtCurrency(d.costPricePerUnit * d.quantityUnits)}
-                    </td>
-                    <td className="px-5 py-3 text-slate-500">{d.invoiceReference ?? '—'}</td>
-                    <td className="px-5 py-3">
-                      {d.isBackfilled && (
-                        <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-medium">
-                          Backfilled
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )})}
-              </tbody>
-            </table>
-          </ScrollRegion>
+          <DataTable
+            caption={t('stockInTab.caption')}
+            captionHidden
+            columns={columns}
+            rows={deliveries}
+            rowKey={(d) => d.id}
+            className="rounded-none border-0"
+          />
           {deliveriesPage && (
             <div className="px-5">
               <Pagination
@@ -126,7 +98,7 @@ export function StockInTab({
           )}
           </>
         )}
-      </div>
+      </PageSection>
     </div>
   )
 }

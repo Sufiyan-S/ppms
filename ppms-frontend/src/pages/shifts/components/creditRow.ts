@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../../utils/format'
+
 export interface CreditRow {
   id: number
   clientId: number | null        // selected root/parent account id
@@ -18,5 +20,4 @@ export interface CreditRow {
 
 export const emptyNum = (v: string) => (v === '' ? 0 : Number(v))
 
-export const fmt = (n: number) =>
-  n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const fmt = (n: number) => formatDecimal(n)

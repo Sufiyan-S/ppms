@@ -1,24 +1,25 @@
 import { useRef } from 'react'
 import { AlertTriangle, Database, Wrench, Ruler, CircleOff } from 'lucide-react'
-import type { FuelPrice, TankInfo } from '../../../api/pumpApi'
+import { useTranslation } from 'react-i18next'
+import type { TankInfo } from '../../../api/pumpApi'
 import type { DUOption, NozzleDetail } from '../../../types/shift'
 import { Spinner } from '../../../components/Spinner'
 import { RowActionMenu } from '../../../components/RowActionMenu'
 import { useRowPanelFocus } from '../../../hooks/useRowPanelFocus'
-import { FUEL_LABELS } from '../../../constants/fuel'
+import { codeLabel } from '../../../constants/labels'
 import { FUEL_COLOR } from '../fuelStyles'
 import type { NozzlePanel } from './nozzlePanels'
 import { DisableNozzlePanel } from './DisableNozzlePanel'
 import { MapTankPanel } from './MapTankPanel'
 import { AdjustReadingPanel } from './AdjustReadingPanel'
 import { RecordDipPanel } from './RecordDipPanel'
+import { StatusBadge } from '../../../components/StatusBadge'
 
 interface Props {
   pumpId: number
   du: DUOption
   nozzle: NozzleDetail
   tanks: TankInfo[]
-  currentPrices: FuelPrice[]
   openPanel: NozzlePanel | null
   onOpenPanel: (panel: NozzlePanel) => void
   onClosePanel: () => void
@@ -31,9 +32,10 @@ interface Props {
 }
 
 export function NozzleRow({
-  pumpId, du, nozzle, tanks, currentPrices, openPanel, onOpenPanel, onClosePanel,
+  pumpId, du, nozzle, tanks, openPanel, onOpenPanel, onClosePanel,
   menuOpen, onMenuChange, statusPending, statusError, onEnable, onDisable,
 }: Props) {
+  const { t } = useTranslation(['setup', 'common'])
   const isInactive = nozzle.status === 'INACTIVE'
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -43,24 +45,22 @@ export function NozzleRow({
       {/* Nozzle row */}
       <div className="flex items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-bold text-slate-700">#{nozzle.nozzleNumber}</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${FUEL_COLOR[nozzle.fuelType] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-            {FUEL_LABELS[nozzle.fuelType] ?? nozzle.fuelType}
+          <span className="text-sm font-bold text-ink">#{nozzle.nozzleNumber}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-badge font-medium border ${FUEL_COLOR[nozzle.fuelType] ?? 'bg-surface-sunken text-ink-2 border-border'}`}>
+            {codeLabel(nozzle.fuelType)}
           </span>
           {isInactive && (
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium border bg-orange-50 text-orange-700 border-orange-200">
-              Maintenance
-            </span>
+            <StatusBadge tone="warn" icon={Wrench} label={t('nozzles.row.maintenance')} />
           )}
           {!isInactive && (
-            <span className="text-xs text-slate-500">
-              {FUEL_LABELS[nozzle.fuelType]}: {nozzle.lastReading}
+            <span className="text-xs text-ink-3">
+              {codeLabel(nozzle.fuelType)}: {nozzle.lastReading}
             </span>
           )}
           {!isInactive && nozzle.tankId == null && (
-            <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">
+            <span className="inline-flex items-center gap-1 text-xs text-warn font-medium">
               <AlertTriangle size={11} strokeWidth={2} />
-              tank not mapped
+              {t('nozzles.row.tankNotMapped')}
             </span>
           )}
         </div>
@@ -71,23 +71,23 @@ export function NozzleRow({
               type="button"
               onClick={() => onEnable()}
               disabled={statusPending}
-              className="text-xs text-emerald-700 hover:text-emerald-900 font-medium border border-emerald-300 hover:border-emerald-500 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+              className="ui-btn ui-btn-secondary ui-btn-compact"
             >
-              {statusPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Enabling…</span> : 'Enable'}
+              {statusPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />{t('actions.enabling')}</span> : t('common:actions.enable')}
             </button>
           ) : (
             <RowActionMenu
-              label="Nozzle actions"
+              label={t('nozzles.row.actions')}
               open={menuOpen}
               onOpenChange={(open) => onMenuChange(open ? nozzle.id : null)}
               triggerRef={menuButtonRef}
-              triggerClassName="ui-btn ui-btn-ghost text-base leading-none text-slate-600 hover:text-slate-800"
-              menuClassName="absolute right-0 top-full z-[6] mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg backdrop-blur"
+              triggerClassName="ui-btn ui-btn-ghost text-base leading-none text-ink-2 hover:text-ink"
+              menuClassName="absolute right-0 top-full z-6 mt-2 w-56 overflow-hidden rounded-card border border-border bg-surface p-1.5 shadow-overlay"
               items={[
-                { key: 'mapTank', label: 'Map Tank', description: 'Assign the supply tank', icon: <Database size={14} strokeWidth={2} />, className: 'text-emerald-700 hover:bg-emerald-50', onSelect: () => onOpenPanel('mapTank') },
-                { key: 'reading', label: 'Adjust Reading', description: 'Correct stored meter value', icon: <Wrench size={14} strokeWidth={2} />, className: 'text-blue-700 hover:bg-blue-50', onSelect: () => onOpenPanel('reading') },
-                { key: 'dip', label: 'Record Dip', description: 'Log a manual dip check', icon: <Ruler size={14} strokeWidth={2} />, className: 'text-orange-700 hover:bg-orange-50', onSelect: () => onOpenPanel('dip') },
-                { key: 'disable', label: 'Disable for Maintenance', description: 'Temporarily take nozzle offline', icon: <CircleOff size={14} strokeWidth={2} />, className: 'text-red-700 hover:bg-red-50', onSelect: () => onOpenPanel('disable') },
+                { key: 'mapTank', label: t('nozzles.row.mapTank'), description: t('nozzles.row.mapTankHint'), icon: <Database size={14} strokeWidth={2} />, className: 'text-ok hover:bg-ok-bg', onSelect: () => onOpenPanel('mapTank') },
+                { key: 'reading', label: t('nozzles.row.adjustReading'), description: t('nozzles.row.adjustReadingHint'), icon: <Wrench size={14} strokeWidth={2} />, className: 'text-info hover:bg-info-bg', onSelect: () => onOpenPanel('reading') },
+                { key: 'dip', label: t('nozzles.row.recordDip'), description: t('nozzles.row.recordDipHint'), icon: <Ruler size={14} strokeWidth={2} />, className: 'text-warn hover:bg-warn-bg', onSelect: () => onOpenPanel('dip') },
+                { key: 'disable', label: t('nozzles.row.disable'), description: t('nozzles.row.disableHint'), icon: <CircleOff size={14} strokeWidth={2} />, className: 'text-bad hover:bg-bad-bg', onSelect: () => onOpenPanel('disable') },
               ]}
             />
           )}
@@ -115,7 +115,12 @@ export function NozzleRow({
       )}
 
       {openPanel === 'dip' && (
-        <RecordDipPanel pumpId={pumpId} nozzle={nozzle} currentPrices={currentPrices} onClose={onClosePanel} />
+        <RecordDipPanel
+          pumpId={pumpId}
+          nozzle={nozzle}
+          tank={tanks.find((tank) => tank.id === nozzle.tankId) ?? null}
+          onClose={onClosePanel}
+        />
       )}
       </div>
     </div>

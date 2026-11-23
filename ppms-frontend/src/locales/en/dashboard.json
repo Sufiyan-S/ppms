@@ -1,0 +1,108 @@
+{
+  "overview": {
+    "loadError": "Some live data could not be loaded. Figures shown may be incomplete — refresh to try again.",
+    "stalePrices": {
+      "title": "Fuel prices not updated today",
+      "body": "{{pump}} — tap here to update prices in Setup",
+      "action": "Update →"
+    },
+    "lowStock": {
+      "title": "Tanks needing a delivery:",
+      "tank": "{{tank}} ({{fuel}}) — {{percent}}% full"
+    },
+    "liveShifts": "Live Shifts",
+    "loadingChart": "Loading revenue chart"
+  },
+  "stats": {
+    "activeShifts": "Active Shifts",
+    "noOpenShifts": "No open shifts",
+    "atPump": "at {{pump}}",
+    "selectedPump": "selected pump",
+    "todaysRevenue": "Today's Revenue",
+    "closedToday_one": "{{count}} closed shift today",
+    "closedToday_other": "{{count}} closed shifts today",
+    "lowStockTanks": "Low Stock Tanks",
+    "allTanksOk": "All tanks OK",
+    "needAttention": "Need attention",
+    "shiftsOverdue_one": "{{count}} shift overdue",
+    "shiftsOverdue_other": "{{count}} shifts overdue",
+    "noneOverdue": "None overdue",
+    "acrossPumps_one": "Across {{count}} pump",
+    "acrossPumps_other": "Across {{count}} pumps",
+    "staleFuelPrices": "Stale Fuel Prices",
+    "allPricesUpdated": "All prices updated today",
+    "pumpsToUpdate": "Pumps to update in Setup",
+    "label": "Today at a glance"
+  },
+  "tankStock": {
+    "title": "Tank Stock Overview",
+    "fullInventory": "Full inventory →",
+    "low": "Low",
+    "progress": "{{tank}} stock: {{percent}}%",
+    "progressLow": "{{tank}} stock: {{percent}}% – low stock",
+    "remaining": "{{litres}} L remaining"
+  },
+  "money": {
+    "label": "Money at a glance",
+    "cashInDrawer": "Cash in drawer",
+    "cashNote": "Current drawer balance",
+    "creditOutstanding": "Credit outstanding",
+    "creditNote": "Owed by credit clients",
+    "waitingForApproval": "Waiting for approval",
+    "waitingNoteWithPayments": "Expenses and credit payments",
+    "waitingNote": "Expenses",
+    "notSettled": "Not yet settled",
+    "notSettledNote": "UPI, card and fleet card"
+  },
+  "attention": {
+    "title": "Needs attention today",
+    "itemCount_one": "{{count}} item",
+    "itemCount_other": "{{count}} items",
+    "severity": {
+      "HIGH": "Urgent",
+      "MEDIUM": "Soon",
+      "LOW": "When you can"
+    },
+    "severityPrefix": "{{severity}}: ",
+    "urgentPrefix": "Urgent · ",
+    "reviewLabel": "Review: {{reason}}",
+    "reviewLabelWithPump": "Review: {{pump}}, {{reason}}",
+    "loading": "Loading what needs attention",
+    "loadError": "Could not load what needs attention. Refresh to try again.",
+    "allClear": "All clear for today"
+  },
+  "manager": {
+    "quickActions": "Quick actions",
+    "openShift": "Open shift",
+    "dipCheck": "Dip check",
+    "delivery": "Delivery",
+    "cashEntry": "Cash entry",
+    "openShifts": "Open shifts",
+    "noneOpen": "No shift is open right now.",
+    "openFor": "open {{duration}}",
+    "credit": "credit"
+  },
+  "chart": {
+    "title": "Revenue Trend",
+    "lastDays": "Last {{days}} days",
+    "dayButton": "{{days}}d",
+    "summary": "Revenue and fuel quantity trend for the last {{days}} days",
+    "revenue": "Revenue",
+    "series": "Chart series",
+    "empty": "No closed shift revenue in the last {{days}} days. The chart fills in as shifts are closed."
+  },
+  "allPumps": {
+    "scope": "Overview scope",
+    "overdueShifts_one": "{{count}} overdue shift",
+    "overdueShifts_other": "{{count}} overdue shifts",
+    "lowTanks_one": "{{count}} low tank",
+    "lowTanks_other": "{{count}} low tanks",
+    "pricesNotUpdated": "Prices not updated today",
+    "activeShifts_one": "{{count}} active shift",
+    "activeShifts_other": "{{count}} active shifts",
+    "loadError": "Figures for your pumps could not be loaded. Refresh to try again.",
+    "loading": "Loading all pumps",
+    "pumps": "Pumps",
+    "selectHint": "Select a pump to open its overview"
+  }
+}

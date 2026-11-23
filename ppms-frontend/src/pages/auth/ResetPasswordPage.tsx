@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { authApi } from '../../api/authApi'
 import { PasswordInput } from '../../components/PasswordInput'
+import { FormField } from '../../components/FormField'
 import { parseApiError } from '../../utils/apiError'
-import { PASSWORD_POLICY_MESSAGE, PASSWORD_POLICY_REGEX } from '../../constants/passwordPolicy'
+import { PASSWORD_POLICY_REGEX } from '../../constants/passwordPolicy'
+import { AuthCard, AuthScreen } from './AuthCard'
+import { BackToLogin } from './BackToLogin'
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation('auth')
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const token = searchParams.get('token') ?? ''
@@ -15,81 +20,72 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   if (!token) {
     return (
-      <div className="ui-auth-shell">
-        <div className="ui-auth-card text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center">
-              <AlertTriangle size={28} strokeWidth={2} className="text-amber-500" />
+      <AuthScreen>
+        <AuthCard
+          title={t('resetPassword.invalidLinkTitle')}
+          description={t('resetPassword.invalidLinkBody')}
+          icon={(
+            <div className="flex h-12 w-12 items-center justify-center rounded-card bg-warn-bg">
+              <AlertTriangle size={24} strokeWidth={2} aria-hidden="true" className="text-warn" />
             </div>
-          </div>
-          <h1 className="ui-title-sm">Invalid Reset Link</h1>
-          <p className="ui-subtitle">
-            This password reset link is invalid or missing a token.
-            Please request a new one from the forgot password page.
-          </p>
-          <Link to="/forgot-password" className="ui-link inline-flex justify-center">
-            Request new link
+          )}
+          footer={<BackToLogin />}
+        >
+          <Link to="/forgot-password" className="ui-btn ui-btn-primary w-full">
+            {t('resetPassword.requestNewLink')}
           </Link>
-        </div>
-      </div>
+        </AuthCard>
+      </AuthScreen>
     )
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!PASSWORD_POLICY_REGEX.test(newPassword)) { setError(PASSWORD_POLICY_MESSAGE); return }
-    if (newPassword !== confirmPassword) { setError('Passwords do not match'); return }
-    setLoading(true); setError(null)
+    setError(null); setPasswordError(null); setConfirmError(null)
+    if (!PASSWORD_POLICY_REGEX.test(newPassword)) { setPasswordError(t('passwordPolicy')); return }
+    if (newPassword !== confirmPassword) { setConfirmError(t('resetPassword.mismatch')); return }
+    setLoading(true)
     try {
       await authApi.resetPassword(token, newPassword)
-      navigate('/login', { state: { message: 'Password reset successful. Please log in with your new password.' } })
+      navigate('/login', { state: { message: t('resetPassword.success') } })
     } catch (err) {
-      setError(parseApiError(err, 'Failed to reset password. The link may have expired.'))
+      setError(parseApiError(err, t('resetPassword.failed')))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="ui-auth-shell">
-      <div className="ui-auth-card space-y-6">
-
-        <div>
-          <h1 className="ui-title-sm">Set New Password</h1>
-          <p className="ui-subtitle">Enter and confirm your new password below.</p>
-        </div>
-
+    <AuthScreen>
+      <AuthCard title={t('resetPassword.title')} description={t('resetPassword.subtitle')} footer={<BackToLogin />}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="newPassword" className="ui-label">New Password</label>
+          <FormField label={t('fields.newPassword')} help={t('passwordPolicy')} error={passwordError ?? undefined}>
             <PasswordInput
               id="newPassword"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               autoComplete="new-password"
-              placeholder="Use a strong password"
-              className="shadow-sm"
+              className="shadow-raised"
               minLength={8}
               required
             />
-            <p className="ui-help">{PASSWORD_POLICY_MESSAGE}</p>
-          </div>
+          </FormField>
 
-          <div>
-            <label htmlFor="confirmPassword" className="ui-label">Confirm Password</label>
+          <FormField label={t('fields.confirmPassword')} error={confirmError ?? undefined}>
             <PasswordInput
               id="confirmPassword"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
-              placeholder="Repeat the password"
-              className="shadow-sm"
+              className="shadow-raised"
               required
             />
-          </div>
+          </FormField>
 
           {error && <p className="ui-error-text" role="alert">{error}</p>}
 
@@ -98,14 +94,10 @@ export default function ResetPasswordPage() {
             disabled={loading}
             className="ui-btn ui-btn-primary w-full"
           >
-            {loading ? 'Resetting…' : 'Reset Password'}
+            {loading ? t('resetPassword.submitting') : t('resetPassword.submit')}
           </button>
         </form>
-
-        <Link to="/login" className="ui-link block text-center">
-          Back to login
-        </Link>
-      </div>
-    </div>
+      </AuthCard>
+    </AuthScreen>
   )
 }

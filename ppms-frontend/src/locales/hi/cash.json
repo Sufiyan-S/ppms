@@ -1,0 +1,49 @@
+{
+  "eventTypes": {
+    "OPENING_BALANCE": "शुरुआती बैलेंस",
+    "CASH_IN": "नकद जमा",
+    "CASH_OUT": "नकद निकासी",
+    "CLOSING_BALANCE": "अंतिम बैलेंस"
+  },
+  "page": {
+    "title": "कैश ड्रॉअर",
+    "subtitle": "पंप की तिजोरी में आने और जाने वाले नकद का हिसाब रखें",
+    "loadFailed": "नकद एंट्री लोड नहीं हो सकीं। कनेक्शन जाँचें और पेज रीफ़्रेश करें।",
+    "currentBalance": "मौजूदा बैलेंस",
+    "balanceHint": "सभी नकद जमा में से नकद निकासी घटाकर निकाला गया",
+    "eventCount_one": "{{count}} एंट्री",
+    "eventCount_other": "{{count}} एंट्री"
+  },
+  "list": {
+    "title": "नकद एंट्री",
+    "filterByType": "एंट्री के प्रकार से छाँटें",
+    "allTypes": "सभी प्रकार",
+    "emptyRangeTitle": "इन तारीखों में कोई एंट्री नहीं",
+    "emptyRangeSubtitle": "ऊपर तारीख बदलकर देखें।",
+    "emptyTitle": "अभी तक कोई नकद एंट्री नहीं",
+    "emptySubtitle": "पहली एंट्री के लिए \"नकद लेन-देन दर्ज करें\" दबाएँ।",
+    "filtersLabel": "नकद एंट्री के फ़िल्टर"
+  },
+  "form": {
+    "title": "नकद लेन-देन दर्ज करें",
+    "subtitle": "तिजोरी में आए या गए पैसे को सही प्रकार और तारीख के साथ दर्ज करें।",
+    "eventType": "एंट्री का प्रकार",
+    "amount": "राशि",
+    "availableBalance": "उपलब्ध बैलेंस: {{amount}}",
+    "description": "विवरण",
+    "date": "तारीख",
+    "balanceNow": "अभी तिजोरी में",
+    "balanceAfter": "इसके बाद तिजोरी में",
+    "needAmount": "राशि",
+    "needDescription": "विवरण",
+    "recorded": "नकद एंट्री दर्ज हो गई",
+    "recordFailed": "एंट्री दर्ज नहीं हो सकी",
+    "descriptionRequired": "विवरण लिखना ज़रूरी है",
+    "amountPositive": "राशि शून्य से ज़्यादा होनी चाहिए",
+    "exceedsBalance": "निकासी राशि {{amount}} ड्रॉअर के मौजूदा बैलेंस {{balance}} से ज़्यादा है।"
+  },
+  "review": {
+    "title": "नकद एंट्री जाँचें",
+    "record": "एंट्री दर्ज करें"
+  }
+}

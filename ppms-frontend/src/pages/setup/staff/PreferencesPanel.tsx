@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { shiftPlanApi, DAY_LABELS } from '../../../api/shiftPlanApi'
+import { codeLabel } from '../../../constants/labels'
 import type { PreferredDayOff, StaffPreference } from '../../../api/shiftPlanApi'
 import type { StaffMember } from '../../../api/userApi'
 import type { ShiftDefinition } from '../../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { Spinner } from '../../../components/Spinner'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { FormGrid } from '../../../components/layout/FormGrid'
+import { RowPanel, RowPanelActions } from './RowPanel'
 
 interface Props {
   pumpId: number
@@ -16,32 +21,30 @@ interface Props {
 }
 
 export function PreferencesPanel({ pumpId, member, activeShiftDefs, onClose }: Props) {
+  const { t } = useTranslation(['setup', 'common'])
   const { data: savedPreference, isLoading, isError } = useQuery({
     queryKey: ['staffPref', pumpId, member.id],
     queryFn: () => shiftPlanApi.getPreference(pumpId, member.id),
   })
 
   return (
-    <div className="px-3 py-3 border-t border-slate-100">
-      <div className="max-w-sm space-y-3">
-        <p className="text-xs font-semibold text-slate-700">Shift preferences for {member.fullName}</p>
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-xs text-slate-500" role="status">
-            <Spinner className="w-3 h-3" />Loading saved preferences…
-          </div>
-        ) : isError ? (
-          <p className="ui-error-text" role="alert">Could not load saved preferences. Close and try again.</p>
-        ) : (
-          <PreferencesForm
-            pumpId={pumpId}
-            member={member}
-            activeShiftDefs={activeShiftDefs}
-            savedPreference={savedPreference}
-            onClose={onClose}
-          />
-        )}
-      </div>
-    </div>
+    <RowPanel title={t('staff.preferences.title', { name: member.fullName })}>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-ink-3" role="status">
+          <Spinner className="w-3 h-3" />{t('staff.preferences.loading')}
+        </div>
+      ) : isError ? (
+        <p className="ui-error-text" role="alert">{t('staff.preferences.loadFailed')}</p>
+      ) : (
+        <PreferencesForm
+          pumpId={pumpId}
+          member={member}
+          activeShiftDefs={activeShiftDefs}
+          savedPreference={savedPreference}
+          onClose={onClose}
+        />
+      )}
+    </RowPanel>
   )
 }
 
@@ -50,6 +53,7 @@ interface FormProps extends Props {
 }
 
 function PreferencesForm({ pumpId, member, activeShiftDefs, savedPreference, onClose }: FormProps) {
+  const { t } = useTranslation(['setup', 'common'])
   const queryClient = useQueryClient()
   const [prefShiftDefId, setPrefShiftDefId] = useState<number | null>(savedPreference?.preferredShiftDefinitionId ?? null)
   const [prefDayOff, setPrefDayOff] = useState<PreferredDayOff | ''>(savedPreference?.preferredDayOff ?? '')
@@ -61,46 +65,47 @@ function PreferencesForm({ pumpId, member, activeShiftDefs, savedPreference, onC
       setPrefError(null)
       queryClient.invalidateQueries({ queryKey: ['staffPref', pumpId, member.id] })
     },
-    onError: (err) => setPrefError(parseApiError(err, 'Failed to save preferences')),
+    onError: (err) => setPrefError(parseApiError(err, t('staff.preferences.failed'))),
   })
 
   return (
     <>
-      <div>
-        <span className="ui-label">Preferred shift</span>
-        <SearchableSelect label="Preferred shift"
-          value={prefShiftDefId !== null ? String(prefShiftDefId) : ''}
-          onChange={v => setPrefShiftDefId(v ? Number(v) : null)}
-          placeholder="Any shift"
-          size="sm"
-          options={activeShiftDefs.map(d => ({ value: String(d.id), label: `${d.name} · ${d.windowLabel}` }))}
-        />
-      </div>
-      <div>
-        <span className="ui-label">Preferred day off</span>
-        <SearchableSelect label="Preferred day off"
-          value={prefDayOff}
-          onChange={v => setPrefDayOff(v as PreferredDayOff | '')}
-          placeholder="No preference"
-          size="sm"
-          options={Object.entries(DAY_LABELS).map(([val, label]) => ({ value: val, label }))}
-        />
-      </div>
+      <FormGrid>
+        <div>
+          <span className="ui-label">{t('staff.preferences.shift')}</span>
+          <SearchableSelect label={t('staff.preferences.shift')}
+            value={prefShiftDefId !== null ? String(prefShiftDefId) : ''}
+            onChange={v => setPrefShiftDefId(v ? Number(v) : null)}
+            placeholder={t('staff.preferences.anyShift')}
+            options={activeShiftDefs.map(d => ({ value: String(d.id), label: `${d.name} · ${d.windowLabel}` }))}
+          />
+        </div>
+        <div>
+          <span className="ui-label">{t('staff.preferences.dayOff')}</span>
+          <SearchableSelect label={t('staff.preferences.dayOff')}
+            value={prefDayOff}
+            onChange={v => setPrefDayOff(v as PreferredDayOff | '')}
+            placeholder={t('staff.preferences.noPreference')}
+            options={Object.keys(DAY_LABELS).map((day) => ({ value: day, label: codeLabel(day) }))}
+          />
+        </div>
+      </FormGrid>
       {prefError && <p className="ui-error-text" role="alert">{prefError}</p>}
-      <div className="flex gap-2">
-        <button
+      {prefMutation.isSuccess && <p className="text-xs text-ok" role="status">{t('staff.preferences.saved')}</p>}
+      <RowPanelActions>
+        <LoadingButton
           type="button"
+          isLoading={prefMutation.isPending}
+          loadingLabel={t('common:actions.saving')}
           onClick={() => prefMutation.mutate()}
-          disabled={prefMutation.isPending}
-          className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs"
+          className="ui-btn-primary ui-btn-compact"
         >
-          {prefMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Saving…</span> : 'Save'}
+          {t('staff.preferences.save')}
+        </LoadingButton>
+        <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary ui-btn-compact">
+          {t('common:actions.done')}
         </button>
-        <button type="button" onClick={onClose}
-          className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs">
-          Done
-        </button>
-      </div>
+      </RowPanelActions>
     </>
   )
 }

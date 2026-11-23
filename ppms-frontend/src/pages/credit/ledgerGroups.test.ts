@@ -4,7 +4,7 @@ import { buildWeekGroups } from './ledgerGroups'
 
 function tx(referenceId: number, businessDate: string, occurredAt = `${businessDate}T06:00:00Z`): CreditTransaction {
   return {
-    type: 'SALE', referenceId, reference: null, detail: null, amount: 10,
+    type: 'SALE', referenceId, reference: null, referenceCode: null, referenceParams: {}, detail: null, amount: 10,
     runningBalance: 10, occurredAt, businessDate, status: 'ACTIVE', countedInBalance: true,
   }
 }

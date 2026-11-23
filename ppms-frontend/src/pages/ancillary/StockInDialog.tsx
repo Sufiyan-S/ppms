@@ -1,17 +1,31 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
-import { X } from 'lucide-react'
 import { ancillaryApi } from '../../api/ancillaryApi'
 import type { AncillaryProduct, RecordStockDeliveryRequest } from '../../api/ancillaryApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { localDateInputValue } from '../../utils/date'
-import { Spinner } from '../../components/Spinner'
 import { useToastStore } from '../../store/toastStore'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
+import { MoneyText } from '../../components/AmountText'
+import { NumericInput } from '../../components/NumericInput'
+import { FormField } from '../../components/FormField'
+import { FormGrid, FormGridFullRow } from '../../components/layout/FormGrid'
+import { LiveFigures } from '../../components/LiveFigures'
+import { LoadingButton } from '../../components/LoadingButton'
+import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
-import { ReviewRow } from './ReviewRow'
+import { ReviewList, ReviewRow } from './ReviewRow'
 import { fmtCurrency, fmtDate } from './ancillaryFormat'
 
+interface FieldErrors {
+  product?: string
+  quantity?: string
+  cost?: string
+  date?: string
+}
+
+/** Records stock arriving for a product: the delivery form with a live total cost, then a review step. */
 export function StockInDialog({
   pumpId, products, onClose, onSuccess,
 }: {
@@ -20,7 +34,9 @@ export function StockInDialog({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { t } = useTranslation(['ancillary', 'common'])
   const { addToast } = useToastStore()
+  const stillNeededId = useId()
   const today = localDateInputValue()
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<RecordStockDeliveryRequest & { productId: number | '' }>({
@@ -30,49 +46,50 @@ export function StockInDialog({
     deliveryDate: today,
     invoiceReference: '',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [serverError, setServerError] = useState<string | null>(null)
 
   const deliveryMutation = useMutation({
     mutationFn: (data: { productId: number; req: RecordStockDeliveryRequest }) =>
       ancillaryApi.recordDelivery(pumpId, data.productId, data.req),
     onSuccess: () => {
-      addToast('Stock delivery recorded successfully', 'success')
+      addToast(t('stockIn.recorded'), 'success')
       onSuccess()
     },
     onError: (err) => {
-      const msg = parseApiError(err, 'Failed to record delivery')
-      setError(msg)
+      const msg = parseApiError(err, t('stockIn.recordFailed'))
+      setServerError(msg)
       addToast(msg, 'error')
     },
   })
 
   const selectedProduct = products.find(p => p.id === form.productId) ?? null
-  const totalCost = form.quantityUnits > 0 && form.costPricePerUnit > 0
+  const hasQuantity = form.quantityUnits > 0
+  const totalCost = hasQuantity && form.costPricePerUnit > 0
     ? form.quantityUnits * form.costPricePerUnit
     : null
 
-  const validate = () => {
-    if (!form.productId) return 'Select a product'
-    if (!form.quantityUnits || form.quantityUnits < 1) return 'Quantity must be at least 1'
-    if (!form.costPricePerUnit || form.costPricePerUnit <= 0) return 'Enter a valid cost price'
-    if (!form.deliveryDate) return 'Delivery date is required'
-    return null
+  const validate = (): FieldErrors => {
+    const errors: FieldErrors = {}
+    if (!form.productId) errors.product = t('validation.selectProduct')
+    if (!form.quantityUnits || form.quantityUnits < 1) errors.quantity = t('validation.quantityMin')
+    if (!form.costPricePerUnit || form.costPricePerUnit <= 0) errors.cost = t('stockIn.costInvalid')
+    if (!form.deliveryDate) errors.date = t('stockIn.dateMissing')
+    return errors
   }
 
-  const handleReview = () => {
-    const validationError = validate()
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-    setError(null)
+  const handleReview = (e: React.FormEvent) => {
+    e.preventDefault()
+    const errors = validate()
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) return
+    setServerError(null)
     setStep('review')
   }
 
   const handleSubmit = () => {
-    const validationError = validate()
-    if (validationError) {
-      setError(validationError)
+    if (Object.keys(validate()).length > 0) {
+      setStep('form')
       return
     }
     deliveryMutation.mutate({
@@ -86,143 +103,141 @@ export function StockInDialog({
     })
   }
 
-  return (
-    <ModalPortal onClose={onClose} closeOnBackdropClick>
-    <div className="ui-modal-backdrop px-4">
-      <div className="ui-modal-panel w-full max-w-md">
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h3 className="ui-modal-title">{step === 'form' ? 'Record Stock Delivery' : 'Review Stock Delivery'}</h3>
-            <p className="ui-modal-subtitle">
-              {step === 'form'
-                ? 'Capture incoming stock with cost and bill details.'
-                : 'Review the stock delivery before submitting it.'}
-            </p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close"><X size={16} strokeWidth={2} /></button>
-        </div>
+  const stillNeeded = [
+    ...(form.productId ? [] : [t('stockIn.needProduct')]),
+    ...(hasQuantity ? [] : [t('stockIn.needQuantity')]),
+    ...(form.costPricePerUnit > 0 ? [] : [t('stockIn.needCost')]),
+    ...(form.deliveryDate ? [] : [t('stockIn.needDate')]),
+  ]
 
+  const stockAfter = selectedProduct && hasQuantity ? selectedProduct.currentStockUnits + form.quantityUnits : null
+
+  return (
+    <Modal
+      tone="info"
+      title={step === 'form' ? t('stockIn.title') : t('stockIn.reviewTitle')}
+      subtitle={step === 'form' ? t('stockIn.subtitle') : selectedProduct?.displayName}
+      size="lg"
+      onClose={onClose}
+      canClose={!deliveryMutation.isPending}
+      closeOnBackdropClick
+      onSubmit={step === 'form' ? handleReview : undefined}
+      bodyClassName="space-y-4"
+      footer={step === 'form' ? (
+        <>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+            {t('common:actions.cancel')}
+          </button>
+          <button type="submit" disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn ui-btn-primary">
+            {t('common:actions.review')}
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={() => { setStep('form'); setServerError(null) }}
+            disabled={deliveryMutation.isPending} className="ui-btn ui-btn-secondary">
+            {t('common:actions.edit')}
+          </button>
+          <LoadingButton type="button" isLoading={deliveryMutation.isPending} loadingLabel={t('actions.recording')}
+            onClick={handleSubmit} className="ui-btn-primary">
+            {t('stockIn.confirm')}
+          </LoadingButton>
+        </>
+      )}
+    >
         {step === 'form' && (
-          <div className="ui-modal-body space-y-4">
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error} Go back to modify the data and try again.</div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
-                <span className="ui-label">Product *</span>
-                <SearchableSelect label="Product"
+          <>
+            <FormGrid>
+              <FormGridFullRow>
+                <span className="ui-label">{t('fields.product')}</span>
+                <SearchableSelect label={t('fields.product')}
                   value={form.productId ? form.productId.toString() : ''}
                   onChange={v => setForm(f => ({ ...f, productId: v ? parseInt(v) : '' }))}
-                  placeholder="Select product…"
-                  options={products.map(p => ({ value: p.id.toString(), label: `${p.displayName} (stock: ${p.currentStockUnits})` }))}
+                  placeholder={t('fields.selectProduct')}
+                  options={products.map(p => ({ value: p.id.toString(), label: t('fields.productOption', { name: p.displayName, stock: p.currentStockUnits }) }))}
                 />
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Quantity (units) *</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="text-sm"
-                    value={form.quantityUnits}
-                    onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Cost Price per Unit (₹) *</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    className="text-sm"
-                    value={form.costPricePerUnit || ''}
-                    onChange={e => setForm(f => ({ ...f, costPricePerUnit: parseFloat(e.target.value) || 0 }))}
-                    placeholder="₹"
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Delivery Date *</span>
-                  <input
-                    type="date"
-                    className="text-sm"
-                    value={form.deliveryDate}
-                    onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
-                  />
-                </label>
-              </div>
-              <div>
-                <label className="block">
-                  <span className="ui-label">Invoice Reference</span>
-                  <input
-                    className="text-sm"
-                    value={form.invoiceReference ?? ''}
-                    onChange={e => setForm(f => ({ ...f, invoiceReference: e.target.value }))}
-                    placeholder="Optional"
-                  />
-                </label>
-              </div>
-            </div>
+                {fieldErrors.product && <p role="alert" className="ui-error-text">{fieldErrors.product}</p>}
+              </FormGridFullRow>
+              <FormField label={t('fields.quantity')} error={fieldErrors.quantity}>
+                <NumericInput
+                  unit={t('fields.unitsSuffix')}
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  data-autofocus
+                  value={form.quantityUnits || ''}
+                  onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
+                />
+              </FormField>
+              <FormField label={t('stockIn.costPricePerUnit')} error={fieldErrors.cost}>
+                <NumericInput
+                  unit="₹"
+                  min="0.01"
+                  step="0.01"
+                  value={form.costPricePerUnit || ''}
+                  onChange={e => setForm(f => ({ ...f, costPricePerUnit: parseFloat(e.target.value) || 0 }))}
+                />
+              </FormField>
+              <FormField label={t('stockIn.deliveryDate')} error={fieldErrors.date}>
+                <input
+                  type="date"
+                  value={form.deliveryDate}
+                  onChange={e => setForm(f => ({ ...f, deliveryDate: e.target.value }))}
+                />
+              </FormField>
+              <FormField label={<>{t('stockIn.invoiceReference')} <span className="font-normal text-ink-3">{t('common:fields.optionalSuffix')}</span></>}>
+                <input
+                  value={form.invoiceReference ?? ''}
+                  onChange={e => setForm(f => ({ ...f, invoiceReference: e.target.value }))}
+                />
+              </FormField>
+            </FormGrid>
 
-            {totalCost != null && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 flex items-center justify-between">
-                <span className="text-sm text-blue-600">Estimated Total</span>
-                <span className="text-sm font-semibold text-blue-700">{fmtCurrency(totalCost)}</span>
-              </div>
-            )}
-          </div>
+            <LiveFigures
+              label={t('stockIn.totalCost')}
+              figures={[
+                {
+                  label: t('stockIn.stockAfter'),
+                  value: stockAfter == null ? '—' : t('fields.quantityUnits', { count: stockAfter }),
+                },
+                {
+                  label: (
+                    <>
+                      {t('stockIn.totalCost')}
+                      {totalCost != null && (
+                        <span className="ml-1.5 font-normal text-ink-3 tabular-nums">
+                          {t('sell.quantityTimesPrice', { count: form.quantityUnits, price: fmtCurrency(form.costPricePerUnit) })}
+                        </span>
+                      )}
+                    </>
+                  ),
+                  value: <MoneyText value={totalCost} />,
+                  isResult: true,
+                },
+              ]}
+            />
+
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
 
         {step === 'review' && (
-          <div className="ui-modal-body space-y-4">
-            {error && (
-              <div role="alert" className="ui-alert ui-alert-danger text-sm">{error} Go back to modify the data and try again.</div>
-            )}
-            <div className="ui-card-plain ui-card-muted divide-y divide-slate-100 overflow-hidden text-sm">
-              <ReviewRow label="Product" value={selectedProduct?.displayName ?? '—'} />
-              <ReviewRow label="Quantity" value={`${form.quantityUnits} unit${form.quantityUnits !== 1 ? 's' : ''}`} />
-              <ReviewRow label="Cost Price / Unit" value={fmtCurrency(form.costPricePerUnit)} />
-              <ReviewRow label="Delivery Date" value={fmtDate(form.deliveryDate)} />
-              <ReviewRow label="Invoice Reference" value={form.invoiceReference?.trim() || '—'} />
-              <ReviewRow label="Total Cost" value={fmtCurrency(totalCost)} highlight />
-            </div>
-          </div>
+          <>
+            <ReviewList>
+              <ReviewRow label={t('fields.product')} value={selectedProduct?.displayName ?? '—'} />
+              <ReviewRow label={t('fields.quantity')} value={t('fields.quantityUnits', { count: form.quantityUnits })} />
+              <ReviewRow label={t('stockIn.costPricePerUnit')} value={fmtCurrency(form.costPricePerUnit)} />
+              <ReviewRow label={t('stockIn.deliveryDate')} value={fmtDate(form.deliveryDate)} />
+              <ReviewRow label={t('stockIn.invoiceReference')} value={form.invoiceReference?.trim() || '—'} />
+              {stockAfter != null && <ReviewRow label={t('stockIn.stockAfter')} value={t('fields.quantityUnits', { count: stockAfter })} />}
+              <ReviewRow label={t('stockIn.totalCost')} value={<MoneyText value={totalCost} />} isResult />
+            </ReviewList>
+            {serverError && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+          </>
         )}
-
-        <div className="ui-modal-footer">
-          {step === 'form' ? (
-            <>
-              <button onClick={onClose} className="ui-btn ui-btn-secondary">
-                Cancel
-              </button>
-              <button onClick={handleReview} className="ui-btn ui-btn-primary">
-                Review
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { setStep('form'); setError(null) }}
-                className="ui-btn ui-btn-secondary"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={deliveryMutation.isPending}
-                className="ui-btn ui-btn-primary"
-              >
-                {deliveryMutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Recording…</span> : 'Confirm Delivery'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-    </ModalPortal>
+    </Modal>
   )
 }

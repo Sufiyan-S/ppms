@@ -1,5 +1,7 @@
 package com.ppms.ancillary;
 
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
@@ -8,8 +10,12 @@ import com.ppms.cash.CashEventRepository;
 import com.ppms.cash.CashEventType;
 import com.ppms.common.exception.BusinessException;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.credit.CreditAccountPolicyService;
+import com.ppms.credit.CreditClient;
 import com.ppms.credit.CreditClientRepository;
 import com.ppms.invoice.GstFields;
+import com.ppms.report.BalanceSheetStalenessService;
+import com.ppms.report.StaleReasons;
 import com.ppms.transaction.TransactionPaymentMode;
 import com.ppms.user.User;
 import com.ppms.user.UserRole;
@@ -25,6 +31,9 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -40,8 +49,10 @@ public class AncillaryInventoryWorkflowService {
     private final CashEventRepository cashEventRepository;
     private final AncillaryProductAccessService accessService;
     private final CreditClientRepository creditClientRepository;
+    private final CreditAccountPolicyService creditAccountPolicyService;
     private final AuditService auditService;
     private final BusinessClock businessClock;
+    private final BalanceSheetStalenessService balanceSheetStalenessService;
 
     @Transactional
     public AncillaryProduct createProduct(Long pumpId, CreateProductRequest request) {
@@ -111,7 +122,9 @@ public class AncillaryInventoryWorkflowService {
     public DeliveryResult recordDelivery(Long pumpId, Long productId, RecordStockDeliveryRequest request, User currentUser) {
         AncillaryProduct product = accessService.requireProductForPumpForUpdate(productId, pumpId);
         if (product.getStatus() == AncillaryProductStatus.INACTIVE) {
-            throw new BusinessException("Product '" + product.getName() + "' is INACTIVE. Re-activate it before recording a delivery.");
+            throw new BusinessException(ErrorCodes.PRODUCT_INACTIVE_FOR_DELIVERY,
+                    Map.of("productName", product.getName()),
+                    "Product '" + product.getName() + "' is INACTIVE. Re-activate it before recording a delivery.");
         }
 
         // Mark as backfilled when the delivery date is before today — historical entry.
@@ -162,26 +175,29 @@ public class AncillaryInventoryWorkflowService {
     public SaleResult recordSale(Long pumpId, RecordAncillarySaleRequest request, User currentUser) {
         AncillaryProduct product = accessService.requireProductForPumpForUpdate(request.getProductId(), pumpId);
         if (product.getStatus() == AncillaryProductStatus.INACTIVE) {
-            throw new BusinessException("Product '" + product.getName() + "' is INACTIVE and cannot be sold.");
+            throw new BusinessException(ErrorCodes.PRODUCT_INACTIVE_FOR_SALE, Map.of("productName", product.getName()),
+                    "Product '" + product.getName() + "' is INACTIVE and cannot be sold.");
         }
         if (request.getClientId() != null && !creditClientRepository.existsByIdAndPumpId(request.getClientId(), pumpId)) {
-            throw new ResourceNotFoundException("Credit client not found");
+            throw new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found");
         }
-        if (request.getPaymentMode() == TransactionPaymentMode.CREDIT
-                && (request.getClientName() == null || request.getClientName().isBlank())) {
-            throw new BusinessException("Client name is required for CREDIT payment mode.");
-        }
+        CreditClient creditClient = requireCreditClientForCreditSale(pumpId, request.getPaymentMode(), request.getClientId());
         if (product.getCurrentStockUnits() < request.getQuantityUnits()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PRODUCT_INSUFFICIENT_STOCK,
+                    Map.of("productName", product.getName(),
+                           "availableUnits", String.valueOf(product.getCurrentStockUnits()),
+                           "requestedUnits", String.valueOf(request.getQuantityUnits())),
                     "Insufficient stock for '" + product.getName() + "'. Available: "
                             + product.getCurrentStockUnits() + " units, requested: " + request.getQuantityUnits() + " units.");
         }
 
         BigDecimal sellingPrice = resolveSellingPrice(pumpId, product, request.getSellingPricePerUnit(), currentUser);
         LocalDate today = businessClock.today();
+        validateCreditSale(pumpId, creditClient, sellingPrice, request.getQuantityUnits());
 
         AncillarySale sale = saleRepository.save(newSale(pumpId, product, request.getQuantityUnits(), sellingPrice,
-                request.getPaymentMode(), request.getClientName(), request.getBillNo(), request.getNotes(), currentUser)
+                request.getPaymentMode(), clientNameOf(creditClient, request.getClientName()), request.getBillNo(),
+                request.getNotes(), currentUser)
                 .clientId(request.getClientId())
                 .saleDate(today)
                 .build());
@@ -210,7 +226,8 @@ public class AncillaryInventoryWorkflowService {
         BigDecimal configuredPrice = priceRepository
                 .findFirstByProductIdAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(product.getId(), businessClock.now())
                 .map(price -> price.getPricePerUnit().setScale(2, RoundingMode.HALF_UP))
-                .orElseThrow(() -> new BusinessException(
+                .orElseThrow(() -> new BusinessException(ErrorCodes.PRODUCT_SELLING_PRICE_NOT_SET,
+                        Map.of("productName", product.getName()),
                         "No selling price is set for '" + product.getName() + "'. Set a price before recording a sale."));
         BigDecimal requested = requestedPrice.setScale(2, RoundingMode.HALF_UP);
         if (requested.compareTo(configuredPrice) == 0) {
@@ -220,7 +237,9 @@ public class AncillaryInventoryWorkflowService {
                 || currentUser.getRole() == UserRole.ADMIN
                 || currentUser.getRole() == UserRole.SUPER_ADMIN;
         if (!canOverride) {
-            throw new BusinessException("The selling price for '" + product.getName() + "' is ₹" + configuredPrice
+            throw new BusinessException(ErrorCodes.PRODUCT_PRICE_OVERRIDE_NOT_ALLOWED,
+                    Map.of("productName", product.getName(), "sellingPrice", configuredPrice.toPlainString()),
+                    "The selling price for '" + product.getName() + "' is ₹" + configuredPrice
                     + ". Only an Owner or Admin can sell at a different price.");
         }
         auditService.log(pumpId, AuditAction.ANCILLARY_PRICE_OVERRIDDEN,
@@ -231,7 +250,7 @@ public class AncillaryInventoryWorkflowService {
     }
 
     @Transactional
-    public LotCorrectionResult updateLot(Long pumpId, Long lotId, UpdateLotRequest request) {
+    public LotCorrectionResult updateLot(Long pumpId, Long lotId, UpdateLotRequest request, User currentUser) {
         AncillaryProduct product = accessService.requireProductForPumpForUpdate(
                 accessService.requireProductIdOfLot(lotId, pumpId), pumpId);
         AncillaryStockLot lot = accessService.requireLotForPump(lotId, pumpId);
@@ -239,10 +258,12 @@ public class AncillaryInventoryWorkflowService {
         if (request.getRemainingQuantity() != null) {
             int newQty = request.getRemainingQuantity();
             if (newQty < 0) {
-                throw new BusinessException("Remaining quantity cannot be negative.");
+                throw new BusinessException(ErrorCodes.LOT_REMAINING_QUANTITY_NEGATIVE, Map.of(),
+                        "Remaining quantity cannot be negative.");
             }
             if (newQty > lot.getOriginalQuantity()) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.LOT_REMAINING_ABOVE_ORIGINAL,
+                        Map.of("originalQuantity", String.valueOf(lot.getOriginalQuantity())),
                         "Remaining quantity cannot exceed original quantity (" + lot.getOriginalQuantity() + ").");
             }
             int delta = newQty - lot.getRemainingQuantity();
@@ -254,9 +275,15 @@ public class AncillaryInventoryWorkflowService {
 
         if (request.getCostPricePerUnit() != null) {
             if (request.getCostPricePerUnit().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BusinessException("Cost price must be greater than 0.");
+                throw new BusinessException(ErrorCodes.LOT_COST_PRICE_NOT_POSITIVE, Map.of(),
+                        "Cost price must be greater than 0.");
             }
-            lot.setCostPricePerUnit(request.getCostPricePerUnit().setScale(2, RoundingMode.HALF_UP));
+            BigDecimal oldCost = lot.getCostPricePerUnit();
+            BigDecimal newCost = request.getCostPricePerUnit().setScale(2, RoundingMode.HALF_UP);
+            lot.setCostPricePerUnit(newCost);
+            if (newCost.compareTo(oldCost) != 0) {
+                recostSoldUnits(pumpId, product, lot, oldCost, newCost, currentUser);
+            }
         }
 
         AncillaryStockLot savedLot = lotRepository.save(lot);
@@ -265,6 +292,28 @@ public class AncillaryInventoryWorkflowService {
                 .lot(savedLot)
                 .delivery(delivery)
                 .build();
+    }
+
+    /** Units already sold from the lot take the corrected cost, so product profit on those days is right. */
+    private void recostSoldUnits(Long pumpId, AncillaryProduct product, AncillaryStockLot lot,
+                                 BigDecimal oldCost, BigDecimal newCost, User currentUser) {
+        List<AncillaryLotConsumption> consumptions = consumptionRepository.findByLotId(lot.getId());
+        consumptions.forEach(consumption -> consumption.setCostPricePerUnit(newCost));
+        consumptionRepository.saveAll(consumptions);
+
+        int unitsRecosted = consumptions.stream().mapToInt(AncillaryLotConsumption::getQuantityConsumed).sum();
+        Set<LocalDate> saleDates = saleRepository.findAllById(
+                        consumptions.stream().map(AncillaryLotConsumption::getSaleId).collect(Collectors.toSet()))
+                .stream().map(AncillarySale::getSaleDate).collect(Collectors.toSet());
+        balanceSheetStalenessService.markDaySheetsStale(pumpId, saleDates,
+                StaleReasons.productCostCorrected(product.getName(), oldCost.toString(), newCost.toString()));
+
+        log.info("Ancillary lot re-costed: pump={}, lot={}, cost {} -> {}, unitsRecosted={}, days={}",
+                pumpId, lot.getId(), oldCost, newCost, unitsRecosted, saleDates.size());
+        auditService.log(pumpId, AuditAction.LOT_COST_CORRECTED, "AncillaryStockLot", lot.getId().toString(),
+                "Cost of '" + product.getName() + "' lot corrected ₹" + oldCost + " → ₹" + newCost + " per unit; " +
+                unitsRecosted + " unit(s) already sold re-costed",
+                currentUser);
     }
 
     /**
@@ -283,22 +332,26 @@ public class AncillaryInventoryWorkflowService {
     @Transactional
     public SaleResult backfillSale(Long pumpId, BackfillSaleRequest request, User currentUser) {
         if (!request.getSaleDate().isBefore(businessClock.today())) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.BACKFILL_SALE_DATE_NOT_IN_PAST,
+                    Map.of(),
                     "Sale date must be strictly in the past. Use the regular Sell button for today's sales.");
         }
 
-        if (request.getPaymentMode() == TransactionPaymentMode.CREDIT
-                && (request.getClientName() == null || request.getClientName().isBlank())) {
-            throw new BusinessException("Client name is required for CREDIT payment mode.");
+        if (request.getClientId() != null && !creditClientRepository.existsByIdAndPumpId(request.getClientId(), pumpId)) {
+            throw new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found");
         }
+        CreditClient creditClient = requireCreditClientForCreditSale(pumpId, request.getPaymentMode(), request.getClientId());
 
         AncillaryProduct product = accessService.requireProductForPumpForUpdate(request.getProductId(), pumpId);
 
         BigDecimal sellingPrice = priceOnDate(product, request.getSaleDate());
         List<AncillaryStockLot> historicalLots = lotsCoveringBackfill(product, request);
+        validateCreditSale(pumpId, creditClient, sellingPrice, request.getQuantityUnits());
 
         AncillarySale sale = saleRepository.save(newSale(pumpId, product, request.getQuantityUnits(), sellingPrice,
-                request.getPaymentMode(), request.getClientName(), request.getBillNo(), request.getNotes(), currentUser)
+                request.getPaymentMode(), clientNameOf(creditClient, request.getClientName()), request.getBillNo(),
+                request.getNotes(), currentUser)
+                .clientId(request.getClientId())
                 .saleDate(request.getSaleDate())
                 .isBackfilled(true)
                 .build());
@@ -331,7 +384,8 @@ public class AncillaryInventoryWorkflowService {
         return priceRepository
                 .findFirstByProductIdAndEffectiveFromLessThanEqualOrderByEffectiveFromDesc(product.getId(), endOfSaleDay)
                 .map(AncillaryProductPrice::getPricePerUnit)
-                .orElseThrow(() -> new BusinessException(
+                .orElseThrow(() -> new BusinessException(ErrorCodes.PRODUCT_HISTORICAL_PRICE_NOT_SET,
+                        Map.of("productName", product.getName(), "saleDate", String.valueOf(saleDate)),
                         "No selling price was set for '" + product.getName() +
                         "' on or before " + saleDate +
                         ". Set a price first (even a historical one) before backfilling this sale."));
@@ -344,7 +398,11 @@ public class AncillaryInventoryWorkflowService {
                 .mapToInt(AncillaryStockLot::getRemainingQuantity)
                 .sum();
         if (availableOnDate < request.getQuantityUnits()) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PRODUCT_INSUFFICIENT_HISTORICAL_STOCK,
+                    Map.of("productName", product.getName(),
+                           "saleDate", String.valueOf(request.getSaleDate()),
+                           "availableUnits", availableOnDate,
+                           "requestedUnits", String.valueOf(request.getQuantityUnits())),
                     "Insufficient historical stock for '" + product.getName() +
                     "' on " + request.getSaleDate() +
                     ". Stock available from lots delivered on or before that date: " + availableOnDate +
@@ -354,10 +412,43 @@ public class AncillaryInventoryWorkflowService {
         return historicalLots;
     }
 
+    /** A credit sale must name a client of this pump, so the amount lands on an account that is billed and charged. */
+    private CreditClient requireCreditClientForCreditSale(Long pumpId, TransactionPaymentMode paymentMode, Long clientId) {
+        if (paymentMode != TransactionPaymentMode.CREDIT) {
+            return null;
+        }
+        if (clientId == null) {
+            throw new BusinessException(ErrorCodes.PRODUCT_CREDIT_SALE_NEEDS_CLIENT, Map.of(),
+                    "Choose a credit client for a CREDIT sale.");
+        }
+        return creditClientRepository.findById(clientId)
+                .filter(client -> client.getPumpId().equals(pumpId))
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found"));
+    }
+
+    /** Same limit, extension and overdue rules as a fuel credit sale; locks the group's limit holder until commit. */
+    private void validateCreditSale(Long pumpId, CreditClient creditClient, BigDecimal sellingPrice, int quantityUnits) {
+        if (creditClient == null) {
+            return;
+        }
+        creditAccountPolicyService.validateCreditSaleAllowed(pumpId, creditClient, saleTotal(sellingPrice, quantityUnits));
+    }
+
+    private static String clientNameOf(CreditClient creditClient, String requestedName) {
+        if (creditClient != null && (requestedName == null || requestedName.isBlank())) {
+            return creditClient.getName();
+        }
+        return requestedName;
+    }
+
+    private static BigDecimal saleTotal(BigDecimal sellingPrice, int quantityUnits) {
+        return sellingPrice.multiply(new BigDecimal(quantityUnits)).setScale(2, RoundingMode.HALF_UP);
+    }
+
     private AncillarySale.AncillarySaleBuilder newSale(Long pumpId, AncillaryProduct product, int quantityUnits,
                                                        BigDecimal sellingPrice, TransactionPaymentMode paymentMode,
                                                        String clientName, String billNo, String notes, User soldBy) {
-        BigDecimal totalAmount = sellingPrice.multiply(new BigDecimal(quantityUnits)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalAmount = saleTotal(sellingPrice, quantityUnits);
         return AncillarySale.builder()
                 .pumpId(pumpId)
                 .productId(product.getId())
@@ -366,6 +457,7 @@ public class AncillaryInventoryWorkflowService {
                 .totalAmount(totalAmount)
                 .gstAmount(BigDecimal.ZERO.setScale(2))
                 .totalWithGst(totalAmount)
+                .gstRatePercent(product.getGstRatePercent().setScale(2, RoundingMode.HALF_UP))
                 .paymentMode(paymentMode)
                 .clientName(clientName != null ? clientName.trim() : null)
                 .billNo(billNo != null ? billNo.trim() : null)
@@ -397,7 +489,8 @@ public class AncillaryInventoryWorkflowService {
         if (uncovered > 0) {
             log.error("Ancillary stock lot shortage: productId={}, saleId={}, {} units not covered by any lot",
                     productId, saleId, uncovered);
-            throw new BusinessException("Stock lots for this product do not cover " + uncovered
+            throw new BusinessException(ErrorCodes.PRODUCT_LOTS_DO_NOT_COVER_SALE, Map.of("uncoveredUnits", uncovered),
+                    "Stock lots for this product do not cover " + uncovered
                     + " of the requested units. Correct the stock lots before selling.");
         }
     }

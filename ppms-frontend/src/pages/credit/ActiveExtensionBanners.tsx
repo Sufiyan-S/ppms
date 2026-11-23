@@ -1,17 +1,30 @@
+import { useTranslation } from 'react-i18next'
 import type { CreditExtension } from '../../api/creditApi'
+import { extensionSummary } from './extensionSummary'
 
-export function ActiveExtensionBanners({ extensions }: { extensions: CreditExtension[] }) {
+interface ActiveExtensionBannersProps {
+  extensions: CreditExtension[]
+  canRevoke: boolean
+  onRevoke: (extension: CreditExtension) => void
+}
+
+export function ActiveExtensionBanners({ extensions, canRevoke, onRevoke }: ActiveExtensionBannersProps) {
+  const { t } = useTranslation('credit')
   return extensions.map((ext) => (
-    <div key={ext.id} className="mt-3 ui-alert text-sm bg-blue-50 border-blue-200 flex items-center justify-between">
+    <div key={ext.id} className="mt-3 ui-alert text-sm bg-info-bg border-info/30 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2">
-        <span className="font-medium text-blue-800">
-          {ext.extensionType === 'AMOUNT_EXTENSION' && `+₹${ext.extensionAmount?.toLocaleString('en-IN')} credit headroom`}
-          {ext.extensionType === 'BILLING_CYCLE_EXTENSION' && 'Billing cycle overdue block deferred'}
-          {ext.extensionType === 'OVERDUE_BLOCK_WAIVER' && 'Overdue block waived'}
-        </span>
-        <span className="text-xs text-blue-700">expires {ext.expiryDate}</span>
+        <span className="font-medium text-info">{extensionSummary(ext)}</span>
+        <span className="text-xs text-info">{t('extension.expires', { date: ext.expiryDate })}</span>
       </div>
-      <span className="text-xs text-blue-700 italic truncate max-w-xs">{ext.reason}</span>
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="text-xs text-info italic truncate max-w-xs">{ext.reason}</span>
+        {canRevoke && (
+          <button type="button" onClick={() => onRevoke(ext)}
+            className="ui-btn ui-btn-secondary ui-btn-compact text-bad border-bad/30 hover:bg-bad-bg shrink-0">
+            {t('extension.revoke')}
+          </button>
+        )}
+      </div>
     </div>
   ))
 }

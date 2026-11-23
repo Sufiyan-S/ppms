@@ -50,12 +50,12 @@ const ICONS: Record<EmptyIcon, ReactNode> = {
 export function EmptyState({ icon = 'generic', title, subtitle }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center py-12 gap-4">
-      <div className="w-16 h-16 text-slate-200">
+      <div className="w-16 h-16 text-border">
         {ICONS[icon]}
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-slate-500">{title}</p>
-        {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+        <p className="text-sm font-medium text-ink-3">{title}</p>
+        {subtitle && <p className="text-xs text-ink-3 mt-1">{subtitle}</p>}
       </div>
     </div>
   )

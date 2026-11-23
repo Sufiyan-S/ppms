@@ -1,6 +1,8 @@
 package com.ppms.cash;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.pump.PumpLocationRepository;
 import com.ppms.user.User;
@@ -10,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -35,11 +38,12 @@ public class CashDrawerService {
             // Lock the pump row for the duration of this transaction so that no other
             // CASH_OUT request for the same pump can read the balance until we commit.
             pumpLocationRepository.findByIdForUpdate(pumpId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Pump not found: " + pumpId));
+                    .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found: " + pumpId));
 
             BigDecimal currentBalance = cashEventRepository.computeBalance(pumpId);
             if (amount.compareTo(currentBalance) > 0) {
-                throw new BusinessException(
+                throw new BusinessException(ErrorCodes.CASH_OUT_EXCEEDS_BALANCE,
+                        Map.of("amount", amount.toPlainString(), "balance", currentBalance.toPlainString()),
                         "Cash-out amount ₹" + amount
                         + " exceeds the current drawer balance of ₹" + currentBalance + ".");
             }

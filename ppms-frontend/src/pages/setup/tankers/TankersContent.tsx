@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Truck } from 'lucide-react'
+import { Check, Plus, Pencil, Truck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { tankerApi } from '../../../api/tankerApi'
 import type { Tanker, CreateTankerRequest } from '../../../api/tankerApi'
@@ -8,10 +9,16 @@ import { useToastStore } from '../../../store/toastStore'
 import { ConfirmButton } from '../../../components/ConfirmButton'
 import { IconButton } from '../../../components/IconButton'
 import { TankerForm } from './TankerForm'
+import type { TankerFieldErrors } from './TankerForm'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { StatusBadge } from '../../../components/StatusBadge'
+import { codeLabel } from '../../../constants/labels'
+import { formatNumberIn } from '../../../i18n/format'
 
 // ── Tankers content ───────────────────────────────────────────────────────────
 
 export function TankersContent({ pumpId }: { pumpId: number }) {
+  const { t } = useTranslation(['setup', 'common'])
   const qc = useQueryClient()
   const { addToast } = useToastStore()
 
@@ -27,47 +34,53 @@ export function TankersContent({ pumpId }: { pumpId: number }) {
   const [tankerType, setTankerType] = useState<'OWN' | 'COMPANY'>('COMPANY')
   const [makeDefault, setMakeDefault] = useState(false)
   const [formError,  setFormError]  = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<TankerFieldErrors>({})
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['tankers', pumpId] })
 
   const resetForm = () => {
     setName(''); setCapacity(''); setTankerType('COMPANY'); setMakeDefault(false)
-    setFormError(null); setShowAdd(false); setEditId(null)
+    setFormError(null); setFieldErrors({}); setShowAdd(false); setEditId(null)
   }
 
-  const startEdit = (t: Tanker) => {
-    setEditId(t.id); setName(t.name)
-    setCapacity(String(t.capacityLitres)); setTankerType(t.tankerType)
-    setMakeDefault(t.defaultTanker); setFormError(null); setShowAdd(false)
+  const startEdit = (tanker: Tanker) => {
+    setEditId(tanker.id); setName(tanker.name)
+    setCapacity(String(tanker.capacityLitres)); setTankerType(tanker.tankerType)
+    setMakeDefault(tanker.defaultTanker); setFormError(null); setFieldErrors({}); setShowAdd(false)
   }
 
   const createMutation = useMutation({
     mutationFn: (req: CreateTankerRequest) => tankerApi.createTanker(pumpId, req),
-    onSuccess: () => { invalidate(); resetForm(); addToast('Tanker added', 'success') },
-    onError: (err: unknown) => setFormError(parseApiError(err, 'Failed to add tanker')),
+    onSuccess: () => { invalidate(); resetForm(); addToast(t('tankers.added'), 'success') },
+    onError: (err: unknown) => setFormError(parseApiError(err, t('tankers.addFailed'))),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, req }: { id: number; req: CreateTankerRequest }) =>
       tankerApi.updateTanker(pumpId, id, req),
-    onSuccess: () => { invalidate(); resetForm(); addToast('Tanker updated', 'success') },
-    onError: (err: unknown) => setFormError(parseApiError(err, 'Failed to update tanker')),
+    onSuccess: () => { invalidate(); resetForm(); addToast(t('tankers.updated'), 'success') },
+    onError: (err: unknown) => setFormError(parseApiError(err, t('tankers.updateFailed'))),
   })
 
   const deactivateMutation = useMutation({
     mutationFn: (id: number) => tankerApi.deactivateTanker(pumpId, id),
-    onSuccess: () => { invalidate(); addToast('Tanker removed', 'success') },
+    onSuccess: () => { invalidate(); addToast(t('tankers.removed'), 'success') },
   })
 
   const setDefaultMutation = useMutation({
     mutationFn: (id: number) => tankerApi.setDefault(pumpId, id),
-    onSuccess: () => { invalidate(); addToast('Default tanker updated', 'success') },
+    onSuccess: () => { invalidate(); addToast(t('tankers.defaultUpdated'), 'success') },
   })
 
-  function handleSubmit() {
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
     const cap = parseFloat(capacity)
-    if (!name.trim()) { setFormError('Name is required.'); return }
-    if (!capacity || isNaN(cap) || cap < 100) { setFormError('Capacity must be at least 100 L.'); return }
+    const errors: TankerFieldErrors = {
+      name: name.trim() ? undefined : t('tankers.nameRequired'),
+      capacity: !capacity || isNaN(cap) || cap < 100 ? t('tankers.capacityMin') : undefined,
+    }
+    setFieldErrors(errors)
+    if (errors.name || errors.capacity) return
     setFormError(null)
     const req: CreateTankerRequest = {
       name: name.trim(), capacityLitres: cap, tankerType, defaultTanker: makeDefault,
@@ -83,88 +96,81 @@ export function TankersContent({ pumpId }: { pumpId: number }) {
 
   return (
     <div className="space-y-4 pt-2">
-      <p className="text-xs text-slate-500">
-        Configure the tanker trucks used to deliver fuel. When recording a delivery, the total
-        quantity across all tanks must exactly match the selected tanker's capacity.
+      <p className="text-xs text-ink-3">
+        {t('tankers.intro')}
       </p>
 
       {isLoading ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-ink-3">{t('common:loading.short')}</p>
       ) : tankers.length === 0 && !showAdd ? (
-        <p className="text-xs text-slate-500">No tankers configured yet.</p>
+        <p className="text-xs text-ink-3">{t('tankers.empty')}</p>
       ) : (
         <div className="space-y-2">
-          {tankers.map(t => (
+          {tankers.map(tanker => (
             <div
-              key={t.id}
-              className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
-                editId === t.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'
+              key={tanker.id}
+              className={`flex items-center gap-3 rounded-card border px-4 py-3 ${
+                editId === tanker.id ? 'border-border bg-surface-sunken' : 'border-border bg-surface'
               }`}
             >
-              {editId === t.id ? (
+              {editId === tanker.id ? (
                 /* Inline edit form */
-                <div className="flex-1 space-y-3">
+                <form onSubmit={handleSubmit} noValidate aria-label={t('tankers.edit')} className="flex-1 space-y-3">
                   <TankerForm
                     name={name} setName={setName}
                     capacity={capacity} setCapacity={setCapacity}
                     tankerType={tankerType} setTankerType={setTankerType}
                     makeDefault={makeDefault} setMakeDefault={setMakeDefault}
+                    fieldErrors={fieldErrors}
                     error={formError}
                   />
                   <div className="flex gap-2">
-                    <button onClick={handleSubmit} disabled={isPending} className="ui-btn ui-btn-primary text-xs py-1.5 px-3 min-h-0">
-                      {isPending ? 'Saving…' : 'Save'}
-                    </button>
-                    <button onClick={resetForm} className="ui-btn ui-btn-secondary text-xs py-1.5 px-3 min-h-0">Cancel</button>
+                    <LoadingButton type="submit" isLoading={isPending} loadingLabel={t('common:actions.saving')} className="ui-btn-primary">
+                      {t('tankers.save')}
+                    </LoadingButton>
+                    <button type="button" onClick={resetForm} className="ui-btn ui-btn-secondary">{t('common:actions.cancel')}</button>
                   </div>
-                </div>
+                </form>
               ) : (
                 <>
-                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                    <Truck size={14} strokeWidth={2} className="text-orange-600" />
+                  <div className="w-8 h-8 rounded-control bg-surface-sunken flex items-center justify-center shrink-0">
+                    <Truck size={14} strokeWidth={2} aria-hidden="true" className="text-ink-3" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-slate-800">{t.name}</span>
-                      <span className="text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">
-                        {(t.capacityLitres / 1000).toFixed(0)}K L
+                      <span className="text-sm font-semibold text-ink">{tanker.name}</span>
+                      <span className="text-xs font-medium text-ink-2 bg-surface-sunken px-2 py-0.5 rounded-badge tabular-nums">
+                        {t('tankers.capacityShort', { thousands: (tanker.capacityLitres / 1000).toFixed(0) })}
                       </span>
-                      <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                        {t.tankerType === 'OWN' ? 'Own' : 'Company'}
-                      </span>
-                      {t.defaultTanker && (
-                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                          Default
-                        </span>
-                      )}
+                      <StatusBadge tone="neutral" label={codeLabel(tanker.tankerType)} />
+                      {tanker.defaultTanker && <StatusBadge tone="ok" icon={Check} label={t('tankers.default')} />}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {t.capacityLitres.toLocaleString('en-IN')} L capacity
+                    <p className="text-xs text-ink-3 mt-0.5">
+                      {t('tankers.capacityLong', { litres: formatNumberIn(tanker.capacityLitres) })}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {!t.defaultTanker && (
+                    {!tanker.defaultTanker && (
                       <button
-                        onClick={() => setDefaultMutation.mutate(t.id)}
+                        onClick={() => setDefaultMutation.mutate(tanker.id)}
                         disabled={setDefaultMutation.isPending}
-                        className="ui-btn ui-btn-ghost text-xs py-1 px-2 min-h-0 text-slate-500"
-                        title="Set as default"
+                        className="ui-btn ui-btn-ghost ui-btn-compact"
                       >
-                        Set Default
+                        {t('tankers.setDefault')}
                       </button>
                     )}
                     <IconButton
-                      onClick={() => startEdit(t)}
-                      className="text-slate-500 hover:text-blue-600 transition-colors rounded"
-                      label="Edit tanker"
+                      onClick={() => startEdit(tanker)}
+                      className="text-ink-3 hover:text-primary transition-colors rounded-control"
+                      label={t('tankers.edit')}
                       icon={<Pencil size={13} />}
                     />
                     <ConfirmButton
-                      onConfirm={() => deactivateMutation.mutate(t.id)}
+                      onConfirm={() => deactivateMutation.mutate(tanker.id)}
                       disabled={deactivateMutation.isPending}
-                      triggerAriaLabel={`Remove tanker ${t.name}`}
-                      prompt="Remove?"
-                      triggerClassName="p-1.5 text-slate-500 hover:text-red-500 transition-colors rounded"
+                      triggerAriaLabel={t('tankers.removeAria', { name: tanker.name })}
+                      prompt={t('tankers.removePrompt')}
+                      triggerClassName="p-1.5 text-ink-3 hover:text-bad transition-colors rounded-control"
                     />
                   </div>
                 </>
@@ -175,29 +181,30 @@ export function TankersContent({ pumpId }: { pumpId: number }) {
       )}
 
       {showAdd ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">New Tanker</p>
+        <form onSubmit={handleSubmit} noValidate aria-labelledby="new-tanker-title" className="ui-inline-form space-y-3">
+          <h3 id="new-tanker-title" className="ui-inline-form__title">{t('tankers.newTanker')}</h3>
           <TankerForm
             name={name} setName={setName}
             capacity={capacity} setCapacity={setCapacity}
             tankerType={tankerType} setTankerType={setTankerType}
             makeDefault={makeDefault} setMakeDefault={setMakeDefault}
+            fieldErrors={fieldErrors}
             error={formError}
           />
           <div className="flex gap-2">
-            <button onClick={handleSubmit} disabled={isPending} className="ui-btn ui-btn-primary text-xs py-1.5 px-3 min-h-0">
-              {isPending ? 'Adding…' : 'Add Tanker'}
-            </button>
-            <button onClick={resetForm} className="ui-btn ui-btn-secondary text-xs py-1.5 px-3 min-h-0">Cancel</button>
+            <LoadingButton type="submit" isLoading={isPending} loadingLabel={t('actions.adding')} className="ui-btn-primary">
+              {t('tankers.add')}
+            </LoadingButton>
+            <button type="button" onClick={resetForm} className="ui-btn ui-btn-secondary">{t('common:actions.cancel')}</button>
           </div>
-        </div>
+        </form>
       ) : editId === null && (
         <button
           onClick={() => { resetForm(); setShowAdd(true) }}
           className="ui-btn ui-btn-secondary w-full border-dashed border-2 text-sm"
         >
           <Plus size={14} strokeWidth={2.5} />
-          Add Tanker
+          {t('tankers.add')}
         </button>
       )}
     </div>

@@ -1,6 +1,8 @@
 package com.ppms.invoice;
 
+import java.util.Map;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -21,7 +23,9 @@ public final class GstFields {
     public static String normaliseGstin(String value) {
         String gstin = upperCaseOrNull(value);
         if (gstin != null && !GSTIN.matcher(gstin).matches()) {
-            throw new BusinessException("GSTIN must be 15 characters in the format 27ABCDE1234F1Z5.");
+            throw new BusinessException(ErrorCodes.GSTIN_INVALID,
+                    Map.of(),
+                    "GSTIN must be 15 characters in the format 27ABCDE1234F1Z5.");
         }
         return gstin;
     }
@@ -29,7 +33,7 @@ public final class GstFields {
     public static String normaliseHsnCode(String value) {
         String hsnCode = upperCaseOrNull(value);
         if (hsnCode != null && !HSN_CODE.matcher(hsnCode).matches()) {
-            throw new BusinessException("HSN code must be 4 to 8 digits.");
+            throw new BusinessException(ErrorCodes.HSN_CODE_INVALID, Map.of(), "HSN code must be 4 to 8 digits.");
         }
         return hsnCode;
     }
@@ -37,7 +41,9 @@ public final class GstFields {
     public static String normaliseInvoicePrefix(String value) {
         String prefix = upperCaseOrNull(value);
         if (prefix != null && !INVOICE_PREFIX.matcher(prefix).matches()) {
-            throw new BusinessException("Invoice prefix must be 1 to 5 letters or digits.");
+            throw new BusinessException(ErrorCodes.INVOICE_PREFIX_INVALID,
+                    Map.of(),
+                    "Invoice prefix must be 1 to 5 letters or digits.");
         }
         return prefix;
     }

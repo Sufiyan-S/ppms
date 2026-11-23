@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { pumpApi } from '../../../api/pumpApi'
 import type { CreditClient as PumpCreditClient } from '../../../api/pumpApi'
 import { FormField } from '../../../components/FormField'
-import { ModalPortal } from '../../../components/ModalPortal'
+import { Modal } from '../../../components/Modal'
 import { PasswordInput } from '../../../components/PasswordInput'
-import { Spinner } from '../../../components/Spinner'
+import { LoadingButton } from '../../../components/LoadingButton'
 import { PORTAL_PIN_PATTERN, digitsOnly } from '../../../constants/portalPin'
 import { useToastStore } from '../../../store/toastStore'
 import { parseApiError } from '../../../utils/apiError'
@@ -17,6 +18,7 @@ interface SetPortalPinModalProps {
 }
 
 export function SetPortalPinModal({ pumpId, client, onClose }: SetPortalPinModalProps) {
+  const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
   const { addToast } = useToastStore()
   const [pin, setPin] = useState('')
@@ -26,16 +28,16 @@ export function SetPortalPinModal({ pumpId, client, onClose }: SetPortalPinModal
     mutationFn: () => pumpApi.setCreditClientPortalPin(pumpId, client.id, pin),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['creditClients', pumpId] })
-      addToast(`Portal PIN saved for ${client.name}`, 'success')
+      addToast(t('portalPin.saved', { name: client.name }), 'success')
       onClose()
     },
-    onError: (err) => setError(parseApiError(err, 'Failed to save portal PIN')),
+    onError: (err) => setError(parseApiError(err, t('portalPin.saveFailed'))),
   })
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!PORTAL_PIN_PATTERN.test(pin)) {
-      setError('PIN must be 4 to 6 digits')
+      setError(t('portalPin.invalid'))
       return
     }
     setError(undefined)
@@ -43,45 +45,39 @@ export function SetPortalPinModal({ pumpId, client, onClose }: SetPortalPinModal
   }
 
   return (
-    <ModalPortal onClose={onClose}>
-      <div className="ui-modal-backdrop">
-        <form onSubmit={submit} className="ui-modal-panel">
-          <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-            <div className="ui-modal-heading">
-              <h2 className="ui-modal-title">{client.hasPortalPin ? 'Change portal PIN' : 'Set portal PIN'}</h2>
-              <p className="ui-modal-subtitle">{client.name}</p>
-            </div>
-            <button type="button" aria-label="Close" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
-          </div>
-
-          <div className="ui-modal-body space-y-4">
-            <FormField
-              label="Portal PIN"
-              error={error}
-              help="The client enters this PIN with their phone number to check their balance. It cannot be viewed later, so share it with the client now."
-            >
-              <PasswordInput
-                toggleLabel="Show PIN"
-                value={pin}
-                onChange={e => setPin(digitsOnly(e.target.value))}
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={6}
-                placeholder="4 to 6 digits"
-                className="text-sm"
-                data-autofocus
-              />
-            </FormField>
-          </div>
-
-          <div className="ui-modal-footer">
-            <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">Cancel</button>
-            <button type="submit" disabled={mutation.isPending} className="ui-btn ui-btn-primary">
-              {mutation.isPending ? <span className="flex items-center gap-1.5"><Spinner />Saving…</span> : 'Save PIN'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </ModalPortal>
+    <Modal
+      title={client.hasPortalPin ? t('portalPin.changeTitle') : t('portalPin.setAction')}
+      subtitle={client.name}
+      tone="info"
+      size="md"
+      canClose={!mutation.isPending}
+      onClose={onClose}
+      onSubmit={submit}
+      bodyClassName="space-y-4"
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">{t('common:actions.cancel')}</button>
+          <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('common:actions.saving')} className="ui-btn-primary">
+            {t('portalPin.save')}
+          </LoadingButton>
+        </>
+      }
+    >
+      <FormField
+        label={t('portalPin.label')}
+        error={error}
+        help={t('portalPin.help')}
+      >
+        <PasswordInput
+          toggleLabel={t('portalPin.show')}
+          value={pin}
+          onChange={e => setPin(digitsOnly(e.target.value))}
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={6}
+          data-autofocus
+        />
+      </FormField>
+    </Modal>
   )
 }

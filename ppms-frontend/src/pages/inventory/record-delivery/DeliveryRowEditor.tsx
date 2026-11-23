@@ -1,7 +1,17 @@
+import { useId } from 'react'
 import { X } from 'lucide-react'
+import { codeLabel } from '../../../constants/labels'
+import { useTranslation } from 'react-i18next'
+import { formatNumberIn } from '../../../i18n/format'
 import type { TankStock } from '../../../api/inventoryApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { IconButton } from '../../../components/IconButton'
+import { NumericInput } from '../../../components/NumericInput'
+import { FormField } from '../../../components/FormField'
+import { LiveFigures } from '../../../components/LiveFigures'
+import type { LiveFigure } from '../../../components/LiveFigures'
+import { LitresText, MoneyText } from '../../../components/AmountText'
+import { FormGrid, FormGridFullRow } from '../../../components/layout/FormGrid'
 import { limitDecimals } from '../inventoryFormat'
 import type { DeliveryRow } from './deliveryRows'
 
@@ -21,176 +31,148 @@ interface Props {
 export function DeliveryRowEditor({
   row, rowNumber, tanks, tankOptions, isOwnerOrAdmin, isExpanded, onExpandedChange, canRemove, onRemove, onChange,
 }: Props) {
+  const { t } = useTranslation(['inventory', 'common'])
+  const headingId = useId()
   const tank          = tanks.find(t => t.tankId === Number(row.tankId))
-  const rowCost       = isOwnerOrAdmin ? (parseFloat(row.qty) || 0) * (parseFloat(row.costPrice) || 0) : 0
   const enteredQty    = parseFloat(row.qty) || 0
+  const enteredCost   = parseFloat(row.costPrice) || 0
+  const rowCost       = isOwnerOrAdmin ? enteredQty * enteredCost : 0
   const afterStock    = tank ? tank.currentStock + enteredQty : null
   const availableSpace = tank && tank.capacity > 0 ? tank.capacity - tank.currentStock : null
   const rowOverflow   = availableSpace !== null && enteredQty > 0 && enteredQty > availableSpace
-    const isFilled      = !!row.tankId && enteredQty > 0 && (isOwnerOrAdmin ? parseFloat(row.costPrice) > 0 : true)
+  const isFilled      = !!row.tankId && enteredQty > 0 && (isOwnerOrAdmin ? enteredCost > 0 : true)
+
+  if (!isExpanded) {
+    return (
+      <div className={`ui-card flex items-center justify-between gap-3 px-4 py-3 ${rowOverflow ? 'border-bad' : 'ui-card-muted'}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-xs font-semibold text-ink-3 shrink-0">#{rowNumber}</span>
+          {isFilled ? (
+            <>
+              <span className="text-sm font-medium text-ink truncate">
+                {tank?.tankIdentifier ?? '—'} · {codeLabel(tank?.fuelType)}
+              </span>
+              <LitresText value={enteredQty} decimals={1} className="text-xs text-ink-2" />
+              {rowOverflow && <span className="text-xs font-semibold text-bad">{t('row.overCapacity')}</span>}
+              {!rowOverflow && isOwnerOrAdmin && rowCost > 0 && (
+                <MoneyText value={rowCost} className="text-sm font-semibold text-ink" />
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-ink-3">{t('row.incomplete')}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button type="button" onClick={() => onExpandedChange(row.id)} className="ui-text-action">
+            {t('common:actions.edit')}
+          </button>
+          {canRemove && (
+            <IconButton
+              onClick={onRemove}
+              className="ui-btn ui-btn-ghost"
+              label={t('row.removeRow')}
+              icon={<X size={14} strokeWidth={2} />}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const figures: LiveFigure[] = [
+    ...(isOwnerOrAdmin ? [{
+      label: t('row.deliveryCost'),
+      value: <MoneyText value={enteredQty > 0 && enteredCost > 0 ? rowCost : null} />,
+    }] : []),
+    ...(tank && availableSpace !== null ? [{
+      label: t('row.freeSpace'),
+      value: <LitresText value={availableSpace} decimals={1} />,
+    }] : []),
+    ...(afterStock !== null ? [{
+      label: t('row.stockAfter'),
+      value: rowOverflow
+        ? <span className="font-semibold text-bad">{t('row.overCapacity')}</span>
+        : (
+          <span>
+            <LitresText value={enteredQty > 0 ? afterStock : null} decimals={1} />
+            {tank && tank.capacity > 0 && enteredQty > 0 && (
+              <span className="text-ink-3"> {t('row.ofCapacity', { capacity: formatNumberIn(tank.capacity, { minimumFractionDigits: 0 }) })}</span>
+            )}
+          </span>
+        ),
+      isResult: true,
+    }] : []),
+  ]
 
   return (
-    <div key={row.id} className={`ui-card overflow-hidden ${rowOverflow ? 'border border-red-200 bg-red-50/40' : 'ui-card-muted'}`}>
-      {/* ── Collapsed summary row ── */}
-      {!isExpanded ? (
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-xs font-bold text-slate-500 shrink-0">#{rowNumber}</span>
-            {isFilled ? (
-              <>
-                <span className="text-sm font-medium text-slate-700 truncate">
-                  {tank?.tankIdentifier ?? '—'} · {tank?.fuelType ?? '—'}
-                </span>
-                <span className="text-xs text-slate-500 shrink-0">{enteredQty.toLocaleString('en-IN')} L</span>
-                {rowOverflow && (
-                  <span className="text-xs text-red-600 font-semibold shrink-0">Over capacity</span>
-                )}
-                {!rowOverflow && isOwnerOrAdmin && rowCost > 0 && (
-                  <span className="text-sm font-semibold text-blue-700 shrink-0">
-                    ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="text-xs text-slate-500 italic">Incomplete — click Edit to fill</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0 ml-2">
-            <button
-              type="button"
-              onClick={() => onExpandedChange(row.id)}
-              className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
-            >
-              Edit
-            </button>
-            {canRemove && (
-              <IconButton
-                onClick={onRemove}
-                className="text-red-300 hover:text-red-600 transition-colors"
-                label="Remove row"
-                icon={<X size={14} strokeWidth={2} />}
-              />
-            )}
-          </div>
-        </div>
-      ) : (
-        /* ── Expanded form ── */
-        <div className="p-4 space-y-3">
-          {/* Row header */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              Tank {rowNumber}
-            </span>
-            {canRemove && (
-              <button
-                type="button"
-                onClick={onRemove}
-                className="ui-btn ui-btn-ghost min-h-8 px-0 py-0 text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Remove
-              </button>
-            )}
-          </div>
+    <section aria-labelledby={headingId} className={`ui-card space-y-3 p-4 ${rowOverflow ? 'border-bad' : ''}`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 id={headingId} className="text-sm font-semibold text-ink">{t('row.tankNumber', { number: rowNumber })}</h3>
+        {canRemove && (
+          <IconButton
+            onClick={onRemove}
+            className="ui-btn ui-btn-ghost"
+            label={t('row.removeRow')}
+            icon={<X size={14} strokeWidth={2} />}
+          />
+        )}
+      </div>
 
-          {/* Tank selector */}
-          <div>
-            <span className="ui-label">Tank</span>
-            <SearchableSelect label="Tank"
-              value={row.tankId}
-              onChange={v => onChange('tankId', v)}
-              options={tankOptions}
-              placeholder="Select tank…"
+      <FormGrid>
+        <FormGridFullRow>
+          <span className="ui-label">{t('row.tank')}</span>
+          <SearchableSelect label={t('row.tank')}
+            value={row.tankId}
+            onChange={v => onChange('tankId', v)}
+            options={tankOptions}
+            placeholder={t('row.selectTank')}
+          />
+        </FormGridFullRow>
+
+        <FormField
+          label={t('row.quantity')}
+          className={isOwnerOrAdmin ? undefined : 'ui-form-grid__full'}
+          error={rowOverflow && availableSpace !== null
+            ? t('row.exceedsCapacity', { value: formatNumberIn(availableSpace, { minimumFractionDigits: 1 }) })
+            : undefined}
+        >
+          <NumericInput
+            step="0.001"
+            min="0.001"
+            unit="L"
+            value={row.qty}
+            onChange={e => onChange('qty', limitDecimals(e.target.value, 3))}
+          />
+        </FormField>
+        {isOwnerOrAdmin && (
+          <FormField label={t('row.costPerLitre')}>
+            <NumericInput
+              step="0.01"
+              min="0.01"
+              unit="₹/L"
+              value={row.costPrice}
+              onChange={e => onChange('costPrice', limitDecimals(e.target.value, 2))}
             />
-          </div>
+          </FormField>
+        )}
+        {!isOwnerOrAdmin && (
+          <FormGridFullRow><p className="ui-help mt-0">{t('row.costManaged')}</p></FormGridFullRow>
+        )}
 
-          {/* Qty + Cost */}
-          <div className={`grid gap-3 ${isOwnerOrAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            <div>
-              <label className="block">
-                <span className="ui-label">
-                Quantity (Litres) <span className="text-red-500">*</span>
-              </span>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0.001"
-                  value={row.qty}
-                  onChange={e => onChange('qty', limitDecimals(e.target.value, 3))}
-                  placeholder="e.g. 5000"
-                  className="shadow-sm"
-                />
-              </label>
-            </div>
-            {isOwnerOrAdmin && (
-              <div>
-                <label className="block">
-                  <span className="ui-label">
-                  Cost per Litre (₹) <span className="text-red-500">*</span>
-                </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={row.costPrice}
-                    onChange={e => onChange('costPrice', limitDecimals(e.target.value, 2))}
-                    placeholder="e.g. 88.50"
-                    className="shadow-sm"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-          {!isOwnerOrAdmin && (
-            <p className="text-xs text-slate-500">
-              Cost price is managed by Owner / Admin. The last recorded price for this tank will be used.
-            </p>
-          )}
+        {figures.length > 0 && (
+          <FormGridFullRow>
+            <LiveFigures label={t('row.figuresLabel', { number: rowNumber })} figures={figures} />
+          </FormGridFullRow>
+        )}
+      </FormGrid>
 
-          {/* Per-row live previews */}
-          {(afterStock !== null || (isOwnerOrAdmin && rowCost > 0)) && (
-            <div className="flex items-center flex-wrap gap-3 text-xs">
-              {isOwnerOrAdmin && rowCost > 0 && !rowOverflow && (
-                <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-medium">
-                  ₹{rowCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })} delivery cost
-                </span>
-              )}
-              {afterStock !== null && row.qty && (
-                rowOverflow ? (
-                  <span className="bg-red-50 text-red-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                    </svg>
-                    Exceeds capacity — available: {availableSpace!.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                  </span>
-                ) : (
-                  <span className="text-slate-500">
-                    Stock after: <span className="font-semibold text-slate-600">
-                      {afterStock.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                    </span>
-                    {tank && tank.capacity > 0 && ` / ${tank.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L`}
-                  </span>
-                )
-              )}
-            </div>
-          )}
-
-          {/* Collapse button */}
-          {isFilled && (
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => onExpandedChange(null)}
-                className="ui-btn ui-btn-ghost text-xs px-3 py-1.5 min-h-0"
-              >
-                Done
-              </button>
-            </div>
-          )}
+      {isFilled && (
+        <div className="flex justify-end">
+          <button type="button" onClick={() => onExpandedChange(null)} className="ui-btn ui-btn-ghost ui-btn-compact">
+            {t('common:actions.done')}
+          </button>
         </div>
       )}
-    </div>
+    </section>
   )
 }

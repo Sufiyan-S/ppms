@@ -2,6 +2,7 @@ package com.ppms.fuel;
 
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.notification.NotificationDedupService;
@@ -21,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -51,7 +53,8 @@ public class FuelPriceService {
                 ? date.plusDays(1).atStartOfDay(zone).toOffsetDateTime()
                 : shiftDefinitionRepository.findByIdAndPumpId(shiftDefinitionId, pumpId)
                         .map(def -> LocalDateTime.of(date, def.getStartTime()).atZone(zone).toOffsetDateTime())
-                        .orElseThrow(() -> new ResourceNotFoundException("Shift definition not found"));
+                        .orElseThrow(() -> new ResourceNotFoundException(EntityType.SHIFT_DEFINITION,
+                                "Shift definition not found"));
 
         return Arrays.stream(FuelType.values())
                 .map(fuelType -> FuelPriceForDateResponse.builder()
@@ -124,6 +127,8 @@ public class FuelPriceService {
                 "Fuel Price Changed With Open Shifts",
                 saved.getFuelType() + " price updated to ₹" + saved.getPricePerUnit() +
                 " but " + openShiftsCount + " shift(s) are still open. They will settle at the old price. " +
-                "Close all open shifts to avoid balance discrepancies.");
+                "Close all open shifts to avoid balance discrepancies.",
+                Map.of("fuelTypeCode", saved.getFuelType().name(), "price", saved.getPricePerUnit().toPlainString(),
+                        "openShiftCount", openShiftsCount));
     }
 }

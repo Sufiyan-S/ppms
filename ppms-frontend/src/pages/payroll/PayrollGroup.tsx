@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { StaffMember } from '../../api/userApi'
 import type { PayrollRecord, PayrollStatus } from '../../api/payrollApi'
 import { Pagination } from '../../components/Pagination'
-import { NEXT_STATUS, STATUS_STYLES, fmtAmt, fmtDate } from './payrollFormat'
+import { StatusBadge } from '../../components/StatusBadge'
+import { MoneyText } from '../../components/AmountText'
+import { formatDecimal } from '../../utils/format'
+import { NEXT_STATUS, fmtAmt, fmtDate, statusBadge } from './payrollFormat'
 
 // ── Collapsible group header ──────────────────────────────────────────────────
 interface GroupProps {
@@ -32,6 +36,7 @@ export function PayrollGroup({
   page, pageSize, onPageChange, onPageSizeChange,
   isOpen, onToggle, staff, onStatusChange, onDelete, isPending, isDeletePending,
 }: GroupProps) {
+  const { t } = useTranslation(['payroll', 'common'])
   const next = NEXT_STATUS[status]
   const [rejectRecordId, setRejectRecordId] = useState<number | null>(null)
 
@@ -55,70 +60,68 @@ export function PayrollGroup({
         className="ui-accordion-trigger"
       >
         <div className="flex items-center gap-3">
-          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${STATUS_STYLES[status]}`}>
-            {status}
+          <StatusBadge {...statusBadge(status)} />
+          <span className="text-sm text-ink-3">
+            {t('group.records', { count: totalRecords })}
           </span>
-          <span className="text-sm text-slate-500">
-            {totalRecords} record{totalRecords !== 1 ? 's' : ''}
-          </span>
-          <span className="text-sm font-semibold text-slate-700">{fmtAmt(totalAmount)}</span>
+          <MoneyText value={totalAmount} className="text-sm font-semibold text-ink" />
         </div>
         <ChevronDown size={14} strokeWidth={2} className={`ui-accordion-arrow ${isOpen ? 'ui-accordion-arrow--open' : ''}`} />
       </button>
 
       {/* Records — shown only when expanded */}
       {isOpen && (
-        <div className="ui-accordion-content border-t border-slate-100">
-        <div className="divide-y divide-slate-100">
+        <div className="ui-accordion-content border-t border-border">
+        <div className="divide-y divide-border">
           {records.map(r => {
             const staffMember = staff.find((s) => s.id === r.userId)
             return (
-              <div key={r.id} className="px-5 py-4 space-y-2.5 bg-white">
+              <div key={r.id} className="px-5 py-4 space-y-2.5 bg-surface">
                 {/* Header row */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-slate-700">
-                      {staffMember?.fullName ?? `Staff #${r.userId}`}
+                    <span className="text-sm font-medium text-ink">
+                      {staffMember?.fullName ?? t('group.staffNumber', { id: r.userId })}
                     </span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-ink-3">
                       {fmtDate(r.periodFrom)} – {fmtDate(r.periodTo)}
                     </span>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className="text-base font-bold text-slate-800">{fmtAmt(r.netPay)}</div>
+                    <MoneyText value={r.netPay} className="block text-base font-bold text-ink" />
                     {r.deductions > 0 && (
-                      <div className="text-xs text-slate-500 line-through">{fmtAmt(r.grossAmount)}</div>
+                      <MoneyText value={r.grossAmount} className="block text-xs text-ink-3 line-through" />
                     )}
                   </div>
                 </div>
 
                 {/* Breakdown */}
-                <div className="bg-slate-50 rounded-lg border border-slate-100 divide-y divide-slate-100 text-xs">
+                <div className="bg-surface-sunken rounded-card border border-border divide-y divide-border text-xs">
                   {r.salaryType === 'DAILY' ? (
                     <>
                       <div className="flex items-center justify-between px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
-                          <span className="text-slate-500">Total days in period</span>
+                          <span className="w-2 h-2 rounded-full bg-info shrink-0" />
+                          <span className="text-ink-3">{t('group.totalDays')}</span>
                         </div>
-                        <span className="font-medium text-slate-700">{r.totalDays ?? 0}</span>
+                        <span className="font-medium text-ink">{r.totalDays ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                          <span className="text-slate-500">Leave days deducted</span>
+                          <span className="w-2 h-2 rounded-full bg-warn shrink-0" />
+                          <span className="text-ink-3">{t('group.leaveDays')}</span>
                         </div>
-                        <span className="font-medium text-amber-700">− {r.leaveDays ?? 0}</span>
+                        <span className="font-medium text-warn">− {r.leaveDays ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                          <span className="text-slate-500">Days worked</span>
+                          <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
+                          <span className="text-ink-3">{t('group.daysWorked')}</span>
                           {r.dailyRateSnapshot != null && (
-                            <span className="text-slate-500">@ {fmtAmt(r.dailyRateSnapshot)}/day</span>
+                            <span className="text-ink-3">{t('group.perDay', { rate: fmtAmt(r.dailyRateSnapshot) })}</span>
                           )}
                         </div>
-                        <span className="font-medium text-slate-700">{r.daysWorked ?? 0} days</span>
+                        <span className="font-medium text-ink">{t('group.days', { count: r.daysWorked ?? 0 })}</span>
                       </div>
                     </>
                   ) : (
@@ -126,56 +129,52 @@ export function PayrollGroup({
                       {r.shift1Shifts > 0 && (
                         <div className="flex items-center justify-between px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-                            <span className="text-slate-500">Night (12AM–8AM)</span>
-                            <span className="text-slate-500">{r.shift1Shifts} shift{r.shift1Shifts !== 1 ? 's' : ''} · {r.shift1Hours.toFixed(2)} hrs</span>
+                            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                            <span className="text-ink-3">{t('group.night')}</span>
+                            <span className="text-ink-3">{t('group.shiftsHours', { count: r.shift1Shifts, hours: formatDecimal(r.shift1Hours) })}</span>
                             {r.shift1RateSnapshot != null && (
-                              <span className="text-slate-500">@ {fmtAmt(r.shift1RateSnapshot)}/hr</span>
+                              <span className="text-ink-3">{t('group.perHour', { rate: fmtAmt(r.shift1RateSnapshot) })}</span>
                             )}
                           </div>
-                          <span className="font-medium text-slate-700">
-                            {r.shift1RateSnapshot != null ? fmtAmt(r.shift1Hours * r.shift1RateSnapshot) : '—'}
-                          </span>
+                          <MoneyText value={r.shift1RateSnapshot != null ? r.shift1Hours * r.shift1RateSnapshot : null} className="font-medium text-ink" />
                         </div>
                       )}
                       {r.standardShifts > 0 && (
                         <div className="flex items-center justify-between px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                            <span className="text-slate-500">Day (8AM–12AM)</span>
-                            <span className="text-slate-500">{r.standardShifts} shift{r.standardShifts !== 1 ? 's' : ''} · {r.standardHours.toFixed(2)} hrs</span>
+                            <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                            <span className="text-ink-3">{t('group.day')}</span>
+                            <span className="text-ink-3">{t('group.shiftsHours', { count: r.standardShifts, hours: formatDecimal(r.standardHours) })}</span>
                             {r.standardRateSnapshot != null && (
-                              <span className="text-slate-500">@ {fmtAmt(r.standardRateSnapshot)}/hr</span>
+                              <span className="text-ink-3">{t('group.perHour', { rate: fmtAmt(r.standardRateSnapshot) })}</span>
                             )}
                           </div>
-                          <span className="font-medium text-slate-700">
-                            {r.standardRateSnapshot != null ? fmtAmt(r.standardHours * r.standardRateSnapshot) : '—'}
-                          </span>
+                          <MoneyText value={r.standardRateSnapshot != null ? r.standardHours * r.standardRateSnapshot : null} className="font-medium text-ink" />
                         </div>
                       )}
                       {r.shift1Shifts === 0 && r.standardShifts === 0 && (
-                        <p className="px-3 py-2 text-slate-500">No closed shifts in this period.</p>
+                        <p className="px-3 py-2 text-ink-3">{t('group.noShifts')}</p>
                       )}
                     </>
                   )}
                   {r.deductions > 0 && (
-                    <div className="flex items-center justify-between px-3 py-2 bg-red-50/60">
+                    <div className="flex items-center justify-between px-3 py-2 bg-bad-bg">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
-                        <span className="text-slate-500">Salary deductions</span>
-                        <span className="text-xs text-slate-500">(discrepancy shortfall)</span>
+                        <span className="w-2 h-2 rounded-full bg-bad shrink-0" />
+                        <span className="text-ink-3">{t('group.deductions')}</span>
+                        <span className="text-xs text-ink-3">{t('group.shortfall')}</span>
                       </div>
-                      <span className="font-medium text-red-600">− {fmtAmt(r.deductions)}</span>
+                      <MoneyText value={-r.deductions} showSign tone="bad" className="font-medium" />
                     </div>
                   )}
                 </div>
 
                 {/* Footer */}
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-ink-3">
                     {r.salaryType === 'DAILY'
-                      ? `${r.daysWorked ?? 0} day${r.daysWorked !== 1 ? 's' : ''} worked`
-                      : `${r.totalShifts} shift${r.totalShifts !== 1 ? 's' : ''} total`}
+                      ? t('group.daysWorkedTotal', { count: r.daysWorked ?? 0 })
+                      : t('group.shiftsTotal', { count: r.totalShifts })}
                     {r.notes && ` · ${r.notes}`}
                   </p>
                   <div className="flex items-center gap-2">
@@ -185,14 +184,14 @@ export function PayrollGroup({
                           onClick={() => setRejectRecordId(null)}
                           className="ui-btn ui-btn-secondary min-h-0 px-3 py-1 text-xs"
                         >
-                          Cancel
+                          {t('common:actions.cancel')}
                         </button>
                         <button
                           onClick={() => onDelete(r.id)}
                           disabled={isDeletePending}
                           className="ui-btn ui-btn-danger min-h-0 px-3 py-1 text-xs"
                         >
-                          {isDeletePending ? 'Deleting…' : 'Delete'}
+                          {isDeletePending ? t('group.deleting') : t('common:actions.delete')}
                         </button>
                       </>
                     ) : (
@@ -203,7 +202,7 @@ export function PayrollGroup({
                             disabled={isPending}
                             className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs"
                           >
-                            Mark {next}
+                            {t(`group.mark.${next}`)}
                           </button>
                         )}
                         {status === 'DRAFT' && (
@@ -211,7 +210,7 @@ export function PayrollGroup({
                             onClick={() => setRejectRecordId(r.id)}
                             className="ui-btn ui-btn-secondary min-h-0 px-3 py-1 text-xs"
                           >
-                            Reject
+                            {t('common:actions.reject')}
                           </button>
                         )}
                       </>

@@ -1,0 +1,604 @@
+{
+  "close": {
+    "title": {
+      "reviewHandover": "Check before handing over",
+      "reviewClose": "Check before closing",
+      "handedOver": "Shift handed over",
+      "closed": "Shift closed",
+      "handover": "Hand Over Shift",
+      "close": "Close Shift"
+    },
+    "subtitle": "Nozzle {{nozzles}} · {{operator}} · {{window}}",
+    "nozzleLine": "Nozzle #{{number}} · {{fuel}}",
+    "errors": {
+      "closeFailed": "Failed to close shift. Please try again.",
+      "handoverFailed": "Failed to hand over the shift. Please try again.",
+      "reportLoadFailed": "Could not load the shift report. Please try again.",
+      "roundOffNegative": "Round off not possible: cash amount would become negative."
+    },
+    "sections": {
+      "endReadings": "Meter readings",
+      "creditSales": "Credit sales",
+      "payment": "Payments"
+    },
+    "newEntries_one": "{{count}} new entry · ₹{{amount}}",
+    "newEntries_other": "{{count}} new entries · ₹{{amount}}",
+    "noCredit": "No credit sales",
+    "addEntry": "Add credit sale",
+    "payment": {
+      "cash": "Cash (₹)",
+      "upi": "UPI (₹)",
+      "card": "Card (₹)",
+      "fleetCard": "Fleet card (₹)",
+      "creditTotal": "Credit sales total",
+      "fillRest": "Fill rest · ₹{{amount}}"
+    },
+    "validation": {
+      "readingBelowStart": "End reading cannot be less than the start reading. Please correct the highlighted fields.",
+      "clientRequired": "Each credit entry must have a client.",
+      "clientFromList": "Please select a client from the dropdown for each credit entry.",
+      "fuelRequired": "Each credit entry must have a fuel type.",
+      "amountPositive": "Each credit entry amount must be > 0.",
+      "readingInvalid": "End reading contains an invalid value. Please re-enter.",
+      "paymentInvalid": "{{field}} amount contains an invalid value."
+    },
+    "fields": {
+      "unchanged": "No change · 0 {{unit}} sold",
+      "endReadingAria": "{{label}} end reading",
+      "belowStart": "End reading cannot be less than start ({{start}}) unless the meter rolled over from its maximum",
+      "noChange": "No change",
+      "startReading": "Start {{reading}}"
+    },
+    "footer": {
+      "reviewClose": "Review close",
+      "reviewHandover": "Review handover"
+    },
+    "liveSummary": {
+      "title": "Summary",
+      "sold": "Sold",
+      "totalDue": "Total due",
+      "due": "Due",
+      "collected": "Collected",
+      "credit": "Credit",
+      "difference": "Difference",
+      "showDetails": "Details",
+      "hideDetails": "Hide"
+    },
+    "stillNeeded": {
+      "title": "Still needed",
+      "ready": "Ready to review",
+      "incomingOperator": "Choose the incoming operator",
+      "endReadings_one": "End reading for {{count}} nozzle",
+      "endReadings_other": "End readings for {{count}} nozzles",
+      "readingsBelowStart": "Fix end readings below the start",
+      "payments": "Payments collected",
+      "creditEntries_one": "Finish {{count}} credit entry",
+      "creditEntries_other": "Finish {{count}} credit entries",
+      "reason": "Reason for the difference"
+    },
+    "review": {
+      "introHandover": "Handing over can't be undone. Check these figures with the operator.",
+      "introClose": "Closing can't be undone. Check these figures with the operator.",
+      "incomingOperator": "Incoming operator",
+      "salesByNozzle": "Sales by nozzle",
+      "columns": {
+        "nozzle": "Nozzle",
+        "sold": "Sold",
+        "amount": "Amount"
+      },
+      "totalDue": "Total due",
+      "collected": "Collected",
+      "fleetCard": "Fleet card",
+      "credit_one": "Credit ({{count}} entry)",
+      "credit_other": "Credit ({{count}} entries)",
+      "totalCollected": "Total collected",
+      "result": "Result",
+      "reason": "Reason: {{reason}}",
+      "needsApproval": "This is more than the ₹{{limit}} limit, so the owner or admin must approve it.",
+      "handingOver": "Handing over the shift",
+      "closing": "Closing the shift",
+      "confirmHandover": "Confirm handover",
+      "confirmClose": "Confirm close"
+    },
+    "summary": {
+      "totalDue": "Total due",
+      "collected": "Collected",
+      "creditEntries": "Credit entries",
+      "result": "Result",
+      "newShiftOpen": "A new shift is open for {{name}} on the same nozzles.",
+      "escalated": "The difference is above the approval limit and waits for the owner or admin.",
+      "listed": "The difference is listed under Discrepancies for a manager to resolve.",
+      "openNext": "Open next shift",
+      "preparing": "Preparing the report",
+      "print": "Print / share"
+    },
+    "discrepancy": {
+      "short": "Shift is SHORT by ₹{{amount}}",
+      "excess": "Shift has EXCESS of ₹{{amount}}",
+      "collectedLess": "The operator collected less than the amount due.",
+      "collectedMore": "The operator collected more than the amount due.",
+      "roundOffOrReason": "Round it off into cash, or add a reason below.",
+      "reasonToClose": "Add a reason below to close this shift.",
+      "roundOffTitle": "Adjust cash by ₹{{amount}} so the shift balances",
+      "roundOff": "Round off ₹{{amount}} into cash",
+      "requiredToClose": "(required to close)",
+      "placeholder": "e.g. meter error",
+      "enterReason": "Enter a reason to enable closing"
+    },
+    "lateClose": {
+      "title": "Shift close time adjusted",
+      "body": "You are closing after the scheduled end. Close time will be recorded as <time>{{time}}</time> (your shift's scheduled end time)."
+    },
+    "preRecorded": {
+      "heading": "Pre-recorded during shift ({{count}})",
+      "reasonAria": "Reason for deleting",
+      "reasonPlaceholder": "Reason for deleting (required)",
+      "reasonRequired": "Reason is required",
+      "confirmDelete": "Confirm Delete",
+      "subtotal": "Pre-recorded subtotal"
+    }
+  },
+  "handover": {
+    "fields": {
+      "title": "Incoming Operator",
+      "explainer": "{{name}}'s shift is closed with the readings and payments below, and a new shift opens for the incoming operator on the same nozzles from these closing readings.",
+      "chooseIncoming": "Choose Incoming Operator",
+      "cashCounted": "Cash counted with the incoming operator",
+      "metersChecked": "Meter readings checked together",
+      "notes": "Handover notes (optional)",
+      "notesPlaceholder": "e.g. Lunch break"
+    },
+    "report": {
+      "title": "Shift handover report",
+      "subtitle": "Shift #{{id}} · {{operator}} · {{date}}",
+      "stillOpen": "Open",
+      "print": "Print",
+      "operator": "Operator",
+      "date": "Date",
+      "du": "DU",
+      "duFallback": "DU #{{number}}",
+      "shiftWindow": "Shift window",
+      "meterReadings": "Meter readings",
+      "columns": {
+        "nozzle": "Nozzle",
+        "opening": "Opening",
+        "closing": "Closing",
+        "litresSold": "Litres sold",
+        "rate": "Rate"
+      },
+      "collections": "Collections",
+      "totalDue": "Total due",
+      "discrepancy": "Discrepancy",
+      "reason": "Reason: {{reason}}",
+      "operatorSignature": "Operator signature",
+      "supervisorSignature": "Supervisor signature"
+    }
+  },
+  "creditEntry": {
+    "added": "Credit of {{amount}} added for {{client}}",
+    "saveFailed": "Failed to save credit entry. Please try again.",
+    "deleteFailed": "Failed to delete entry. Please try again.",
+    "selectClient": "Please select a client from the list.",
+    "fuelRequired": "Fuel type is required",
+    "validAmount": "Enter a valid amount",
+    "title": "Add credit sale",
+    "subtitle": "Nozzle {{nozzles}} · {{operator}}",
+    "saving": "Saving the credit entry",
+    "save": "Save credit sale",
+    "recorded": "Recorded entries",
+    "tapVoid": "Tap Void to cancel one",
+    "void": "Void",
+    "voidReason": "Reason for voiding",
+    "voidHint": "The entry stays on the shift, marked as voided, and no longer counts towards it.",
+    "voiding": "Voiding the entry",
+    "reasonRequired": "Reason is required",
+    "confirmVoid": "Void entry",
+    "searchClient": "Search client name…",
+    "searchClientShort": "Search client name...",
+    "subAccount": "Sub-account",
+    "billToParentOption": "— Bill to parent ({{name}}) —",
+    "billToParent": "Bill to parent ({{name}})",
+    "fuel": "Fuel",
+    "fuelType": "Fuel type",
+    "amount": "Amount",
+    "quantity": "Quantity",
+    "enterIn": "Enter in",
+    "amountModeAria": "Enter amount in rupees",
+    "litresModeAria": "Enter quantity",
+    "stillNeeded": {
+      "client": "Client from the list",
+      "fuel": "Fuel",
+      "amount": "Amount"
+    },
+    "creditLimit": "Credit limit",
+    "availableCredit": "Credit available",
+    "leftAfterSale": "Left after this sale",
+    "billNo": "Bill no.",
+    "billNoPlaceholder": "e.g. B-101",
+    "description": "Description",
+    "descriptionPlaceholder": "e.g. given to driver",
+    "editAria": "Edit credit entry {{number}}",
+    "incomplete": "Incomplete — tap to edit",
+    "deleteEntry": "Delete entry",
+    "entryNumber": "Entry {{number}}"
+  },
+  "clientSearch": {
+    "noMatch": "No match",
+    "noMatchFor": "No match for \"{{search}}\"",
+    "askManager": "Ask your manager to add this client.",
+    "addClient": "+ Add client →",
+    "standingFailed": "Could not check which clients are blocked; the sale is still checked when you save.",
+    "client": "Client",
+    "chooseClient": "Choose client",
+    "chooseClientSubtitle": "For this credit sale",
+    "searchAria": "Search client by name or phone",
+    "recentAria": "Recent clients",
+    "recent": "Recent",
+    "noClients": "No clients added yet — Owner can add them in Setup.",
+    "listAria": "Credit clients",
+    "callManager": "Call manager",
+    "hasSubAccounts": "has sub-accounts",
+    "available": "{{amount}} available",
+    "blocked": {
+      "parentDisabled": "Parent account disabled",
+      "creditDisabled": "Credit disabled",
+      "overLimit": "Over credit limit",
+      "cycleOverdue": "Billing cycle overdue"
+    }
+  },
+  "creditEntries": {
+    "title": "Credit sales",
+    "subtitle": "Shift #{{id}} · Nozzle {{nozzles}} · {{operator}} · {{date}}",
+    "total": "Total credit",
+    "bill": "Bill:",
+    "noBill": "No bill"
+  },
+  "resolveDiscrepancy": {
+    "failed": "Failed to resolve discrepancy. Please try again.",
+    "chooseAction": "Choose a resolution action.",
+    "waiveReason": "A written reason is required when waiving a discrepancy.",
+    "describeInvestigation": "Describe what is being investigated.",
+    "title": "Resolve discrepancy",
+    "subtitle": "Shift #{{id}} · {{operator}}",
+    "difference": "Difference",
+    "reasonAtClose": "Reason given at close",
+    "startInvestigation": "Start investigation",
+    "confirm": "Resolve",
+    "actionLabel": "Resolution action",
+    "stillNeededAction": "Resolution action",
+    "choosePlaceholder": "Choose an action…",
+    "investigationHint": "The shortage stays open: it still shows for payroll and must get a final action later.",
+    "note": "Note"
+  },
+  "components": {
+    "operatorPicker": {
+      "stepTitle": "Step 3 — {{title}}",
+      "loading": "Loading operators...",
+      "noneAvailable": "No operators available — all are on active shifts or none are assigned to this pump.",
+      "searchPlaceholder": "Search by name...",
+      "clearSearch": "Clear search",
+      "noMatch": "No operators match \"{{search}}\""
+    }
+  },
+  "labels": {
+    "status": {
+      "open": "Open",
+      "overdue": "Overdue",
+      "autoClosed": "Auto-closed",
+      "balanced": "Balanced",
+      "discrepancy": "Discrepancy",
+      "needsApproval": "Needs Approval",
+      "resolved": "Resolved"
+    },
+    "awaitingOwnerApproval": "Waiting for owner approval",
+    "dayBeforeYesterday": "Day Before Yesterday",
+    "resolution": {
+      "pendingInvestigation": "Pending Investigation",
+      "salaryDeduction": "Salary Deduction",
+      "cashRecovery": "Cash Recovery",
+      "waived": "Waived"
+    },
+    "underInvestigation": "Under investigation by {{name}} since {{since}}",
+    "unknownUser": "unknown user"
+  },
+  "page": {
+    "columns": {
+      "nozzle": "Nozzle",
+      "operator": "Operator",
+      "window": "Window",
+      "started": "Started",
+      "prices": "Prices (₹)",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "noPumpsTitle": "No pumps set up yet",
+    "noPumpsBody": "Create a pump location first, then add nozzles and set fuel prices.",
+    "goToSetup": "Go to Setup",
+    "title": "Shifts",
+    "subtitle": "Open and close operator shifts, record meter readings and payment collection.",
+    "myActiveShifts": "My Active Shifts",
+    "activeShifts": "Active Shifts",
+    "activeShiftsCaption": "Active shifts",
+    "backfillHint": "Enter historical shift data for past dates",
+    "backfillShift": "Backfill Shift",
+    "openShift": "Open Shift",
+    "emptyCanOpen": "No active shifts. Tap Open Shift to start one.",
+    "emptyOperator": "No open shift. Ask your manager to open your shift.",
+    "empty": "No active shifts.",
+    "myShiftHistory": "My Shift History",
+    "shiftHistory": "Shift History",
+    "tabs": {
+      "day": "By Day",
+      "all": "All Shifts",
+      "discrepancies": "Discrepancies"
+    },
+    "openNowCount_one": "{{count}} open now",
+    "openNowCount_other": "{{count}} open now",
+    "historyViews": "Shift history views"
+  },
+  "myShift": {
+    "title": "My shift",
+    "loadFailed": "Could not load your shift. Check your connection and refresh.",
+    "noOpenShift": "No open shift.",
+    "askManager": "Ask your manager to open your shift.",
+    "addCreditSale": "+ Credit sale"
+  },
+  "open": {
+    "opened": "Shift opened for {{name}}",
+    "failed": "Failed to open shift. Please try again.",
+    "validation": {
+      "selectDu": "Please select a dispensary unit",
+      "selectNozzle": "Please select at least one nozzle",
+      "selectOperator": "Please select an operator",
+      "confirmReadings": "Please confirm the meter readings are correct"
+    },
+    "missing": {
+      "du": "Pick a dispensary unit",
+      "nozzle": "Select at least one nozzle",
+      "operator": "Pick an operator",
+      "readings": "Confirm the meter readings"
+    },
+    "title": "Open new shift",
+    "subtitle": "Pick the dispensary unit, nozzles and operator",
+    "confirmReadings": "I confirm the meter readings above are correct and authorise opening this shift.",
+    "opening": "Opening the shift",
+    "submit": "Open shift",
+    "duHeading": "Dispensary unit",
+    "loadingDus": "Loading dispensary units...",
+    "noDus": "No active dispensary units found. Add one in Setup first.",
+    "duNumber": "DU #{{number}}",
+    "selected": "Selected",
+    "nozzlesHeading": "Nozzles",
+    "selectedCount_one": "{{count}} selected",
+    "selectedCount_other": "{{count}} selected",
+    "selectNozzles": "Select nozzles",
+    "inUse": "In use",
+    "assignOperator": "Operator",
+    "currentReadings": "Current meter readings",
+    "readOnly": "Read-only",
+    "nozzleReadingLabel": "Nozzle #{{number}} · {{fuel}}",
+    "readingsNote": "These readings are set automatically from the last shift close. If a reading looks incorrect, an Admin must update it in",
+    "readingsNotePath": "Setup → Nozzle → Adjust Reading",
+    "readingsNoteEnd": " first."
+  },
+  "active": {
+    "nozzleList": "Nozzle {{nozzles}}",
+    "startedAt": "Started at",
+    "timeOnShift": "Time on shift",
+    "creditEntries": "Credit entries",
+    "creditSoFar": "Credit so far",
+    "prices": "Prices",
+    "priceNotSet": "Not set",
+    "startedTime": "Started {{time}}",
+    "credit": "Credit",
+    "handOver": "Hand over"
+  },
+  "backfill": {
+    "title": "Record a past shift",
+    "subtitle": "Any shift from the last 365 days, not today",
+    "deliveriesFirst": "Log the tanker deliveries for that date first: the shift can't be saved if the tank stock is too low.",
+    "save": "Save past shift",
+    "reason": {
+      "label": "Reason for the difference",
+      "hint": "Needed when the amount collected differs from the total due."
+    },
+    "details": {
+      "title": "Shift details",
+      "shiftDate": "Shift date",
+      "dateHint": "Last 365 days · not today",
+      "du": "Dispensary unit",
+      "duOption": "{{name}} (DU #{{number}})",
+      "selectDu": "Select DU…",
+      "window": "Shift window",
+      "noDefinitions": "No shift definitions found for this pump. Configure shift windows in Setup first.",
+      "loadingWindows": "Loading windows…",
+      "selectWindow": "Select shift window…"
+    },
+    "rates": {
+      "title": "Price on {{date}}",
+      "fromHistory": "From price history. To change it, correct the price history first.",
+      "inputLabel": "{{fuel}} rate",
+      "noPrice": "No price recorded for {{date}}"
+    },
+    "payment": {
+      "title": "Payments",
+      "upi": "UPI (₹)",
+      "card": "Card (₹)",
+      "fleetCard": "Fleet card (₹)",
+      "cash": "Cash (₹)"
+    },
+    "staff": {
+      "operator": "Operator on duty",
+      "nozzles": "Nozzles",
+      "noNozzles": "No nozzles configured on this DU."
+    },
+    "meter": {
+      "title": "Nozzles and meter readings",
+      "nozzle": "Nozzle #{{number}} · {{fuel}}",
+      "opening": "Opening",
+      "closing": "Closing",
+      "openingAria": "{{nozzle}} opening reading",
+      "closingAria": "{{nozzle}} closing reading",
+      "soldNoRate": "{{sold}} sold. Enter the rate above to see the amount.",
+      "closingBelowOpening": "Closing reading is below the opening reading."
+    },
+    "credit": {
+      "title": "Credit sales",
+      "total": "Credit total",
+      "newEntry": "New entry",
+      "removeLabel": "Remove credit entry",
+      "client": "Client",
+      "selectClient": "Select client",
+      "amount": "Amount",
+      "fuelType": "Fuel",
+      "optionalChoice": "Not specified",
+      "billNo": "Bill no.",
+      "description": "Description",
+      "removeEntry": "Remove entry"
+    },
+    "stillNeeded": {
+      "date": "Shift date",
+      "window": "Shift window",
+      "operator": "Operator on duty",
+      "du": "Dispensary unit",
+      "nozzle": "At least one nozzle"
+    },
+    "errors": {
+      "failed": "Failed to backfill shift. Please try again.",
+      "selectDate": "Please select a shift date.",
+      "selectWindow": "Please select a shift window.",
+      "selectDu": "Please select a dispensary unit.",
+      "selectOperator": "Please select an operator.",
+      "selectNozzle": "Please select at least one nozzle.",
+      "enterRate": "Enter the fuel rate for {{fuel}} on {{date}}.",
+      "openingRequired": "Opening reading is required for nozzle #{{number}}.",
+      "closingRequired": "Closing reading is required for nozzle #{{number}}.",
+      "closingBelowOpening": "Closing reading cannot be less than opening for nozzle #{{number}}.",
+      "selectClient": "Select a credit client for every credit entry.",
+      "amountPositive": "Amount must be greater than 0 for credit entry: \"{{name}}\"."
+    }
+  },
+  "history": {
+    "columns": {
+      "id": "ID",
+      "nozzle": "Nozzle",
+      "shift": "Shift",
+      "operator": "Operator",
+      "date": "Date",
+      "amountDue": "Amount Due",
+      "status": "Status",
+      "discrepancy": "Discrepancy",
+      "actions": "Actions"
+    },
+    "shiftNotFound": "Shift #{{id}} could not be found at this pump.",
+    "loadFailed": "Failed to load shift history",
+    "dayEmpty": "No shift history for the last 3 days.",
+    "shiftCount_one": "{{count}} shift",
+    "shiftCount_other": "{{count}} shifts",
+    "stillOpen": " ({{count}} still open)",
+    "shiftsFor": "Shifts for {{label}}",
+    "shiftsForDay": "Shifts for the day",
+    "to": "to",
+    "fuelOnlyLabel": "Showing {{fuel}} shifts only. Show all fuels",
+    "fuelOnly": "{{fuel}} only ×",
+    "filtered": " (filtered)",
+    "allShiftsCaption": "All shifts",
+    "allEmpty": "No shifts match the selected date range.",
+    "showingRange": "(showing {{from}}–{{to}} of {{total}})",
+    "firstPage": "First page",
+    "lastPage": "Last page",
+    "backfilled": "Backfilled",
+    "duName": "DU {{name}}",
+    "resolve": "Resolve",
+    "printHandover": "Print handover report",
+    "payment": {
+      "upiCard": "UPI + Card",
+      "upiAmount": "UPI {{amount}}",
+      "cardAmount": "Card {{amount}}",
+      "viewCredit": "Click to view credit details",
+      "clientCount_one": "{{count}} client",
+      "clientCount_other": "{{count}} clients"
+    },
+    "discrepancies": {
+      "resolveLabel": "Resolve discrepancy for shift {{id}}",
+      "approveLabel": "Approve discrepancy for shift {{id}}",
+      "columns": {
+        "du": "DU",
+        "type": "Type",
+        "amount": "Amount",
+        "note": "Note",
+        "action": "Action"
+      },
+      "recovered": "Recovered:",
+      "loadFailed": "Failed to load discrepancies",
+      "empty": "No discrepancies recorded yet.",
+      "shortTotal": "SHORT total: ",
+      "overTotal": "OVER total: ",
+      "resolved": "Resolved: ",
+      "cashRecovered": "Cash recovered: ",
+      "filter": "Filter:",
+      "all": "ALL",
+      "caption": "Discrepancies",
+      "noMatch": "No discrepancies match the selected filters."
+    },
+    "filtersLabel": "Shift filters",
+    "listLabel": "Shifts",
+    "detailLabel": "Shift details",
+    "selectShift": "Choose a shift from the list to see its details."
+  },
+  "planning": {
+    "title": "Shift Planning",
+    "subtitleOwner": "Plan weekly operator schedules. Published plans pre-fill shift opening.",
+    "subtitleStaff": "See who is scheduled for each shift this week.",
+    "legend": {
+      "planned": "Planned",
+      "confirmed": "Confirmed (showed up)",
+      "absent": "Absent (didn't show)"
+    },
+    "errors": {
+      "generateFailed": "Failed to generate plan",
+      "removeFailed": "Failed to remove",
+      "addFailed": "Failed to add operator"
+    },
+    "generate": {
+      "title": "Auto-generate schedule",
+      "subtitle": "The system will assign operators based on preferences, leave dates, and fairness.",
+      "dayOperators": "Operators per morning or evening shift",
+      "nightOperators": "Operators per night shift (12 AM – 8 AM)",
+      "submit": "Generate plan"
+    },
+    "week": {
+      "previous": "Previous week",
+      "next": "Next week",
+      "weekOf": "Week of {{date}}",
+      "published": "Published",
+      "draft": "Draft",
+      "pastWeek": "Cannot generate a plan for a past week",
+      "regenerate": "Regenerate",
+      "autoGenerate": "Auto-generate",
+      "publishing": "Publishing…",
+      "publish": "Publish Week"
+    },
+    "grid": {
+      "noPlanOwner": "No plan generated for this week yet.",
+      "noPlanHint": "Click \"Auto-generate\" to create a schedule.",
+      "noPlanStaff": "No plan published for this week yet.",
+      "regionLabel": "Weekly shift plan",
+      "shift": "Shift",
+      "actual": "actual",
+      "noDefinitions": "No shift definitions configured for this pump. Set them up in Pump Setup first.",
+      "nightShift": "Night shift",
+      "nextDay": "+1 day",
+      "noShift": "No shift",
+      "removeFromPlan": "Remove from plan",
+      "addOperator": "Add operator",
+      "addShort": "+ Add",
+      "operatorToAdd": "Operator to add",
+      "pickOperator": "— pick operator —"
+    }
+  },
+  "detail": {
+    "nozzles": "Nozzles",
+    "time": "Time"
+  }
+}

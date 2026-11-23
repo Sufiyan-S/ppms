@@ -108,7 +108,8 @@ public class ReportService {
                     .map(s -> s.getDiscrepancyAmount() != null ? s.getDiscrepancyAmount() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             long unresolvedCount = opShifts.stream()
-                    .filter(s -> s.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING)
+                    .filter(s -> s.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING
+                            || s.getStatus() == ShiftStatus.CLOSED_DISCREPANCY_PENDING_APPROVAL)
                     .count();
 
             List<OperatorDiscrepancyReport.DiscrepancyLine> lines = opShifts.stream()

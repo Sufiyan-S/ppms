@@ -151,21 +151,18 @@ class ReportAndInventoryCorrectnessIntegrationTest {
     }
 
     @Test
-    void liveDayReportCountsOnlyDipEntriesRecordedInItsWindow() {
+    void todaysDayReportCountsOnlyDipEntriesDatedToday() {
         InventoryLot lot = saveLot("1000.000", OffsetDateTime.now(IST).minusDays(2));
-        Shift shift = closedShiftConsuming(lot, "10.000", today);
-        shift.setActualStartTime(OffsetDateTime.now(IST).minusHours(3));
-        shift.setActualEndTime(OffsetDateTime.now(IST).minusHours(1));
-        shiftRepository.save(shift);
-        FuelDipEntry olderThanWindow = saveDipEntry("30.00", today.minusDays(1));
+        closedShiftConsuming(lot, "10.000", today);
+        FuelDipEntry yesterdaysEntryRecordedToday = saveDipEntry("30.00", today.minusDays(1));
         jdbcTemplate.update("UPDATE fuel_dip_entries SET created_at = ? WHERE id = ?",
-                OffsetDateTime.now(IST).minusHours(30), olderThanWindow.getId());
+                OffsetDateTime.now(IST), yesterdaysEntryRecordedToday.getId());
         saveDipEntry("20.00", today);
 
-        BalanceSheetDetailResponse live = generateDay(today);
+        BalanceSheetDetailResponse todaysSheet = generateDay(today);
 
-        assertThat(live.getPeriodLabel()).contains("→");
-        assertThat(petrolLine(live).getDipLossAmount()).isEqualByComparingTo("20.00");
+        assertThat(todaysSheet.getPeriodLabel()).startsWith("Day End · " + today + " (up to ");
+        assertThat(petrolLine(todaysSheet).getDipLossAmount()).isEqualByComparingTo("20.00");
     }
 
     @Test
@@ -190,7 +187,7 @@ class ReportAndInventoryCorrectnessIntegrationTest {
 
         BalanceSheetDetailResponse reopened = balanceSheetService.getById(pump.getId(), generated.getId());
 
-        assertThat(generated.getTotalDipNetAmount()).isEqualByComparingTo("-1000.00");
+        assertThat(generated.getTotalDipNetAmount()).isEqualByComparingTo("-900.00");
         assertThat(reopened.getTotalDipNetAmount()).isEqualByComparingTo(generated.getTotalDipNetAmount());
         assertThat(reopened.getTotalNetProfit()).isEqualByComparingTo(generated.getTotalNetProfit());
         assertThat(reopened.isLinesChangedSinceGenerated()).isTrue();

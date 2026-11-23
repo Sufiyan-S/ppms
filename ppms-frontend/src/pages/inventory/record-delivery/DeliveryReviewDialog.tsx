@@ -1,7 +1,13 @@
-import { ModalPortal } from '../../../components/ModalPortal'
-import { FUEL_COLORS, fmtDate } from '../inventoryFormat'
+import { useTranslation } from 'react-i18next'
+import { codeLabel } from '../../../constants/labels'
+import { Modal } from '../../../components/Modal'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { formatNumberIn } from '../../../i18n/format'
+import { LitresText, MoneyText } from '../../../components/AmountText'
+import { StatusBadge } from '../../../components/StatusBadge'
+import { formatCurrency } from '../../../utils/format'
+import { fmtDate } from '../inventoryFormat'
 import type { PreparedDeliveryItem } from './deliveryRows'
-import { IconButton } from '../../../components/IconButton'
 
 interface Props {
   items: PreparedDeliveryItem[]
@@ -18,134 +24,110 @@ interface Props {
   onConfirm: () => void
 }
 
+function SummaryFigure({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-card border border-border bg-surface-sunken px-4 py-3">
+      <dt className="text-xs text-ink-3">{label}</dt>
+      <dd className="mt-1 text-base font-semibold text-ink">{children}</dd>
+    </div>
+  )
+}
+
 export function DeliveryReviewDialog({
   items, date, invoice, error, isOwnerOrAdmin, canSetBillTotal, billTotalManual, billTotalNum, otherCharges,
   isPending, onBack, onConfirm,
 }: Props) {
+  const { t } = useTranslation(['inventory', 'common'])
+  const totalQty = items.reduce((sum, item) => sum + item.quantityDelivered, 0)
+  const calcTotal = items.reduce((sum, item) => sum + item.totalCost, 0)
+  const showBill = canSetBillTotal && billTotalNum > 0
+  const columns = isOwnerOrAdmin
+    ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+    : 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
+
   return (
-    <ModalPortal onClose={onBack} closeOnBackdropClick>
-    <div className="ui-modal-backdrop">
-      <div
-        className="ui-modal-panel ui-modal-panel--lg"
-      >
-        <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-          <div className="ui-modal-heading">
-            <h3 className="ui-modal-title">Review Tanker Delivery</h3>
-            <p className="ui-modal-subtitle">Please verify the bill and tank-wise received fuel before submitting.</p>
-          </div>
-          <IconButton label="Close" icon="×" onClick={onBack} className="ui-btn ui-btn-ghost ui-modal-close" />
+    <Modal
+      title={t('review.title')}
+      subtitle={t('review.subtitle', { invoice: invoice.trim(), date: fmtDate(date) })}
+      tone="info"
+      size="lg"
+      onClose={onBack}
+      canClose={!isPending}
+      closeOnBackdropClick
+      fullScreenOnPhone
+      bodyClassName="space-y-5"
+      footerClassName="ui-modal-footer--large"
+      footer={<>
+        <button type="button" onClick={onBack} disabled={isPending} className="ui-btn ui-btn-secondary">
+          {t('common:actions.edit')}
+        </button>
+        <LoadingButton type="button" onClick={onConfirm} isLoading={isPending} loadingLabel={t('review.recording')}
+          className="ui-btn-primary">
+          {t('review.confirm', { count: items.length })}
+        </LoadingButton>
+      </>}
+    >
+      {error && (
+        <p role="alert" className="ui-alert ui-alert-danger">
+          {t('common:notices.goBackRetry', { error })}
+        </p>
+      )}
+
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <SummaryFigure label={t('review.tanks')}>{t('deliveries.tankCount', { count: items.length })}</SummaryFigure>
+        <SummaryFigure label={t('review.totalQuantity')}><LitresText value={totalQty} decimals={1} /></SummaryFigure>
+        {showBill ? (
+          <SummaryFigure label={t('review.billAmount')}>
+            <MoneyText value={billTotalNum} />
+            {isOwnerOrAdmin && billTotalManual && otherCharges !== 0 && (
+              <span className="mt-1 block text-xs font-normal text-ink-3">
+                {t('review.calculated', { amount: formatNumberIn(calcTotal, { minimumFractionDigits: 2 }) })}
+                {' · '}
+                {t('review.otherCharges', { amount: `${otherCharges > 0 ? '+' : '−'}${formatCurrency(Math.abs(otherCharges))}` })}
+              </span>
+            )}
+          </SummaryFigure>
+        ) : isOwnerOrAdmin && (
+          <SummaryFigure label={t('review.calculatedTotal')}><MoneyText value={calcTotal} /></SummaryFigure>
+        )}
+      </dl>
+
+      <div className="ui-card p-0 overflow-hidden">
+        <div className={`grid gap-3 bg-surface-sunken px-4 py-3 text-xs font-semibold text-ink-3 ${columns}`}>
+          <span>{t('columns.tank')}</span>
+          <span>{t('columns.fuel')}</span>
+          <span className="text-right">{t('columns.quantity')}</span>
+          {isOwnerOrAdmin && <span className="text-right">{t('columns.rate')}</span>}
+          {isOwnerOrAdmin && <span className="text-right">{t('columns.amount')}</span>}
         </div>
-
-        <div className="ui-modal-body space-y-5 max-h-[75vh]">
-          {error && (
-            <div role="alert" className="ui-alert ui-alert-danger text-sm">
-              {error} Go back to modify the data and try again.
+        <div className="divide-y divide-border">
+          {items.map((item) => (
+            <div key={item.tankId} className="px-4 py-3">
+              <div className={`grid gap-3 items-center text-sm ${columns}`}>
+                <span className="font-semibold text-ink">{item.tankIdentifier}</span>
+                <StatusBadge tone="neutral" label={codeLabel(item.fuelType)} className="w-fit" />
+                <LitresText value={item.quantityDelivered} className="text-right text-ink-2" />
+                {isOwnerOrAdmin && (
+                  <span className="text-right text-ink-3 tabular-nums">
+                    ₹{item.costPricePerUnit.toFixed(4)}/L
+                  </span>
+                )}
+                {isOwnerOrAdmin && (
+                  <MoneyText value={item.totalCost} className="text-right font-semibold text-ink" />
+                )}
+              </div>
+              {item.stockAfter !== null && (
+                <p className="mt-2 text-xs text-ink-3">
+                  {t('review.stockAfterDelivery')} <span className="font-medium text-ink tabular-nums">
+                    {formatNumberIn(item.stockAfter, { minimumFractionDigits: 1 })} L
+                  </span>
+                  {item.capacity !== null && <>{' '}{t('review.ofCapacity', { capacity: formatNumberIn(item.capacity, { minimumFractionDigits: 0 }) })}</>}
+                </p>
+              )}
             </div>
-          )}
-          <div className={`grid gap-3 ${(canSetBillTotal && billTotalNum > 0) || isOwnerOrAdmin ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-medium text-slate-500">Delivery Date</p>
-              <p className="mt-1 text-sm font-semibold text-slate-800">{fmtDate(date)}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-medium text-slate-500">Invoice / Bill No.</p>
-              <p className="mt-1 text-sm font-semibold text-slate-800">{invoice.trim()}</p>
-            </div>
-            {(canSetBillTotal && billTotalNum > 0) && (() => {
-              const calcTotal = items.reduce((sum, item) => sum + item.totalCost, 0)
-              const displayTotal = billTotalNum > 0 ? billTotalNum : calcTotal
-              return (
-                <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-md shadow-blue-600/10">
-                  <p className="text-xs font-medium text-blue-600">Bill Amount</p>
-                  <p className="mt-1 text-base font-bold text-blue-800">
-                    ₹{displayTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </p>
-                  {isOwnerOrAdmin && billTotalManual && otherCharges !== 0 && (
-                    <p className="text-xs mt-1 text-blue-500">
-                      Calc. ₹{calcTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      {' · '}
-                      <span className={otherCharges > 0 ? 'text-amber-600' : 'text-emerald-600'}>
-                        {otherCharges > 0 ? '+' : ''}₹{Math.abs(otherCharges).toLocaleString('en-IN', { minimumFractionDigits: 2 })} other charges
-                      </span>
-                    </p>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-
-          <div className="ui-card p-0 overflow-hidden">
-            <div className={`grid gap-3 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${
-              isOwnerOrAdmin
-                ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
-                : 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
-            }`}>
-              <span>Tank</span>
-              <span>Fuel</span>
-              <span className="text-right">Quantity</span>
-              {isOwnerOrAdmin && <span className="text-right">Rate</span>}
-              {isOwnerOrAdmin && <span className="text-right">Amount</span>}
-            </div>
-            <div className="divide-y divide-slate-100">
-              {items.map((item) => (
-                <div key={item.tankId} className="px-4 py-3">
-                  <div className={`grid gap-3 items-center text-sm ${
-                    isOwnerOrAdmin
-                      ? 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
-                      : 'grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)]'
-                  }`}>
-                    <span className="font-semibold text-slate-800">{item.tankIdentifier}</span>
-                    <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-medium ${FUEL_COLORS[item.fuelType]?.badge ?? FUEL_COLORS.PETROL.badge}`}>
-                      {item.fuelType}
-                    </span>
-                    <span className="text-right text-slate-600">
-                      {item.quantityDelivered.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                    </span>
-                    {isOwnerOrAdmin && (
-                      <span className="text-right text-slate-500">
-                        ₹{item.costPricePerUnit.toFixed(4)}/L
-                      </span>
-                    )}
-                    {isOwnerOrAdmin && (
-                      <span className="text-right font-semibold text-slate-800">
-                        ₹{item.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    )}
-                  </div>
-                  {item.stockAfter !== null && (
-                    <p className="mt-2 text-xs text-slate-500">
-                      Stock after delivery: <span className="font-medium text-slate-700">
-                        {item.stockAfter.toLocaleString('en-IN', { minimumFractionDigits: 1 })} L
-                      </span>
-                      {item.capacity !== null && ` / ${item.capacity.toLocaleString('en-IN', { minimumFractionDigits: 0 })} L capacity`}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="ui-modal-footer">
-          <button
-            type="button"
-            onClick={onBack}
-            disabled={isPending}
-            className="ui-btn ui-btn-secondary flex-1"
-          >
-            Back to Edit
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isPending}
-            className="ui-btn ui-btn-primary flex-1"
-          >
-            {isPending ? 'Recording…' : `Confirm ${items.length > 1 ? 'Deliveries' : 'Delivery'}`}
-          </button>
+          ))}
         </div>
       </div>
-    </div>
-    </ModalPortal>
+    </Modal>
   )
 }

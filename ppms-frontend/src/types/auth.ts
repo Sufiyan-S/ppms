@@ -5,6 +5,10 @@ export interface AuthUser {
   fullName: string
   role: UserRole
   assignedPumpId: number | null
+  /** Set when someone else chose the password; the user may only change it until they do. */
+  mustChangePassword?: boolean
+  /** en, hi or mr; screens follow it on every device the user signs in on. */
+  preferredLanguage?: string
 }
 
 export interface LoginRequest {
@@ -18,4 +22,6 @@ export interface LoginResponse {
   phoneNumber: string
   role: UserRole
   assignedPumpId: number | null
+  mustChangePassword: boolean
+  preferredLanguage: string
 }

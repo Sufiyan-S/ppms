@@ -126,16 +126,40 @@ public class InventoryController {
     }
 
     /**
-     * DELETE /api/inventory/{pumpId}/deliveries/latest
+     * GET /api/inventory/{pumpId}/deliveries/latest
+     * Tank lines of the most recently entered invoice; empty when the pump has no deliveries.
+     */
+    @GetMapping("/{pumpId}/deliveries/latest")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public ResponseEntity<List<TankerDeliveryResponse>> getLatestInvoiceLines(@PathVariable Long pumpId) {
+        return ResponseEntity.ok(queryService.getLatestInvoiceLines(pumpId));
+    }
+
+    /**
+     * DELETE /api/inventory/{pumpId}/deliveries/latest?invoiceReference=...
      * Deletes the most recently entered invoice (all its tank lines) while none of its fuel has been sold.
+     * Refused unless invoiceReference names that invoice.
      */
     @DeleteMapping("/{pumpId}/deliveries/latest")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteLatestDelivery(
             @PathVariable Long pumpId,
+            @RequestParam String invoiceReference,
             @AuthenticationPrincipal User currentUser) {
-        workflowService.deleteLatestDelivery(pumpId, currentUser);
+        workflowService.deleteLatestDelivery(pumpId, invoiceReference, currentUser);
+    }
+
+    /**
+     * GET /api/inventory/{pumpId}/tanks/{tankId}/open-shift-nozzles
+     * Nozzles drawing from the tank on shifts still open, with their opening readings.
+     */
+    @GetMapping("/{pumpId}/tanks/{tankId}/open-shift-nozzles")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public ResponseEntity<List<OpenShiftNozzleResponse>> getOpenShiftNozzles(
+            @PathVariable Long pumpId,
+            @PathVariable Long tankId) {
+        return ResponseEntity.ok(queryService.getOpenShiftNozzles(pumpId, tankId));
     }
 
     /**

@@ -1,0 +1,108 @@
+{
+  "overview": {
+    "loadError": "कुछ लाइव डेटा लोड नहीं हो सका। दिखाए गए आँकड़े अधूरे हो सकते हैं — दोबारा कोशिश करने के लिए रिफ्रेश करें।",
+    "stalePrices": {
+      "title": "आज ईंधन कीमतें अपडेट नहीं हुईं",
+      "body": "{{pump}} — सेटअप में कीमतें अपडेट करने के लिए यहाँ टैप करें",
+      "action": "अपडेट करें →"
+    },
+    "lowStock": {
+      "title": "जिन टैंकों में डिलीवरी चाहिए:",
+      "tank": "{{tank}} ({{fuel}}) — {{percent}}% भरा"
+    },
+    "liveShifts": "लाइव शिफ्ट",
+    "loadingChart": "बिक्री चार्ट लोड हो रहा है"
+  },
+  "stats": {
+    "activeShifts": "चालू शिफ्ट",
+    "noOpenShifts": "कोई शिफ्ट चालू नहीं",
+    "atPump": "{{pump}} पर",
+    "selectedPump": "चुना गया पंप",
+    "todaysRevenue": "आज की बिक्री",
+    "closedToday_one": "आज {{count}} शिफ्ट बंद हुई",
+    "closedToday_other": "आज {{count}} शिफ्ट बंद हुईं",
+    "lowStockTanks": "कम स्टॉक वाले टैंक",
+    "allTanksOk": "सभी टैंक ठीक हैं",
+    "needAttention": "ध्यान दें",
+    "shiftsOverdue_one": "{{count}} शिफ्ट समय पार",
+    "shiftsOverdue_other": "{{count}} शिफ्ट समय पार",
+    "noneOverdue": "कोई समय पार नहीं",
+    "acrossPumps_one": "{{count}} पंप में",
+    "acrossPumps_other": "{{count}} पंपों में",
+    "staleFuelPrices": "पुरानी ईंधन कीमतें",
+    "allPricesUpdated": "आज सभी कीमतें अपडेट हैं",
+    "pumpsToUpdate": "सेटअप में अपडेट करने वाले पंप",
+    "label": "आज एक नज़र में"
+  },
+  "tankStock": {
+    "title": "टैंक स्टॉक सारांश",
+    "fullInventory": "पूरा स्टॉक →",
+    "low": "कम",
+    "progress": "{{tank}} स्टॉक: {{percent}}%",
+    "progressLow": "{{tank}} स्टॉक: {{percent}}% – कम स्टॉक",
+    "remaining": "{{litres}} L बाकी"
+  },
+  "money": {
+    "label": "पैसों का सारांश",
+    "cashInDrawer": "ड्रॉअर में नकद",
+    "cashNote": "ड्रॉअर का मौजूदा बैलेंस",
+    "creditOutstanding": "क्रेडिट बकाया",
+    "creditNote": "क्रेडिट ग्राहकों पर बकाया",
+    "waitingForApproval": "मंज़ूरी बाकी",
+    "waitingNoteWithPayments": "खर्च और क्रेडिट भुगतान",
+    "waitingNote": "खर्च",
+    "notSettled": "अभी सेटलमेंट नहीं हुआ",
+    "notSettledNote": "UPI, कार्ड और फ़्लीट कार्ड"
+  },
+  "attention": {
+    "title": "आज ध्यान देने वाले काम",
+    "itemCount_one": "{{count}} काम",
+    "itemCount_other": "{{count}} काम",
+    "severity": {
+      "HIGH": "ज़रूरी",
+      "MEDIUM": "जल्द",
+      "LOW": "समय मिलने पर"
+    },
+    "severityPrefix": "{{severity}}: ",
+    "urgentPrefix": "ज़रूरी · ",
+    "reviewLabel": "देखें: {{reason}}",
+    "reviewLabelWithPump": "देखें: {{pump}}, {{reason}}",
+    "loading": "ध्यान देने वाले काम लोड हो रहे हैं",
+    "loadError": "ध्यान देने वाले काम लोड नहीं हो सके। दोबारा कोशिश करने के लिए रिफ्रेश करें।",
+    "allClear": "आज के लिए सब ठीक है"
+  },
+  "manager": {
+    "quickActions": "तुरंत काम",
+    "openShift": "शिफ्ट शुरू करें",
+    "dipCheck": "डिप जाँच",
+    "delivery": "डिलीवरी",
+    "cashEntry": "नकद एंट्री",
+    "openShifts": "चालू शिफ्ट",
+    "noneOpen": "अभी कोई शिफ्ट चालू नहीं है।",
+    "openFor": "{{duration}} से चालू",
+    "credit": "क्रेडिट"
+  },
+  "chart": {
+    "title": "बिक्री का रुझान",
+    "lastDays": "पिछले {{days}} दिन",
+    "dayButton": "{{days}} दिन",
+    "summary": "पिछले {{days}} दिनों की बिक्री और ईंधन मात्रा का रुझान",
+    "revenue": "बिक्री",
+    "series": "चार्ट की श्रेणियाँ",
+    "empty": "पिछले {{days}} दिनों में बंद शिफ्ट की कोई बिक्री नहीं। शिफ्ट बंद होने पर चार्ट भरता जाएगा।"
+  },
+  "allPumps": {
+    "scope": "सारांश का दायरा",
+    "overdueShifts_one": "{{count}} शिफ्ट समय पार",
+    "overdueShifts_other": "{{count}} शिफ्ट समय पार",
+    "lowTanks_one": "{{count}} टैंक कम",
+    "lowTanks_other": "{{count}} टैंक कम",
+    "pricesNotUpdated": "आज कीमतें अपडेट नहीं हुईं",
+    "activeShifts_one": "{{count}} चालू शिफ्ट",
+    "activeShifts_other": "{{count}} चालू शिफ्ट",
+    "loadError": "आपके पंपों के आँकड़े लोड नहीं हो सके। दोबारा कोशिश करने के लिए रिफ्रेश करें।",
+    "loading": "सभी पंप लोड हो रहे हैं",
+    "pumps": "पंप",
+    "selectHint": "सारांश खोलने के लिए पंप चुनें"
+  }
+}

@@ -1,56 +1,59 @@
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import type { ExpenseSummary } from '../../../api/balanceSheetApi'
-import { Td, Th } from '../bsTableCells'
-import { fmtMoney } from '../bsFormat'
-import { ScrollRegion } from '../../../components/ScrollRegion'
+import { Td } from '../bsTableCells'
+import { bsColumn } from '../bsFormat'
+import { DataTable } from '../../../components/DataTable'
+import type { DataTableColumn } from '../../../components/DataTable'
+import { StatusBadge } from '../../../components/StatusBadge'
+import { MoneyText } from '../../../components/AmountText'
 import { codeLabel } from '../../../constants/labels'
+
+type ExpenseLine = ExpenseSummary['lines'][number]
+
+function expenseColumns(t: TFunction<'balancesheet'>): DataTableColumn<ExpenseLine>[] {
+  return [
+    bsColumn('category', t('columns.category')),
+    bsColumn('description', t('columns.description')),
+    bsColumn('recordedBy', t('columns.recordedBy')),
+    bsColumn('amount', t('columns.amount'), true),
+  ]
+}
 
 // ── Approved expenses section (DAY reports only) ────────────────────────────────
 
 export function ExpensesSection({ expenses }: { expenses: ExpenseSummary }) {
+  const { t } = useTranslation('balancesheet')
   return (
     <section>
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-        Approved Expenses
-        <span className="ml-2 text-slate-500 normal-case font-normal">
-          ({expenses.lines.length} expense{expenses.lines.length !== 1 ? 's' : ''})
+      <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">
+        {t('expenses.title')}
+        <span className="ml-2 text-ink-3 normal-case font-normal">
+          {t('expenses.count', { count: expenses.lines.length })}
         </span>
       </h3>
-      <ScrollRegion label="Expenses" className="rounded-xl border border-red-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-red-50 text-left">
-              <Th>Category</Th>
-              <Th>Description</Th>
-              <Th>Recorded By</Th>
-              <Th right>Amount</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {expenses.lines.map(line => (
-              <tr key={line.id} className="border-t border-red-100 hover:bg-red-50 transition-colors">
-                <Td>
-                  <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
-                    {codeLabel(line.category)}
-                  </span>
-                </Td>
-                <Td><span className="text-xs text-slate-500">{line.description}</span></Td>
-                <Td><span className="text-xs text-slate-500">{line.recordedByName}</span></Td>
-                <Td right>
-                  <span className="font-medium text-red-600">{fmtMoney(line.amount)}</span>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="bg-red-50 font-semibold border-t border-red-200">
-              <Td colSpan={3}>Total Expenses</Td>
-              <Td right>
-                <span className="text-red-600">{fmtMoney(expenses.totalAmount)}</span>
-              </Td>
-            </tr>
-          </tfoot>
-        </table>
-      </ScrollRegion>
+      <DataTable
+        caption={t('expenses.caption')}
+        captionHidden
+        regionLabel={t('expenses.region')}
+        columns={expenseColumns(t)}
+        rows={expenses.lines}
+        rowKey={(line) => line.id}
+        renderRow={(line) => (
+          <tr>
+            <Td><StatusBadge tone="neutral" label={codeLabel(line.category)} /></Td>
+            <Td><span className="text-xs text-ink-3">{line.description}</span></Td>
+            <Td><span className="text-xs text-ink-3">{line.recordedByName}</span></Td>
+            <Td right><MoneyText value={line.amount} tone="bad" className="font-medium" /></Td>
+          </tr>
+        )}
+        footer={
+          <tr className="bg-surface-sunken">
+            <Td colSpan={3}>{t('expenses.total')}</Td>
+            <Td right><MoneyText value={expenses.totalAmount} tone="bad" /></Td>
+          </tr>
+        }
+      />
     </section>
   )
 }

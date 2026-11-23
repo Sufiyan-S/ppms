@@ -31,12 +31,13 @@ public class AuthLoginEventService {
 
     public void onLoginFailure(String phoneNumber, String ipAddress) {
         rateLimiterService.recordAttempt(phoneNumber, ipAddress, false);
-        log.warn("Login failed: phone={} ip={}", PhoneNumberMasking.mask(phoneNumber), ipAddress);
+        String maskedPhone = PhoneNumberMasking.mask(phoneNumber);
+        log.warn("Login failed: phone={} ip={}", maskedPhone, ipAddress);
         loginFailureCounter.increment();
 
         auditService.log(null, AuditAction.LOGIN_FAILED,
                 "User", null,
-                "Failed login attempt for phone=" + phoneNumber + " from ip=" + ipAddress,
-                null, phoneNumber);
+                "Failed login attempt for phone=" + maskedPhone + " from ip=" + ipAddress,
+                null, maskedPhone);
     }
 }

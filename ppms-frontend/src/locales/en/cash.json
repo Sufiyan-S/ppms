@@ -1,0 +1,49 @@
+{
+  "eventTypes": {
+    "OPENING_BALANCE": "Opening balance",
+    "CASH_IN": "Cash in",
+    "CASH_OUT": "Cash out",
+    "CLOSING_BALANCE": "Closing balance"
+  },
+  "page": {
+    "title": "Cash Drawer",
+    "subtitle": "Track cash movements in and out of the pump safe",
+    "loadFailed": "Could not load cash events. Check your connection and refresh.",
+    "currentBalance": "Current Balance",
+    "balanceHint": "Calculated from all cash-in minus cash-out events",
+    "eventCount_one": "{{count}} event",
+    "eventCount_other": "{{count}} events"
+  },
+  "list": {
+    "title": "Cash Events",
+    "filterByType": "Filter by event type",
+    "allTypes": "All Types",
+    "emptyRangeTitle": "No events in this date range",
+    "emptyRangeSubtitle": "Try adjusting the date filters above.",
+    "emptyTitle": "No cash events recorded yet",
+    "emptySubtitle": "Use Record cash movement to add your first one.",
+    "filtersLabel": "Cash event filters"
+  },
+  "form": {
+    "title": "Record cash movement",
+    "subtitle": "Log money entering or leaving the safe with the right event type and date.",
+    "eventType": "Event type",
+    "amount": "Amount",
+    "availableBalance": "Available balance: {{amount}}",
+    "description": "Description",
+    "date": "Date",
+    "balanceNow": "In the safe now",
+    "balanceAfter": "In the safe after this",
+    "needAmount": "Amount",
+    "needDescription": "Description",
+    "recorded": "Cash event recorded successfully",
+    "recordFailed": "Failed to record event",
+    "descriptionRequired": "Description is required",
+    "amountPositive": "Amount must be greater than zero",
+    "exceedsBalance": "Cash-out amount {{amount}} exceeds the current drawer balance of {{balance}}."
+  },
+  "review": {
+    "title": "Review cash movement",
+    "record": "Record movement"
+  }
+}

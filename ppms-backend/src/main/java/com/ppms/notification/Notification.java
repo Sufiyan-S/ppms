@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 /**
  * In-app notification for the pump dashboard bell icon.
@@ -48,8 +49,10 @@ public class Notification {
     @Column(name = "dedup_key", nullable = false)
     private String dedupKey;
 
-    @Column(name = "read_at")
-    private OffsetDateTime readAt;
+    /** The values the English title and message were built from; null on notifications stored before V37. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "params", columnDefinition = "jsonb")
+    private Map<String, Object> params;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

@@ -96,12 +96,24 @@ export interface InventoryLotDetail {
   createdAt: string
 }
 
+/** A nozzle drawing from the tank on a shift that is still open; a dip check needs its current meter reading. */
+export interface OpenShiftNozzle {
+  shiftId: number
+  nozzleId: number
+  nozzleNumber: number
+  duName: string | null
+  fuelType: string
+  openingReading: number
+  maxMeterValue: number
+}
+
+/** The check is always recorded for today, so no date is sent. */
 export interface RecordDipCheckRequest {
   tankId: number
   measuredQuantity: number
-  checkedAt: string   // YYYY-MM-DD
   checkedByUserId?: number
   notes?: string
+  nozzleReadings: Array<{ nozzleId: number; meterReading: number }>
 }
 
 export const inventoryApi = {
@@ -132,6 +144,13 @@ export const inventoryApi = {
   getActiveTankLots: (pumpId: number, tankId: number): Promise<InventoryLotDetail[]> =>
     client.get(`/inventory/${pumpId}/tanks/${tankId}/lots`).then(r => r.data),
 
-  deleteLatestDelivery: (pumpId: number) =>
-    client.delete(`/inventory/${pumpId}/deliveries/latest`),
+  getOpenShiftNozzles: (pumpId: number, tankId: number) =>
+    client.get<OpenShiftNozzle[]>(`/inventory/${pumpId}/tanks/${tankId}/open-shift-nozzles`).then(r => r.data),
+
+  /** Tank lines of the most recently entered invoice — the only one that can be deleted. */
+  getLatestInvoiceLines: (pumpId: number) =>
+    client.get<TankerDelivery[]>(`/inventory/${pumpId}/deliveries/latest`).then(r => r.data),
+
+  deleteLatestDelivery: (pumpId: number, invoiceReference: string) =>
+    client.delete(`/inventory/${pumpId}/deliveries/latest`, { params: { invoiceReference } }),
 }

@@ -2,6 +2,7 @@ package com.ppms.document;
 
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.user.User;
@@ -70,7 +71,7 @@ public class DocumentService {
     private PumpDocument findDocument(Long pumpId, Long documentId) {
         return documentRepository.findById(documentId)
                 .filter(doc -> doc.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Document not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.DOCUMENT, "Document not found"));
     }
 
     // No expiry date means the document never expires.

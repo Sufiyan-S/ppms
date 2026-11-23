@@ -1,5 +1,6 @@
 package com.ppms.supplier;
 
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -42,7 +43,7 @@ public class SupplierService {
 
     private FuelSupplier findSupplier(Long pumpId, Long supplierId) {
         return supplierRepository.findByIdAndPumpId(supplierId, pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.SUPPLIER, "Supplier not found"));
     }
 
     private void applyDetails(FuelSupplier supplier, UpsertSupplierRequest req) {

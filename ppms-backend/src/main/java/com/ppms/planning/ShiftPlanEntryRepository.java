@@ -1,6 +1,7 @@
 package com.ppms.planning;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -60,4 +61,14 @@ public interface ShiftPlanEntryRepository extends JpaRepository<ShiftPlanEntry, 
 
     Optional<ShiftPlanEntry> findByShiftPlanIdAndShiftDateAndShiftDefinitionIdAndOperatorUserId(
             Long shiftPlanId, LocalDate shiftDate, Long shiftDefinitionId, Long operatorUserId);
+
+    @Modifying
+    @Query("""
+        DELETE FROM ShiftPlanEntry e
+        WHERE e.operatorUserId = :userId
+          AND e.shiftDate >= :from
+          AND e.shiftPlanId IN (SELECT p.id FROM ShiftPlan p WHERE p.pumpId = :pumpId)
+        """)
+    int deleteForOperatorAtPumpFrom(@Param("userId") Long userId, @Param("pumpId") Long pumpId,
+                                    @Param("from") LocalDate from);
 }

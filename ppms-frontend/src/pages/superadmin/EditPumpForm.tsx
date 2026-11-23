@@ -1,7 +1,11 @@
+import { useMemo } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { PumpSummary, UpdatePumpRequest } from '../../api/superAdminApi'
 import { FormField } from '../../components/FormField'
+import { FormGrid } from '../../components/layout/FormGrid'
+import { LoadingButton } from '../../components/LoadingButton'
 import { editPumpSchema } from './superAdminSchemas'
 import type { EditPumpFormData, EditPumpFormInput } from './superAdminSchemas'
 
@@ -10,15 +14,18 @@ interface EditPumpFormProps {
   isSaving: boolean
   error: string | null
   onSave: (data: UpdatePumpRequest) => void
+  onCancel: () => void
 }
 
-export function EditPumpForm({ pump, isSaving, error, onSave }: EditPumpFormProps) {
+export function EditPumpForm({ pump, isSaving, error, onSave, onCancel }: EditPumpFormProps) {
+  const { t } = useTranslation(['superadmin', 'common'])
+  const schema = useMemo(() => editPumpSchema(t), [t])
   const {
     register: registerEdit,
     handleSubmit: handleSubmitEdit,
     formState: { errors: editErrors },
   } = useForm<EditPumpFormInput, unknown, EditPumpFormData>({
-    resolver: zodResolver(editPumpSchema),
+    resolver: zodResolver(schema),
     defaultValues: { pumpName: pump.pumpName, pumpAddress: pump.pumpAddress },
   })
 
@@ -29,32 +36,28 @@ export function EditPumpForm({ pump, isSaving, error, onSave }: EditPumpFormProp
   return (
     <form
       onSubmit={handleSubmitEdit(onEditPumpSubmit)}
-      className="mt-2 ui-card-plain bg-white border-indigo-100 p-3 space-y-2"
+      aria-label={t('pump.editTitle', { name: pump.pumpName })}
+      className="mt-3 space-y-3 border-t border-border pt-3"
     >
-      <FormField label="Pump Name" error={editErrors.pumpName?.message}>
-        <input
-          {...registerEdit('pumpName')}
-          type="text"
-          className="text-xs min-h-10"
-        />
-      </FormField>
-      <FormField label="Pump Address" error={editErrors.pumpAddress?.message}>
-        <input
-          {...registerEdit('pumpAddress')}
-          type="text"
-          className="text-xs min-h-10"
-        />
-      </FormField>
+      <FormGrid>
+        <FormField label={t('fields.pumpName')} error={editErrors.pumpName?.message}>
+          <input {...registerEdit('pumpName')} type="text" className="text-sm" />
+        </FormField>
+        <FormField label={t('fields.pumpAddress')} error={editErrors.pumpAddress?.message}>
+          <input {...registerEdit('pumpAddress')} type="text" className="text-sm" />
+        </FormField>
+      </FormGrid>
       {error && (
         <p role="alert" className="ui-error-text">{error}</p>
       )}
-      <button
-        type="submit"
-        disabled={isSaving}
-        className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300"
-      >
-        {isSaving ? 'Saving…' : 'Save Changes'}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <LoadingButton type="submit" isLoading={isSaving} loadingLabel={t('common:actions.saving')} className="ui-btn-primary ui-btn-compact">
+          {t('pump.saveChanges')}
+        </LoadingButton>
+        <button type="button" onClick={onCancel} className="ui-btn ui-btn-secondary ui-btn-compact">
+          {t('common:actions.cancel')}
+        </button>
+      </div>
     </form>
   )
 }

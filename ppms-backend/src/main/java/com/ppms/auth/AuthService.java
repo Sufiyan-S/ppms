@@ -1,6 +1,7 @@
 package com.ppms.auth;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
@@ -12,6 +13,8 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -64,18 +67,24 @@ public class AuthService {
     @Transactional
     public void changePassword(User currentUser, String currentPassword, String newPassword) {
         User user = userRepository.findByIdForUpdate(currentUser.getId())
-                .orElseThrow(() -> new BusinessException("User not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.USER_ACCOUNT_NOT_FOUND,
+                        Map.of(),
+                        "User not found"));
 
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new BusinessException("Current password is incorrect.");
+            throw new BusinessException(ErrorCodes.CURRENT_PASSWORD_INCORRECT,
+                    Map.of(),
+                    "Current password is incorrect.");
         }
 
         if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
-            throw new BusinessException("New password must be different from your current password.");
+            throw new BusinessException(ErrorCodes.NEW_PASSWORD_SAME_AS_CURRENT, Map.of(),
+                    "New password must be different from your current password.");
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
+        user.setMustChangePassword(false);
         userRepository.save(user);
         resetTokenRepository.markAllUnusedAsUsed(user.getId(), businessClock.now());
     }

@@ -63,6 +63,16 @@ public class CreditExtension {
     @Builder.Default
     private CreditExtensionStatus status = CreditExtensionStatus.ACTIVE;
 
+    /** Set when an owner or admin withdraws the extension before it expires. */
+    @Column(name = "revoked_at")
+    private OffsetDateTime revokedAt;
+
+    @Column(name = "revoked_by_user_id")
+    private Long revokedByUserId;
+
+    @Column(name = "revoke_reason")
+    private String revokeReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 

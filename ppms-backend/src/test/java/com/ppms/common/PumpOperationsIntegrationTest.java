@@ -2,6 +2,10 @@ package com.ppms.common;
 
 import com.ppms.support.TestDates;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ppms.inventory.InventoryLotRepository;
+import com.ppms.inventory.LotConsumption;
+import com.ppms.inventory.LotConsumptionRepository;
+import com.ppms.inventory.LotConsumptionSource;
 import com.ppms.scheduler.InterestStagingJob;
 import com.ppms.scheduler.NotificationGenerationJob;
 import com.ppms.scheduler.NotificationRetentionJob;
@@ -30,7 +34,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 class PumpOperationsIntegrationTest extends ApiIntegrationTest {
 
@@ -39,6 +45,8 @@ class PumpOperationsIntegrationTest extends ApiIntegrationTest {
     @Autowired private OverdueShiftJob overdueShiftJob;
     @Autowired private InterestStagingJob interestStagingJob;
     @Autowired private SettlementReminderJob settlementReminderJob;
+    @Autowired private LotConsumptionRepository lotConsumptionRepository;
+    @Autowired private InventoryLotRepository lotRepository;
 
     private PumpSetup setup;
 
@@ -134,12 +142,68 @@ class PumpOperationsIntegrationTest extends ApiIntegrationTest {
     @Test
     void fuelDipLossIsRecordedAndListed() throws Exception {
         perform(post("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner(),
-                Map.of("fuelType", "PETROL", "litresRemoved", new BigDecimal("2.5"), "reason", "Quality sample",
+                Map.of("tankId", setup.tank().getId(), "litresRemoved", new BigDecimal("2.5"), "reason", "Quality sample",
                         "dipDate", TestDates.today().toString()))
                 .andExpect(status().is2xxSuccessful());
 
         assertThat(json(perform(get("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner())
                 .andExpect(status().isOk())).toString()).contains("Quality sample");
+    }
+
+    @Test
+    void backDatedDrainIsRefusedAndLeavesTheTankUntouched() throws Exception {
+        BigDecimal stockBefore = tankRepository.findById(setup.tank().getId()).orElseThrow().getCurrentStock();
+
+        perform(post("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner(),
+                Map.of("tankId", setup.tank().getId(), "litresRemoved", new BigDecimal("2.5"), "reason", "Quality sample",
+                        "dipDate", TestDates.today().minusDays(1).toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(containsString("can only be recorded for today")));
+
+        assertThat(tankRepository.findById(setup.tank().getId()).orElseThrow().getCurrentStock())
+                .isEqualByComparingTo(stockBefore);
+        assertThat(json(perform(get("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner())
+                .andExpect(status().isOk())).toString()).doesNotContain("Quality sample");
+    }
+
+    @Test
+    void drainedFuelLeavesTheTankAtLotCostAndALaterDipCheckFindsNoExtraLoss() throws Exception {
+        recordDelivery(setup, "100", "95.00", TestDates.today());
+
+        JsonNode entry = json(perform(post("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner(),
+                Map.of("tankId", setup.tank().getId(), "litresRemoved", new BigDecimal("1010"), "reason", "Tank cleaning"))
+                .andExpect(status().is2xxSuccessful()));
+
+        assertThat(entry.get("fuelType").asText()).isEqualTo("PETROL");
+        assertThat(entry.get("monetaryLoss").decimalValue()).isEqualByComparingTo("90950.00");
+        assertThat(entry.get("pricePerUnit").decimalValue()).isEqualByComparingTo("90.050");
+        assertThat(tankRepository.findById(setup.tank().getId()).orElseThrow().getCurrentStock()).isEqualByComparingTo("90");
+        List<LotConsumption> drains = lotConsumptionRepository.findAll().stream()
+                .filter(consumption -> Long.valueOf(entry.get("id").asLong()).equals(consumption.getFuelDipEntryId()))
+                .toList();
+        assertThat(drains).extracting(LotConsumption::getSourceType).containsOnly(LotConsumptionSource.MAINTENANCE_REMOVAL);
+        assertThat(drains).extracting(LotConsumption::getQuantityConsumed)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .containsExactly(new BigDecimal("1000"), new BigDecimal("10"));
+        assertThat(lotRepository.findActiveLotsByTankForDisplay(setup.tank().getId()))
+                .singleElement()
+                .satisfies(lot -> assertThat(lot.getRemainingQuantity()).isEqualByComparingTo("90"));
+
+        JsonNode dip = json(perform(post("/api/inventory/{pumpId}/dip-checks", setup.pumpId()), setup.manager(),
+                Map.of("tankId", setup.tank().getId(), "measuredQuantity", new BigDecimal("90")))
+                .andExpect(status().is2xxSuccessful()));
+        assertThat(dip.get("variance").decimalValue()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void drainingMoreFuelThanTheTankHoldsIsRefused() throws Exception {
+        perform(post("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner(),
+                Map.of("tankId", setup.tank().getId(), "litresRemoved", new BigDecimal("1000.001"), "reason", "Tank cleaning"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(tankRepository.findById(setup.tank().getId()).orElseThrow().getCurrentStock()).isEqualByComparingTo("1000");
+        assertThat(json(perform(get("/api/pumps/{pumpId}/fuel-dips", setup.pumpId()), setup.owner())
+                .andExpect(status().isOk()))).isEmpty();
     }
 
     @Test

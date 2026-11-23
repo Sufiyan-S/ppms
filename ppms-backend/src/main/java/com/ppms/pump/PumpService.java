@@ -3,6 +3,8 @@ package com.ppms.pump;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.EntityType;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.common.exception.ResourceNotFoundException;
 import com.ppms.credit.CreditClientRepository;
 import com.ppms.inventory.TankerDeliveryRepository;
@@ -11,6 +13,7 @@ import com.ppms.shift.ShiftRepository;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import com.ppms.user.UserRole;
+import com.ppms.user.UserStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -67,7 +71,7 @@ public class PumpService {
     public PumpResponse createPump(CreatePumpRequest request, User currentUser) {
 
         if (pumpLocationRepository.existsByOwnerIdAndName(currentUser.getId(), request.getName())) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.PUMP_NAME_TAKEN, Map.of("pumpName", request.getName()),
                     "A pump named '" + request.getName() + "' already exists. Please use a different name.");
         }
 
@@ -93,11 +97,12 @@ public class PumpService {
     public PumpResponse updateMaxDuCount(Long pumpId, int maxDuCount, User currentUser) {
 
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         long currentDuCount = duRepository.countByPumpId(pumpId);
         if (maxDuCount < currentDuCount) {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCodes.MAX_DU_COUNT_BELOW_CONFIGURED,
+                    Map.of("maxDuCount", maxDuCount, "currentDuCount", currentDuCount),
                     "Cannot set max DUs to " + maxDuCount +
                     " — the pump already has " + currentDuCount + " DUs configured. " +
                     "The new limit must be at least " + currentDuCount + ".");
@@ -116,11 +121,12 @@ public class PumpService {
     public PumpResponse updatePumpSettings(Long pumpId, UpdatePumpSettingsRequest request, User currentUser) {
 
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         if (request.discrepancyEscalationThreshold() != null) {
             if (request.discrepancyEscalationThreshold().compareTo(BigDecimal.ZERO) < 0) {
-                throw new BusinessException("Discrepancy escalation threshold cannot be negative.");
+                throw new BusinessException(ErrorCodes.DISCREPANCY_THRESHOLD_NEGATIVE, Map.of(),
+                        "Discrepancy escalation threshold cannot be negative.");
             }
             pump.setDiscrepancyEscalationThreshold(
                     request.discrepancyEscalationThreshold().compareTo(BigDecimal.ZERO) == 0
@@ -130,7 +136,8 @@ public class PumpService {
 
         if (request.expenseApprovalThreshold() != null) {
             if (request.expenseApprovalThreshold().compareTo(BigDecimal.ZERO) < 0) {
-                throw new BusinessException("Expense approval threshold cannot be negative.");
+                throw new BusinessException(ErrorCodes.EXPENSE_APPROVAL_THRESHOLD_NEGATIVE, Map.of(),
+                        "Expense approval threshold cannot be negative.");
             }
             pump.setExpenseApprovalThreshold(
                     request.expenseApprovalThreshold().compareTo(BigDecimal.ZERO) == 0
@@ -164,16 +171,25 @@ public class PumpService {
     public void deletePump(Long pumpId, User currentUser) {
         PumpLocation pump = pumpLocationRepository.findById(pumpId)
                 .filter(found -> found.getOwnerId().equals(currentUser.getId()))
-                .orElseThrow(() -> new ResourceNotFoundException("Pump not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.PUMP, "Pump not found"));
 
         if (shiftRepository.existsByPumpId(pumpId)) {
-            throw new BusinessException("This pump has shifts on record and cannot be deleted.");
+            throw new BusinessException(ErrorCodes.PUMP_HAS_SHIFTS, Map.of(),
+                    "This pump has shifts on record and cannot be deleted.");
+        }
+        if (userRepository.existsByAssignedPumpIdAndStatus(pumpId, UserStatus.ACTIVE)) {
+            throw new BusinessException(ErrorCodes.PUMP_HAS_ACTIVE_STAFF,
+                    Map.of(),
+                    "This pump still has active staff. Move them to another of your pumps "
+                    + "or deactivate them first.");
         }
         if (userRepository.existsByAssignedPumpId(pumpId)) {
-            throw new BusinessException("This pump still has staff assigned. Move or remove them first.");
+            throw new BusinessException(ErrorCodes.PUMP_HAS_DEACTIVATED_STAFF, Map.of(),
+                    "This pump still has deactivated staff on record. Move them to another of "
+                    + "your pumps from the Staff page first, so their history stays with an owner who can see it.");
         }
         if (creditClientRepository.existsByPumpId(pumpId) || tankerDeliveryRepository.existsByPumpId(pumpId)) {
-            throw new BusinessException(HAS_DATA_MESSAGE);
+            throw new BusinessException(ErrorCodes.PUMP_HAS_RECORDED_DATA, Map.of(), HAS_DATA_MESSAGE);
         }
 
         for (DispensaryUnit du : duRepository.findByPumpIdOrderByDuNumberAsc(pumpId)) {
@@ -186,7 +202,7 @@ public class PumpService {
             pumpLocationRepository.flush();
         } catch (DataIntegrityViolationException e) {
             log.warn("Pump {} delete refused by remaining references: {}", pumpId, e.getMostSpecificCause().getMessage());
-            throw new BusinessException(HAS_DATA_MESSAGE);
+            throw new BusinessException(ErrorCodes.PUMP_HAS_RECORDED_DATA, Map.of(), HAS_DATA_MESSAGE);
         }
         log.info("Pump deleted: pump={}, owner={}", pumpId, currentUser.getId());
     }

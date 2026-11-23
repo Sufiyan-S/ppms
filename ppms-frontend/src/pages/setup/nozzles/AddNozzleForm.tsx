@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
 import { pumpApi } from '../../../api/pumpApi'
 import type { FuelType, DUOption } from '../../../types/shift'
 import { SearchableSelect } from '../../../components/SearchableSelect'
-import { Spinner } from '../../../components/Spinner'
 import { useToastStore } from '../../../store/toastStore'
-import { FUEL_LABELS } from '../../../constants/fuel'
+import { FormField } from '../../../components/FormField'
+import { LoadingButton } from '../../../components/LoadingButton'
+import { NumericInput } from '../../../components/NumericInput'
+import { StillNeeded } from '../../../components/StillNeeded'
+import { FUEL_UNIT } from '../../../constants/fuel'
+import { codeLabel } from '../../../constants/labels'
 import { ALL_FUEL_TYPES } from '../fuelStyles'
 import { useInvalidateNozzles } from './nozzlePanels'
 
@@ -17,28 +22,39 @@ interface Props {
 }
 
 export function AddNozzleForm({ pumpId, du, onClose }: Props) {
+  const { t } = useTranslation(['setup', 'common'])
   const { addToast } = useToastStore()
   const invalidate = useInvalidateNozzles(pumpId)
+  const formId = useId()
+  const stillNeededId = `${formId}-still-needed`
+  const numberRef = useRef<HTMLInputElement>(null)
   const [inlineNozzleNumber, setInlineNozzleNumber] = useState(String(du.nozzles.length + 1))
   const [inlineFuelType, setInlineFuelType] = useState<FuelType | ''>('')
   const [inlineReading, setInlineReading] = useState('')
   const [inlineError, setInlineError] = useState<string | null>(null)
+
+  useEffect(() => { numberRef.current?.focus() }, [])
 
   const addNozzleMutation = useMutation({
     mutationFn: ({ duId, nozzleNumber, fuelType, initialReading }: { duId: number; nozzleNumber: number; fuelType: FuelType; initialReading?: number }) =>
       pumpApi.addNozzle(pumpId, duId, nozzleNumber, fuelType, initialReading),
     onSuccess: () => {
       onClose()
-      addToast('Nozzle added', 'success')
+      addToast(t('nozzles.add.added'), 'success')
       invalidate()
     },
-    onError: (err) => { const msg = parseApiError(err, 'Failed to add nozzle'); setInlineError(msg); addToast(msg, 'error') },
+    onError: (err) => { const msg = parseApiError(err, t('nozzles.add.failed')); setInlineError(msg); addToast(msg, 'error') },
   })
+
+  const stillNeeded = [
+    ...(!inlineNozzleNumber ? [t('nozzles.nozzleNumber')] : []),
+    ...(!inlineFuelType ? [t('tanks.fuelType')] : []),
+  ]
 
   const submitInlineNozzle = (e: React.FormEvent) => {
     e.preventDefault(); setInlineError(null)
-    if (!inlineFuelType) { setInlineError('Select a fuel type.'); return }
-    if (!inlineNozzleNumber) { setInlineError('Enter a nozzle number.'); return }
+    if (!inlineFuelType) { setInlineError(t('nozzles.add.selectFuel')); return }
+    if (!inlineNozzleNumber) { setInlineError(t('nozzles.add.enterNumber')); return }
     addNozzleMutation.mutate({
       duId: du.id,
       nozzleNumber: Number(inlineNozzleNumber),
@@ -48,60 +64,55 @@ export function AddNozzleForm({ pumpId, du, onClose }: Props) {
   }
 
   return (
-    <div className="px-4 py-3 border-t border-blue-100 bg-blue-50/40 rounded-b-xl">
-      <form onSubmit={submitInlineNozzle} className="flex items-end gap-2 flex-wrap">
-        <div className="w-20">
-          <label className="block">
-            <span className="ui-label mb-1 text-[10px]">Nozzle #</span>
-            <input
-              type="number" min="1" max="9"
+    <div className="px-4 py-3 border-t border-border bg-surface-sunken rounded-b-card">
+      <form onSubmit={submitInlineNozzle} aria-label={t('nozzles.du.addNozzle')} className="space-y-3">
+        <div className="flex items-end gap-2 flex-wrap">
+          <FormField className="w-24" label={t('nozzles.nozzleNumber')}>
+            <NumericInput
+              ref={numberRef}
+              inputMode="numeric"
+              min="1" max="9"
               value={inlineNozzleNumber}
               onChange={(e) => setInlineNozzleNumber(e.target.value)}
-              className="text-xs w-full"
-              placeholder="1"
             />
-          </label>
-        </div>
-        <div className="flex-1 min-w-[160px]">
-          <span className="ui-label mb-1 text-[10px]">Fuel Type</span>
-          <SearchableSelect label="Fuel Type"
-            value={inlineFuelType}
-            onChange={(v) => setInlineFuelType(v as FuelType)}
-            placeholder="— select —"
-            size="sm"
-            options={ALL_FUEL_TYPES.map((ft) => ({ value: ft, label: FUEL_LABELS[ft] }))}
-          />
-        </div>
-        <div className="w-32">
-          <label className="block">
-            <span className="ui-label mb-1 text-[10px]">Start Reading</span>
-            <input
-              type="number" step="0.001" min="0"
+          </FormField>
+          <div className="flex-1 min-w-40">
+            <span id={`${formId}-fuel`} className="ui-label">{t('tanks.fuelType')}</span>
+            <SearchableSelect aria-labelledby={`${formId}-fuel`}
+              value={inlineFuelType}
+              onChange={(v) => setInlineFuelType(v as FuelType)}
+              placeholder={t('nozzles.selectPlaceholder')}
+              options={ALL_FUEL_TYPES.map((ft) => ({ value: ft, label: codeLabel(ft) }))}
+            />
+          </div>
+          <FormField className="w-40" label={t('nozzles.startReading')}>
+            <NumericInput
+              step="0.001" min="0"
+              unit={inlineFuelType ? FUEL_UNIT[inlineFuelType] ?? 'L' : 'L'}
               value={inlineReading}
               onChange={(e) => setInlineReading(e.target.value)}
               placeholder="0"
-              className="text-xs w-full"
             />
-          </label>
+          </FormField>
         </div>
-        <div className="flex items-center gap-2">
-          <button
+        {inlineError && <p role="alert" className="ui-error-text">{inlineError}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          <LoadingButton
             type="submit"
-            disabled={addNozzleMutation.isPending}
-            className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-xs"
+            isLoading={addNozzleMutation.isPending}
+            loadingLabel={t('actions.adding')}
+            disabled={stillNeeded.length > 0}
+            aria-describedby={stillNeeded.length > 0 ? stillNeededId : undefined}
+            className="ui-btn-primary"
           >
-            {addNozzleMutation.isPending ? <span className="flex items-center gap-1"><Spinner className="w-3 h-3" />Adding…</span> : 'Add'}
+            {t('nozzles.du.addNozzle')}
+          </LoadingButton>
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+            {t('common:actions.cancel')}
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ui-btn ui-btn-ghost min-h-0 px-3 py-1.5 text-xs text-slate-500"
-          >
-            Cancel
-          </button>
+          <StillNeeded id={stillNeededId} items={stillNeeded} />
         </div>
       </form>
-      {inlineError && <p role="alert" className="ui-error-text mt-2">{inlineError}</p>}
     </div>
   )
 }

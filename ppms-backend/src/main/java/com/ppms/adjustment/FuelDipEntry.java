@@ -10,8 +10,8 @@ import java.time.OffsetDateTime;
 /**
  * Records physical fuel removal from the tank for maintenance or testing purposes
  * (e.g., "20 L removed to clean nozzle filter"). Not counted through the nozzle meter.
- * Treated as an operational loss — subtracted from gross profit in balance sheets.
- * Can be recorded at any time by Admin/Owner.
+ * The litres leave the tank's stock and oldest lots; the loss is their purchase cost and is
+ * subtracted from gross profit in balance sheets. Can be recorded at any time by Admin/Owner.
  */
 @Entity
 @Table(name = "fuel_dip_entries")
@@ -29,6 +29,10 @@ public class FuelDipEntry {
     @Column(name = "pump_id", nullable = false)
     private Long pumpId;
 
+    /** Null for entries recorded before drains left tank stock. */
+    @Column(name = "tank_id")
+    private Long tankId;
+
     @Column(name = "fuel_type", nullable = false)
     private String fuelType;
 
@@ -36,11 +40,14 @@ public class FuelDipEntry {
     @Column(name = "litres_removed", nullable = false)
     private BigDecimal litresRemoved;
 
-    /** Price per litre at the time of recording — snapshotted so balance sheet is historically accurate. */
+    /**
+     * Average purchase cost per litre of the lots the fuel was drawn from. Entries recorded before drains
+     * left tank stock hold the selling price at the time instead.
+     */
     @Column(name = "price_per_unit", nullable = false)
     private BigDecimal pricePerUnit;
 
-    /** Monetary loss = litresRemoved × pricePerUnit, calculated at creation time. */
+    /** Cost of the fuel lost: the purchase cost of the litres drawn from the lots (selling value on older entries). */
     @Column(name = "monetary_loss", nullable = false)
     private BigDecimal monetaryLoss;
 

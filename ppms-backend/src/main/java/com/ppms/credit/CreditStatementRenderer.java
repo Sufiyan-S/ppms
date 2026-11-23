@@ -18,8 +18,7 @@ public class CreditStatementRenderer {
 
     public String render(PumpLocation pump,
                          CreditClient client,
-                         List<CreditTransactionResponse> transactions,
-                         BigDecimal outstanding,
+                         CreditStatement statement,
                          LocalDate fromDate,
                          LocalDate toDate) {
         StringBuilder sb = new StringBuilder();
@@ -34,17 +33,18 @@ public class CreditStatementRenderer {
                 .append("<h2 style='margin-top:8px;color:#333;'>CREDIT ACCOUNT STATEMENT</h2>")
                 .append("</div>");
 
-        appendAccountDetails(sb, client, periodLabel);
+        appendAccountDetails(sb, client, statement.subAccountNames(), periodLabel);
 
-        if (transactions.isEmpty()) {
+        if (statement.transactions().isEmpty()) {
             sb.append("<p><em>No transactions found for the selected period.</em></p>");
         } else {
-            appendTransactionTable(sb, transactions);
+            appendTransactionTable(sb, statement.transactions(), statement.coversSubAccounts());
         }
 
         sb.append("<div class='summary'>")
-                .append("<p class='outstanding'>Outstanding Balance: ₹")
-                .append(outstanding.setScale(2, RoundingMode.HALF_UP).toPlainString())
+                .append("<p class='outstanding'>")
+                .append(statement.coversSubAccounts() ? "Group Outstanding Balance (incl. sub-accounts): ₹" : "Outstanding Balance: ₹")
+                .append(statement.outstanding().setScale(2, RoundingMode.HALF_UP).toPlainString())
                 .append("</p></div>");
 
         sb.append("<div class='no-print'><button onclick='window.print()' ")
@@ -86,10 +86,14 @@ public class CreditStatementRenderer {
                 """.formatted(escapeHtml(client.getName())));
     }
 
-    private void appendAccountDetails(StringBuilder sb, CreditClient client, String periodLabel) {
+    private void appendAccountDetails(StringBuilder sb, CreditClient client, List<String> subAccountNames, String periodLabel) {
         sb.append("<div class='meta-row'>")
                 .append("<div class='meta-block'>")
                 .append("<p><strong>Account:</strong> ").append(escapeHtml(client.getName())).append("</p>");
+        if (!subAccountNames.isEmpty()) {
+            sb.append("<p><strong>Sub-accounts:</strong> ")
+                    .append(escapeHtml(String.join(", ", subAccountNames))).append("</p>");
+        }
         if (client.getPhone() != null) {
             sb.append("<p><strong>Phone:</strong> ").append(escapeHtml(client.getPhone())).append("</p>");
         }
@@ -103,17 +107,18 @@ public class CreditStatementRenderer {
                 .append("</div></div>");
     }
 
-    private void appendTransactionTable(StringBuilder sb, List<CreditTransactionResponse> transactions) {
+    private void appendTransactionTable(StringBuilder sb, List<CreditTransactionResponse> transactions, boolean showAccount) {
         sb.append("<table><thead><tr>")
-                .append("<th>Date</th><th>Type</th><th>Description</th>")
+                .append("<th>Date</th>")
+                .append(showAccount ? "<th>Account</th>" : "")
+                .append("<th>Type</th><th>Description</th>")
                 .append("<th class='amount'>Debit (₹)</th><th class='amount'>Credit (₹)</th>")
                 .append("<th class='balance'>Balance (₹)</th>")
                 .append("</tr></thead><tbody>");
 
         for (CreditTransactionResponse tx : transactions) {
             String typeClass = "type-" + tx.getType();
-            String debit = "SALE".equals(tx.getType()) || "INTEREST".equals(tx.getType())
-                    ? tx.getAmount().toPlainString() : "";
+            String debit = "PAYMENT".equals(tx.getType()) ? "" : tx.getAmount().toPlainString();
             String credit = "PAYMENT".equals(tx.getType()) ? tx.getAmount().toPlainString() : "";
             String desc = tx.getReference() != null ? escapeHtml(tx.getReference()) : "";
             if (tx.getDetail() != null) {
@@ -125,6 +130,7 @@ public class CreditStatementRenderer {
 
             sb.append("<tr class='").append(typeClass).append("'>")
                     .append("<td>").append(tx.getBusinessDate()).append("</td>")
+                    .append(showAccount ? "<td>" + escapeHtml(tx.getClientName()) + "</td>" : "")
                     .append("<td>").append(tx.getType()).append("</td>")
                     .append("<td>").append(desc).append("</td>")
                     .append("<td class='amount'>").append(debit).append("</td>")

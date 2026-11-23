@@ -4,8 +4,11 @@ import com.ppms.common.dto.PageRequests;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.common.idempotency.IdempotencyService;
+import com.ppms.common.idempotency.IdempotentRequest;
 import com.ppms.user.User;
 import com.ppms.user.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,15 +27,14 @@ import java.util.stream.Collectors;
 /**
  * REST controller for shift handover records.
  *
- * A handover is a formal record created when an outgoing operator hands their
- * open shift to an incoming operator without closing the shift first.
+ * A handover closes the outgoing operator's shift and opens a new one for the incoming operator.
  * It captures whether cash and meter readings were physically verified at the time.
  *
  * GET  /api/pumps/{pumpId}/handovers     — list all handovers for a pump
- * POST /api/pumps/{pumpId}/handovers     — record a new handover
+ * POST /api/pumps/{pumpId}/handovers     — hand a shift over
  *
  * Business rules enforced here:
- * - The outgoing shift must be currently OPEN
+ * - The outgoing shift must be currently OPEN and inside its scheduled window
  * - A handover cannot already exist for the same outgoing shift (1-to-1)
  * - The incoming operator must not already have an open shift
  * - The incoming operator must be different from the outgoing operator
@@ -48,6 +50,7 @@ public class ShiftHandoverController {
     private final ShiftRepository shiftRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final IdempotencyService idempotencyService;
 
     /**
      * GET /api/pumps/{pumpId}/handovers?page=0&size=50
@@ -80,62 +83,60 @@ public class ShiftHandoverController {
 
     /**
      * POST /api/pumps/{pumpId}/handovers
-     * Records a shift handover.
-     *
-     * The outgoing shift must be OPEN. Once the handover is recorded, the outgoing
-     * operator's responsibility for the shift is documented. The shift itself remains
-     * open — the incoming operator will close it later with their own meter readings.
-     *
-     * Business validation + save are handled in ShiftHandoverService under @Transactional
-     * to prevent a TOCTOU race where two concurrent requests both pass the "one handover
-     * per shift" guard and create duplicate records.
+     * Hands an OPEN shift to another operator: the outgoing shift is closed with the readings and payments in
+     * {@code closing} (same rules as a normal close), and a new shift opens for the incoming operator on the same
+     * nozzles and shift window from those readings. Closing takes manager rights, so operators cannot hand over.
+     * An Idempotency-Key header makes a resend after a timeout return the first result instead of handing over twice.
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR')")
-    public ResponseEntity<HandoverResponse> createHandover(
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
+    public ResponseEntity<?> createHandover(
             @PathVariable Long pumpId,
             @Valid @RequestBody CreateHandoverRequest request,
+            @RequestHeader(value = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            HttpServletRequest httpRequest,
             @AuthenticationPrincipal User currentUser) {
+        return idempotencyService.runOnce(
+                IdempotentRequest.of(currentUser.getId(), idempotencyKey, httpRequest, request),
+                () -> handOver(pumpId, request, currentUser));
+    }
 
-        ShiftHandover saved = handoverService.createHandover(pumpId, request, currentUser);
+    private ResponseEntity<HandoverResponse> handOver(Long pumpId, CreateHandoverRequest request, User currentUser) {
+        ShiftHandoverService.HandoverResult result = handoverService.createHandover(pumpId, request, currentUser);
+        ShiftHandover saved = result.handover();
+        ShiftResponse closedShift = result.closedShift();
 
-        log.info("Shift handover recorded: pump={} shift={} outgoing={} incoming={} cashVerified={} meterVerified={}",
-                pumpId, saved.getOutgoingShiftId(), saved.getOutgoingOperatorId(),
-                saved.getIncomingOperatorId(), saved.isPhysicalCashVerified(), saved.isMeterReadingsVerified());
+        log.info("Shift handover recorded: pump={} shift={} outgoing={} incoming={} newShift={} cashVerified={} meterVerified={}",
+                pumpId, saved.getOutgoingShiftId(), saved.getOutgoingOperatorId(), saved.getIncomingOperatorId(),
+                saved.getIncomingShiftId(), saved.isPhysicalCashVerified(), saved.isMeterReadingsVerified());
 
         Map<Long, String> nameById = userRepository
                 .findAllById(java.util.List.of(saved.getIncomingOperatorId(), saved.getOutgoingOperatorId()))
                 .stream().collect(Collectors.toMap(User::getId, User::getFullName));
-        String incomingName = nameById.getOrDefault(saved.getIncomingOperatorId(), "Unknown");
-        String outgoingName  = nameById.getOrDefault(saved.getOutgoingOperatorId(),  "Unknown");
 
+        auditService.log(pumpId, AuditAction.SHIFT_CLOSED,
+                "Shift", closedShift.getId().toString(),
+                "Shift closed at handover: status=" + closedShift.getStatus() +
+                " totalAmountDue=₹" + closedShift.getTotalAmountDue(),
+                currentUser);
         auditService.log(pumpId, AuditAction.HANDOVER_COMPLETED,
                 "ShiftHandover", saved.getId().toString(),
                 "Handover: shift #" + saved.getOutgoingShiftId() +
-                " → operator " + incomingName +
+                " → operator " + nameById.getOrDefault(saved.getIncomingOperatorId(), "Unknown") +
+                " on new shift #" + saved.getIncomingShiftId() +
                 " (cashVerified=" + saved.isPhysicalCashVerified() +
                 ", meterVerified=" + saved.isMeterReadingsVerified() + ")",
                 currentUser);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                HandoverResponse.builder()
-                        .id(saved.getId())
-                        .pumpId(saved.getPumpId())
-                        .outgoingShiftId(saved.getOutgoingShiftId())
-                        .outgoingOperatorId(saved.getOutgoingOperatorId())
-                        .outgoingOperatorName(outgoingName)
-                        .incomingOperatorId(saved.getIncomingOperatorId())
-                        .incomingOperatorName(incomingName)
-                        .physicalCashVerified(saved.isPhysicalCashVerified())
-                        .meterReadingsVerified(saved.isMeterReadingsVerified())
-                        .notes(saved.getNotes())
-                        .handoverTime(saved.getHandoverTime())
-                        .createdAt(saved.getCreatedAt())
-                        .build());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(saved, nameById, closedShift.getStatus()));
     }
 
     private HandoverResponse toResponse(ShiftHandover h, Map<Long, String> nameById) {
+        return toResponse(h, nameById, null);
+    }
+
+    private HandoverResponse toResponse(ShiftHandover h, Map<Long, String> nameById, String outgoingShiftStatus) {
         return HandoverResponse.builder()
                 .id(h.getId())
                 .pumpId(h.getPumpId())
@@ -144,6 +145,8 @@ public class ShiftHandoverController {
                 .outgoingOperatorName(nameById.getOrDefault(h.getOutgoingOperatorId(), "Unknown"))
                 .incomingOperatorId(h.getIncomingOperatorId())
                 .incomingOperatorName(nameById.getOrDefault(h.getIncomingOperatorId(), "Unknown"))
+                .incomingShiftId(h.getIncomingShiftId())
+                .outgoingShiftStatus(outgoingShiftStatus)
                 .physicalCashVerified(h.isPhysicalCashVerified())
                 .meterReadingsVerified(h.isMeterReadingsVerified())
                 .notes(h.getNotes())

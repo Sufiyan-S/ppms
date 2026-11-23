@@ -8,8 +8,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Daily clean-up of notifications that were read more than 90 days ago, so the table does not grow forever.
- * Unread notifications are never deleted.
+ * Daily clean-up of notifications that someone first read more than 90 days ago, so the table does not grow forever.
+ * Notifications nobody has read are never deleted.
  */
 @Slf4j
 @Component

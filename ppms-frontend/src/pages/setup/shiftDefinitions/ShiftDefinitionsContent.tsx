@@ -1,15 +1,20 @@
 import { useState } from 'react'
 import { withToggled } from '../../../utils/setToggle'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { ChevronDown, ChevronRight, Moon } from 'lucide-react'
 import { parseApiError } from '../../../utils/apiError'
 import { shiftDefinitionApi } from '../../../api/shiftDefinitionApi'
 import { localDateInputValue } from '../../../utils/date'
 import { IconButton } from '../../../components/IconButton'
+import { StatusBadge } from '../../../components/StatusBadge'
 import { onActivateKey } from '../../../utils/keyboard'
+import { FormField } from '../../../components/FormField'
+import { LoadingButton } from '../../../components/LoadingButton'
 import { CreateShiftBatchForm } from './CreateShiftBatchForm'
 
 export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
+  const { t } = useTranslation(['setup', 'common'])
   const qc = useQueryClient()
 
   const { data: allDefs = [], isLoading } = useQuery({
@@ -73,7 +78,7 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
     },
     onError: (err) => {
       setConfirmDeleteKey(null)
-      setActionError(parseApiError(err, 'Failed to delete shift schedule'))
+      setActionError(parseApiError(err, t('shiftDefs.deleteFailed')))
     },
   })
 
@@ -81,6 +86,7 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
   const [disablingDate, setDisablingDate] = useState<string | null>(null) // effectiveFrom of group being disabled
   const [disableFromToday, setDisableFromToday] = useState(true)
   const [disablePickedDate, setDisablePickedDate] = useState('')
+  const [disableDateError, setDisableDateError] = useState<string | null>(null)
 
   const todayStr = localDateInputValue()
 
@@ -96,12 +102,14 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
     },
     onError: (err) => {
       setDisablingDate(null)
-      setActionError(parseApiError(err, 'Failed to disable shift schedule'))
+      setActionError(parseApiError(err, t('shiftDefs.disableFailed')))
     },
   })
 
   const openDisable = (date: string) => {
     setActionError(null)
+    setConfirmDeleteKey(null)
+    setDisableDateError(null)
     setDisableFromToday(true)
     setDisablePickedDate(date) // reuse as default min, will be overridden if user picks
     setDisablingDate(date)
@@ -110,18 +118,18 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
   const confirmDisable = () => {
     if (!disablingDate) return
     const disableDate = disableFromToday ? todayStr : disablePickedDate
-    if (!disableDate) { setActionError('Please select a disable date'); return }
+    if (!disableDate) { setDisableDateError(t('shiftDefs.selectDisableDate')); return }
     disableMutation.mutate({ effectiveFrom: disablingDate, disableDate })
   }
 
-  if (isLoading) return <p className="text-xs text-slate-500 py-2">Loading…</p>
+  if (isLoading) return <p className="text-xs text-ink-3 py-2">{t('common:loading.short')}</p>
 
   return (
     <div className="space-y-4">
 
       {/* Existing groups */}
       {sortedGroupKeys.length === 0 && !showForm && (
-        <p className="text-xs text-slate-500">No shift definitions yet. Add your first schedule below.</p>
+        <p className="text-xs text-ink-3">{t('shiftDefs.empty')}</p>
       )}
 
       {sortedGroupKeys.map(groupKey => {
@@ -143,116 +151,110 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
                   onKeyDown={onActivateKey(() => toggleCollapsed(groupKey))}
                 >
                 {isCollapsed
-                  ? <ChevronRight size={14} strokeWidth={2} className="text-slate-500" />
-                  : <ChevronDown size={14} strokeWidth={2} className="text-slate-500" />
+                  ? <ChevronRight size={14} strokeWidth={2} className="text-ink-3" />
+                  : <ChevronDown size={14} strokeWidth={2} className="text-ink-3" />
                 }
-                <span className="text-xs font-semibold text-slate-700">
+                <span className="text-xs font-semibold text-ink">
                   {effectiveFromDate}
-                  {defs[0]?.effectiveTo ? ` – ${defs[0].effectiveTo}` : ' onwards'}
+                  {defs[0]?.effectiveTo ? ` – ${defs[0].effectiveTo}` : t('shiftDefs.onwards')}
                 </span>
                 {isActive
-                  ? <span className="text-[10px] font-medium bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Active</span>
-                  : <span className="text-[10px] font-medium bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">Disabled</span>
+                  ? <StatusBadge tone="ok" label={t('shiftDefs.active')} />
+                  : <StatusBadge tone="neutral" label={t('tanks.disabled')} />
                 }
               </div>
-              <div className="flex items-center gap-3">
-                {/* Disable button — only for open-ended (active) groups */}
-                {isActive && (
-                  confirmDeleteKey === groupKey ? null : (
-                    <button
-                      onClick={() => openDisable(effectiveFromDate)}
-                      className="text-xs text-amber-600 hover:text-amber-800 font-medium"
-                    >
-                      Disable
-                    </button>
-                  )
+              <div className="flex items-center gap-1">
+                {isActive && confirmDeleteKey !== groupKey && disablingDate !== effectiveFromDate && (
+                  <button type="button" onClick={() => openDisable(effectiveFromDate)} className="ui-btn ui-btn-ghost ui-btn-compact">
+                    {t('common:actions.disable')}
+                  </button>
                 )}
-                {/* Delete button with confirm — available for all groups (active or disabled) */}
-                {confirmDeleteKey === groupKey ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-red-600">Delete this group?</span>
-                    <button
-                      onClick={() => deleteMutation.mutate(groupKey)}
-                      disabled={deleteMutation.isPending}
-                      className="ui-btn ui-btn-danger min-h-0 px-2 py-0.5 text-xs disabled:opacity-40"
-                    >
-                      {deleteMutation.isPending ? 'Deleting…' : 'Yes, delete'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteKey(null)}
-                      className="ui-btn ui-btn-secondary min-h-0 px-2 py-0.5 text-xs"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
+                {confirmDeleteKey !== groupKey && (
                   <button
-                    onClick={() => { setActionError(null); setConfirmDeleteKey(groupKey) }}
-                    className="text-xs text-red-500 hover:text-red-700 font-medium"
+                    type="button"
+                    onClick={() => { setActionError(null); setDisablingDate(null); setConfirmDeleteKey(groupKey) }}
+                    className="ui-btn ui-btn-ghost ui-btn-compact"
                   >
-                    Delete group
+                    {t('shiftDefs.deleteGroup')}
                   </button>
                 )}
               </div>
             </div>
+            {confirmDeleteKey === groupKey && (
+              <div className="space-y-3 border-t border-border bg-surface-sunken px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-ink">{t('shiftDefs.deletePrompt')}</p>
+                  <p className="mt-0.5 text-xs text-ink-3">{t('shiftDefs.deleteConsequence')}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setConfirmDeleteKey(null)} className="ui-btn ui-btn-secondary ui-btn-compact">
+                    {t('common:actions.cancel')}
+                  </button>
+                  <LoadingButton
+                    type="button"
+                    isLoading={deleteMutation.isPending}
+                    loadingLabel={t('shiftDefs.deleting')}
+                    onClick={() => deleteMutation.mutate(groupKey)}
+                    className="ui-btn-danger ui-btn-compact"
+                  >
+                    {t('shiftDefs.confirmDelete')}
+                  </LoadingButton>
+                </div>
+              </div>
+            )}
             {/* Collapsible body — disable form + shift rows */}
             {!isCollapsed && (<>
-            {/* Disable inline form */}
             {disablingDate === effectiveFromDate && (
-              <div className="px-4 py-3 bg-amber-50 border-t border-amber-200 space-y-3">
-                <p className="text-xs font-medium text-amber-800">
-                  Disable this schedule — operators will not be able to open new shifts after the selected date.
-                </p>
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="space-y-3 border-t border-border bg-surface-sunken px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-ink">{t('shiftDefs.disableTitle')}</p>
+                  <p className="mt-0.5 text-xs text-ink-3">{t('shiftDefs.disableExplanation')}</p>
+                </div>
+                <label className="ui-inline-check">
                   <input
                     type="checkbox"
                     checked={disableFromToday}
-                    onChange={e => setDisableFromToday(e.target.checked)}
-                    className="w-3.5 h-3.5 accent-amber-600"
+                    onChange={e => { setDisableFromToday(e.target.checked); setDisableDateError(null) }}
                   />
-                  <span className="text-xs text-slate-700">Disable from today ({todayStr})</span>
+                  <span>{t('shiftDefs.disableFromToday', { date: todayStr })}</span>
                 </label>
                 {!disableFromToday && (
-                  <div>
-                    <label className="block">
-                      <span className="ui-label">Last active date</span>
-                      <input
-                        type="date"
-                        value={disablePickedDate}
-                        min={todayStr}
-                        onChange={e => setDisablePickedDate(e.target.value)}
-                        className="text-sm"
-                      />
-                    </label>
-                    <p className="text-xs text-slate-500 mt-1">The schedule will remain active until this date.</p>
-                  </div>
+                  <FormField label={t('shiftDefs.lastActiveDate')} help={t('shiftDefs.activeUntilHint')}
+                    error={disableDateError ?? undefined} className="max-w-xs">
+                    <input
+                      type="date"
+                      value={disablePickedDate}
+                      min={todayStr}
+                      onChange={e => { setDisablePickedDate(e.target.value); setDisableDateError(null) }}
+                      className="text-sm"
+                    />
+                  </FormField>
                 )}
-                <div className="flex gap-2">
-                  <button
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setDisablingDate(null)} className="ui-btn ui-btn-secondary ui-btn-compact">
+                    {t('common:actions.cancel')}
+                  </button>
+                  <LoadingButton
+                    type="button"
+                    isLoading={disableMutation.isPending}
+                    loadingLabel={t('nozzles.disable.disabling')}
                     onClick={confirmDisable}
-                    disabled={disableMutation.isPending}
-                    className="ui-btn min-h-0 px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-40"
+                    className="ui-btn-danger ui-btn-compact"
                   >
-                    {disableMutation.isPending ? 'Disabling…' : 'Confirm Disable'}
-                  </button>
-                  <button
-                    onClick={() => setDisablingDate(null)}
-                    className="ui-btn ui-btn-secondary min-h-0 px-3 py-1.5 text-xs"
-                  >
-                    Cancel
-                  </button>
+                    {t('shiftDefs.confirmDisable')}
+                  </LoadingButton>
                 </div>
               </div>
             )}
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-border">
               {defs.map(d => (
                 <div key={d.id} className="px-4 py-2.5 flex items-center gap-3">
-                  <span className="text-xs font-medium text-slate-600 w-4">#{d.sortOrder}</span>
-                  <span className="text-sm font-medium text-slate-800 flex-1">{d.name}</span>
-                  <span className="text-xs text-slate-500">{d.windowLabel}</span>
+                  <span className="text-xs font-medium text-ink-2 w-4">#{d.sortOrder}</span>
+                  <span className="text-sm font-medium text-ink flex-1">{d.name}</span>
+                  <span className="text-xs text-ink-3">{d.windowLabel}</span>
                   {d.isNightShift && (
-                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Night</span>
+                    <StatusBadge tone="info" icon={Moon} label={t('shiftDefs.night')} />
                   )}
                 </div>
               ))}
@@ -264,9 +266,9 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
 
       {actionError && (
         <div role="alert" className="ui-alert ui-alert-danger flex items-start gap-2">
-          <span className="text-red-600 text-xs flex-1">{actionError}</span>
-          <IconButton onClick={() => setActionError(null)} className="ui-btn ui-btn-ghost text-sm leading-none text-red-400 hover:text-red-600"
-            label="Dismiss error"
+          <span className="text-bad text-xs flex-1">{actionError}</span>
+          <IconButton onClick={() => setActionError(null)} className="ui-btn ui-btn-ghost text-sm leading-none text-bad hover:text-bad-strong"
+            label={t('shiftDefs.dismissError')}
             icon={'×'}
           />
         </div>
@@ -279,9 +281,9 @@ export function ShiftDefinitionsContent({ pumpId }: { pumpId: number }) {
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-blue-600 hover:text-blue-800"
+          className="ui-btn ui-btn-ghost min-h-0 px-0 py-0 text-xs text-primary hover:text-primary-strong"
         >
-          + Add new shift schedule
+          {t('shiftDefs.addSchedule')}
         </button>
       )}
     </div>

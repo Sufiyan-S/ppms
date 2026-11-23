@@ -1,15 +1,16 @@
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChevronRight, Gauge, IndianRupee, Zap } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { AlertTriangle, ChevronRight, Clock, Gauge, IndianRupee, Zap } from 'lucide-react'
 import { pumpApi, type PumpOverviewSummary } from '../../../api/pumpApi'
 import { Reveal } from '../../../components/Reveal'
 import { SkeletonRows, SkeletonStat } from '../../../components/Skeleton'
+import { MoneyText } from '../../../components/AmountText'
+import { StatusBadge } from '../../../components/StatusBadge'
+import { DashboardColumns, KpiRow } from '../../../components/layout/DashboardGrid'
+import { PageSection } from '../../../components/layout/PageSection'
 import { usePumpStore } from '../../../store/usePumpStore'
-import { fmtAmt } from './overviewFormat'
 import { StatCard } from './StatCard'
-
-function plural(count: number, word: string) {
-  return `${count} ${word}${count !== 1 ? 's' : ''}`
-}
 
 /** Switches the Overview between the selected pump and all pumps; hidden unless the user has two or more pumps. */
 export function OverviewScopeToggle({ pumpCount, selectedPumpName, showAllPumps, onShowAllPumpsChange }: {
@@ -18,17 +19,18 @@ export function OverviewScopeToggle({ pumpCount, selectedPumpName, showAllPumps,
   showAllPumps: boolean
   onShowAllPumpsChange: (showAllPumps: boolean) => void
 }) {
+  const { t } = useTranslation(['dashboard', 'common'])
   if (pumpCount < 2) return null
 
   return (
-    <div role="group" aria-label="Overview scope" className="ui-dashboard-pump-switcher">
+    <div role="group" aria-label={t('allPumps.scope')} className="ui-dashboard-pump-switcher">
       <button
         type="button"
         onClick={() => onShowAllPumpsChange(true)}
         aria-pressed={showAllPumps}
         className={`ui-dashboard-pump-chip ${showAllPumps ? 'ui-dashboard-pump-chip--active' : ''}`}
       >
-        All pumps
+        {t('common:pumpScope.allPumps')}
       </button>
       <button
         type="button"
@@ -36,53 +38,51 @@ export function OverviewScopeToggle({ pumpCount, selectedPumpName, showAllPumps,
         aria-pressed={!showAllPumps}
         className={`ui-dashboard-pump-chip ${showAllPumps ? '' : 'ui-dashboard-pump-chip--active'}`}
       >
-        {selectedPumpName ?? 'Selected pump'}
+        {selectedPumpName ?? t('common:pumpScope.selectedPump')}
       </button>
     </div>
   )
 }
 
 function PumpRow({ pump, onSelect }: { pump: PumpOverviewSummary; onSelect: (pumpId: number) => void }) {
+  const { t } = useTranslation(['dashboard', 'common'])
   return (
     <button
       type="button"
       onClick={() => onSelect(pump.pumpId)}
-      className="ui-record-row w-full text-left cursor-pointer transition-colors hover:bg-slate-50 focus-visible:bg-slate-50"
+      className="ui-record-row w-full text-left cursor-pointer transition-colors hover:bg-bg focus-visible:bg-bg"
     >
       <div className="ui-record-row__main">
         <div className="ui-record-row__title">
-          <span className="text-sm font-semibold text-slate-900">{pump.name}</span>
+          <span className="text-sm font-semibold text-ink">{pump.name}</span>
           {pump.overdueShiftCount > 0 && (
-            <span className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-              {plural(pump.overdueShiftCount, 'overdue shift')}
-            </span>
+            <StatusBadge tone="warn" icon={Clock} label={t('allPumps.overdueShifts', { count: pump.overdueShiftCount })} />
           )}
           {pump.lowStockTankCount > 0 && (
-            <span className="text-xs bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded-full font-medium">
-              {plural(pump.lowStockTankCount, 'low tank')}
-            </span>
+            <StatusBadge tone="bad" icon={Gauge} label={t('allPumps.lowTanks', { count: pump.lowStockTankCount })} />
           )}
           {pump.fuelPricesStale && (
-            <span className="inline-flex items-center gap-1 text-xs bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded-full font-medium">
-              <AlertTriangle size={11} strokeWidth={2.2} aria-hidden="true" />
-              Prices not updated today
-            </span>
+            <StatusBadge tone="bad" icon={AlertTriangle} label={t('allPumps.pricesNotUpdated')} />
           )}
         </div>
         <div className="ui-record-row__meta">
-          <span>{plural(pump.openShiftCount, 'active shift')}</span>
+          <span>{t('allPumps.activeShifts', { count: pump.openShiftCount })}</span>
         </div>
       </div>
       <div className="ui-record-row__actions">
-        <span className="text-base font-bold tabular-nums text-slate-900">{fmtAmt(pump.todaySales)}</span>
-        <ChevronRight size={16} className="text-slate-400" aria-hidden="true" />
+        <MoneyText value={pump.todaySales} className="text-base font-bold text-ink" />
+        <ChevronRight size={16} className="text-ink-3" aria-hidden="true" />
       </div>
     </button>
   )
 }
 
-/** Today's totals across all of the user's pumps, with one row per pump that opens that pump's own overview. */
-export function AllPumpsOverview({ onPumpSelected }: { onPumpSelected: () => void }) {
+/**
+ * Today's totals across all of the user's pumps, then the pump list (one row per pump, opening that pump's own overview)
+ * beside the attention inbox on desktop.
+ */
+export function AllPumpsOverview({ onPumpSelected, attention }: { onPumpSelected: () => void; attention?: ReactNode }) {
+  const { t } = useTranslation(['dashboard', 'common'])
   const setSelectedPumpId = usePumpStore(state => state.setSelectedPumpId)
 
   const { data: overview, isLoading, isError } = useQuery({
@@ -99,15 +99,15 @@ export function AllPumpsOverview({ onPumpSelected }: { onPumpSelected: () => voi
   if (isError) {
     return (
       <div className="ui-alert ui-alert-warning">
-        Figures for your pumps could not be loaded. Refresh to try again.
+        {t('allPumps.loadError')}
       </div>
     )
   }
 
   if (isLoading || !overview) {
     return (
-      <div className="space-y-5" aria-busy="true" aria-label="Loading all pumps">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="space-y-5" aria-busy="true" aria-label={t('allPumps.loading')}>
+        <div className="ui-kpi-row">
           <SkeletonStat />
           <SkeletonStat />
           <SkeletonStat />
@@ -123,57 +123,56 @@ export function AllPumpsOverview({ onPumpSelected }: { onPumpSelected: () => voi
   const { totals, pumps } = overview
 
   return (
-    <div className="space-y-5">
+    <>
       <Reveal delay={150}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiRow label={t('stats.label')}>
           <StatCard
-            label="Active Shifts"
+            label={t('stats.activeShifts')}
             value={totals.openShiftCount}
-            sub={totals.overdueShiftCount > 0 ? `${plural(totals.overdueShiftCount, 'shift')} overdue` : 'None overdue'}
-            color="bg-emerald-500"
+            sub={totals.overdueShiftCount > 0 ? t('stats.shiftsOverdue', { count: totals.overdueShiftCount }) : t('stats.noneOverdue')}
+            color="bg-ok"
             icon={Zap}
             alert={totals.overdueShiftCount > 0}
           />
           <StatCard
-            label="Today's Revenue"
+            label={t('stats.todaysRevenue')}
             value={totals.todaySales}
-            format={fmtAmt}
-            sub={`Across ${plural(pumps.length, 'pump')}`}
-            color="bg-blue-500"
+            money
+            sub={t('stats.acrossPumps', { count: pumps.length })}
+            color="bg-primary"
             icon={IndianRupee}
           />
           <StatCard
-            label="Low Stock Tanks"
+            label={t('stats.lowStockTanks')}
             value={totals.lowStockTankCount}
-            sub={totals.lowStockTankCount === 0 ? 'All tanks OK' : 'Need attention'}
-            color={totals.lowStockTankCount > 0 ? 'bg-red-500' : 'bg-slate-400'}
+            sub={totals.lowStockTankCount === 0 ? t('stats.allTanksOk') : t('stats.needAttention')}
+            color={totals.lowStockTankCount > 0 ? 'bg-bad' : 'bg-ink-3'}
             icon={Gauge}
             alert={totals.lowStockTankCount > 0}
           />
           <StatCard
-            label="Stale Fuel Prices"
+            label={t('stats.staleFuelPrices')}
             value={totals.stalePricePumpCount}
-            sub={totals.stalePricePumpCount === 0 ? 'All prices updated today' : 'Pumps to update in Setup'}
-            color={totals.stalePricePumpCount > 0 ? 'bg-red-500' : 'bg-slate-400'}
+            sub={totals.stalePricePumpCount === 0 ? t('stats.allPricesUpdated') : t('stats.pumpsToUpdate')}
+            color={totals.stalePricePumpCount > 0 ? 'bg-bad' : 'bg-ink-3'}
             icon={AlertTriangle}
             alert={totals.stalePricePumpCount > 0}
           />
-        </div>
+        </KpiRow>
       </Reveal>
 
-      <Reveal delay={195}>
-        <section aria-label="Pumps" className="ui-card p-0 overflow-hidden">
-          <div className="ui-toolbar">
-            <p className="ui-toolbar-title">Pumps</p>
-            <p className="text-xs text-slate-500">Select a pump to open its overview</p>
-          </div>
-          <div className="ui-record-list">
-            {pumps.map(pump => (
-              <PumpRow key={pump.pumpId} pump={pump} onSelect={selectPump} />
-            ))}
-          </div>
-        </section>
-      </Reveal>
-    </div>
+      <DashboardColumns>
+        {attention}
+        <Reveal delay={195}>
+          <PageSection title={t('allPumps.pumps')} description={t('allPumps.selectHint')} flush>
+            <div className="ui-record-list">
+              {pumps.map(pump => (
+                <PumpRow key={pump.pumpId} pump={pump} onSelect={selectPump} />
+              ))}
+            </div>
+          </PageSection>
+        </Reveal>
+      </DashboardColumns>
+    </>
   )
 }

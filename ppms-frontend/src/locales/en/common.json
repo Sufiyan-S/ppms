@@ -1,0 +1,181 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "dismiss": "Dismiss",
+    "discard": "Discard",
+    "keepEditing": "Keep editing",
+    "yes": "Yes",
+    "no": "No",
+    "delete": "Delete",
+    "reject": "Reject",
+    "rejecting": "Rejecting…",
+    "exportCsv": "Export CSV",
+    "save": "Save",
+    "saving": "Saving…",
+    "edit": "Edit",
+    "add": "Add",
+    "done": "Done",
+    "submit": "Submit",
+    "approve": "Approve",
+    "review": "Review",
+    "generate": "Generate",
+    "generating": "Generating…",
+    "printPdf": "Print PDF",
+    "enable": "Enable",
+    "disable": "Disable",
+    "clear": "Clear",
+    "clearFilters": "Clear filters"
+  },
+  "language": {
+    "label": "Language",
+    "draftNote": "Translation in review",
+    "saveFailed": "Could not save your language. Please try again."
+  },
+  "loading": {
+    "app": "Loading...",
+    "page": "Loading page…",
+    "short": "Loading…"
+  },
+  "time": {
+    "justNow": "just now",
+    "secondsAgo": "{{value}}s ago",
+    "minutesAgo": "{{value}}m ago",
+    "hoursAgo": "{{value}}h ago",
+    "daysAgo": "{{value}}d ago",
+    "refreshing": "Refreshing…",
+    "updated": "Updated {{ago}}"
+  },
+  "confirm": {
+    "deletePrompt": "Delete?"
+  },
+  "discardDialog": {
+    "title": "Discard what you entered?",
+    "body": "The details you have typed in this form will be lost."
+  },
+  "rejectDialog": {
+    "reason": "Reason",
+    "help": "For example: no bill attached. Saved with the rejection.",
+    "missingReason": "Enter a reason for rejecting."
+  },
+  "pagination": {
+    "showing": "Showing",
+    "ofTotal": "of {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "rowsPerPage": "Rows per page",
+    "prev": "Prev",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{total}}"
+  },
+  "select": {
+    "placeholder": "Select…",
+    "searchLabel": "Search {{label}}",
+    "searchOptions": "Search options",
+    "searchPlaceholder": "Type to search…",
+    "noResults": "No results found",
+    "resultCount_one": "{{count}} result",
+    "resultCount_other": "{{count}} results"
+  },
+  "offline": "You're offline. Changes can't be saved until the connection is back.",
+  "notifications": {
+    "title": "Notifications",
+    "bellUnread": "Notifications, {{count}} unread",
+    "unreadCount": "{{count}} unread",
+    "showingNewest": " · showing newest {{count}}",
+    "markShownRead": "Mark shown read",
+    "markAllRead": "Mark all read",
+    "empty": "No notifications",
+    "allCaughtUp": "You're all caught up",
+    "unreadPrefix": "Unread: ",
+    "identicalAlerts": "({{count}} identical alerts)",
+    "viewAll": "View all notifications",
+    "read": "Read",
+    "unread": "Unread"
+  },
+  "csvExport": {
+    "exported_one": "Exported {{count}} row to {{filename}}",
+    "exported_other": "Exported {{count}} rows to {{filename}}",
+    "failed": "Could not export {{filename}}. Try again."
+  },
+  "draftRestored": "Resumed your unsaved entries from {{time}}",
+  "periodChange": {
+    "noChange": "No change vs previous period",
+    "upFromZero": "Up from zero vs previous period",
+    "downFromZero": "Down from zero vs previous period",
+    "up": "{{percent}}% up vs previous period",
+    "down": "{{percent}}% down vs previous period"
+  },
+  "datePresets": {
+    "groupLabel": "Quick date ranges",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This week",
+    "thisMonth": "This month",
+    "lastMonth": "Last month",
+    "fyToDate": "FY to date"
+  },
+  "badges": {
+    "short": "SHORT",
+    "over": "OVER",
+    "balanced": "Balanced",
+    "pendingApproval": "Pending approval",
+    "rejected": "Rejected",
+    "voided": "Voided",
+    "waived": "Waived",
+    "sale": "Sale",
+    "shopSale": "Shop sale",
+    "interest": "Interest",
+    "paid": "Paid",
+    "overdue": "Overdue"
+  },
+  "passwordInput": {
+    "show": "Show password"
+  },
+  "fields": {
+    "optionalSuffix": "(optional)",
+    "optional": "Optional",
+    "notes": "Notes",
+    "reason": "Reason",
+    "from": "From",
+    "to": "To",
+    "fromDate": "From date",
+    "toDate": "To date",
+    "total": "Total"
+  },
+  "paymentMethods": {
+    "CASH": "Cash",
+    "UPI": "UPI",
+    "CARD": "Card",
+    "FLEET_CARD": "Fleet Card",
+    "CREDIT": "Credit",
+    "BANK_TRANSFER": "Bank transfer",
+    "OTHER": "Other"
+  },
+  "notices": {
+    "noPumpTitle": "No pump selected",
+    "noPump": "No pump selected. Use the pump selector in the top navigation bar.",
+    "notAssigned": "You are not assigned to any pump. Ask the Owner or Admin to assign you.",
+    "goBackRetry": "{{error}} Go back to modify the data and try again."
+  },
+  "pumpScope": {
+    "allPumps": "All pumps",
+    "selectedPump": "Selected pump"
+  },
+  "duration": {
+    "minutes": "{{minutes}}m",
+    "hoursMinutes": "{{hours}}h {{minutes}}m"
+  },
+  "shiftNumber": "Shift #{{id}}",
+  "gst": {
+    "gstinFormat": "GSTIN must be 15 characters in the format 27ABCDE1234F1Z5.",
+    "gstinPlaceholder": "e.g. 27ABCDE1234F1Z5"
+  },
+  "layout": {
+    "breadcrumbs": "Breadcrumb",
+    "backToList": "Back to list"
+  },
+  "form": {
+    "stillNeeded": "Still needed"
+  }
+}

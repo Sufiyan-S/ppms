@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { canAccessPage, getDefaultPath } from '../permissions/permissions'
+import { CHANGE_PASSWORD_PATH, canAccessPage, getDefaultPath } from '../permissions/permissions'
 import type { ReactNode } from 'react'
 
 interface Props {
@@ -21,6 +21,7 @@ interface Props {
  *
  * Flow:
  *   1. Not logged in → /login
+ *   1b. Password set by someone else and not yet changed → /change-password
  *   2. Logged in as SUPER_ADMIN on a non-SUPER_ADMIN route → /super-admin
  *   3. Logged in as non-SUPER_ADMIN on a SUPER_ADMIN route → /dashboard
  *   4. `page` prop provided and role not allowed → role's default landing page
@@ -31,6 +32,10 @@ export default function ProtectedRoute({ children, superAdminOnly = false, page 
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  if (user?.mustChangePassword) {
+    return <Navigate to={CHANGE_PASSWORD_PATH} replace />
   }
 
   if (superAdminOnly && user?.role !== 'SUPER_ADMIN') {

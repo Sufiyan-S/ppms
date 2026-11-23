@@ -97,6 +97,7 @@ public class ShiftPlanController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStart) {
         return planningService.getPlan(pumpId, weekStart)
                 .orElseThrow(() -> new com.ppms.common.exception.ResourceNotFoundException(
+                        com.ppms.common.exception.EntityType.SHIFT_PLAN,
                         "No plan found for week " + weekStart));
     }
 

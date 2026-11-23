@@ -1,12 +1,16 @@
 package com.ppms.credit;
 
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.exception.ErrorCodes;
 import com.ppms.invoice.GstFields;
+import com.ppms.user.User;
+import com.ppms.user.UserRole;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -26,15 +30,17 @@ public class CreditClientController {
     private final CreditInterestService interestService;
     private final CreditClientService creditClientService;
     private final CreditClientAccessService clientAccessService;
+    private final CreditAccountPolicyService creditAccountPolicyService;
 
     /**
      * GET /api/pumps/{pumpId}/credit-clients
      * Returns all credit clients for a pump, sorted by name (parents first, then sub-accounts).
      * Each response includes hierarchy metadata: parentClientId, parentClientName, isParent.
-     * All authenticated users can read — operators need the list to select from when closing a shift.
+     * All authenticated users can read — operators need the list to select from when closing a shift, so they get
+     * only what the picker shows (see {@link CreditClientPickerResponse}); other roles get the full account.
      */
     @GetMapping
-    public ResponseEntity<List<CreditClientResponse>> getClients(@PathVariable Long pumpId) {
+    public ResponseEntity<List<?>> getClients(@PathVariable Long pumpId, @AuthenticationPrincipal User currentUser) {
         List<CreditClient> allClients = creditClientRepository.findByPumpIdOrderByNameAsc(pumpId);
 
         // Build a name-by-ID map for resolving parent names without N+1 queries
@@ -46,6 +52,17 @@ public class CreditClientController {
                 .filter(c -> c.getParentClientId() != null)
                 .map(CreditClient::getParentClientId)
                 .collect(Collectors.toSet());
+
+        if (currentUser.getRole() == UserRole.OPERATOR) {
+            return ResponseEntity.ok(allClients.stream()
+                    .sorted(Comparator
+                            .comparing((CreditClient c) -> c.isActive() ? 0 : 1)
+                            .thenComparing(CreditClient::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                            .thenComparing(CreditClient::getName, String.CASE_INSENSITIVE_ORDER))
+                    .map(c -> CreditClientPickerResponse.from(c, nameById,
+                            c.getParentClientId() == null && idsWithChildren.contains(c.getId())))
+                    .toList());
+        }
 
         // Sub-accounts always share their parent's pump, so every child is in allClients.
         Map<Long, BigDecimal> ownOutstandingById = interestService.computeOutstandingBatch(
@@ -76,6 +93,16 @@ public class CreditClientController {
     }
 
     /**
+     * GET /api/pumps/{pumpId}/credit-clients/credit-standing
+     * Whether each client could take a credit sale now, and how much credit its group has left.
+     * All authenticated users can read — operators pick clients for credit sales.
+     */
+    @GetMapping("/credit-standing")
+    public ResponseEntity<List<CreditClientStandingResponse>> getCreditStanding(@PathVariable Long pumpId) {
+        return ResponseEntity.ok(List.copyOf(creditAccountPolicyService.creditStandingOfPumpClients(pumpId).values()));
+    }
+
+    /**
      * POST /api/pumps/{pumpId}/credit-clients
      * Creates a new credit client for a pump.
      * If parentClientId is provided, the new client becomes a sub-account (max 1 level deep).
@@ -93,16 +120,22 @@ public class CreditClientController {
         if (parentClientId == null) {
             // Root client — name must be unique per pump among root accounts
             if (creditClientRepository.existsByPumpIdAndNameIgnoreCaseAndParentClientIdIsNull(pumpId, trimmedName)) {
-                throw new BusinessException("A client named \"" + trimmedName + "\" already exists.");
+                throw new BusinessException(ErrorCodes.CREDIT_CLIENT_NAME_TAKEN,
+                        Map.of("clientName", trimmedName),
+                        "A client named \"" + trimmedName + "\" already exists.");
             }
         } else {
             // Sub-account — validate parent first, then check uniqueness within that parent
             CreditClient parent = clientAccessService.requireClientForPump(pumpId, parentClientId);
             if (parent.getParentClientId() != null) {
-                throw new BusinessException("Cannot create a sub-account under another sub-account. Only one level of nesting is allowed.");
+                throw new BusinessException(ErrorCodes.CREDIT_SUB_ACCOUNT_NESTING_NOT_ALLOWED,
+                        Map.of(),
+                        "Cannot create a sub-account under another sub-account. Only one level of nesting is allowed.");
             }
             if (creditClientRepository.existsByParentClientIdAndNameIgnoreCase(parentClientId, trimmedName)) {
-                throw new BusinessException("A sub-account named \"" + trimmedName + "\" already exists under this parent.");
+                throw new BusinessException(ErrorCodes.CREDIT_SUB_ACCOUNT_NAME_TAKEN,
+                        Map.of("clientName", trimmedName),
+                        "A sub-account named \"" + trimmedName + "\" already exists under this parent.");
             }
         }
 
@@ -116,7 +149,9 @@ public class CreditClientController {
                     // Sub-account — only conflict if the phone belongs to a client outside this group
                     : creditClientRepository.existsPhoneConflictForSubAccount(pumpId, phone, parentClientId);
             if (conflict) {
-                throw new BusinessException("Phone number " + phone + " is already registered to another client group in this pump.");
+                throw new BusinessException(ErrorCodes.CREDIT_CLIENT_PHONE_TAKEN,
+                        Map.of(),
+                        "Phone number " + phone + " is already registered to another client group in this pump.");
             }
         }
 
@@ -163,12 +198,16 @@ public class CreditClientController {
                 if (client.getParentClientId() == null) {
                     // Root client — name must be unique per pump among root accounts
                     if (creditClientRepository.existsByPumpIdAndNameIgnoreCaseAndParentClientIdIsNull(pumpId, trimmedName)) {
-                        throw new BusinessException("A client named \"" + trimmedName + "\" already exists.");
+                        throw new BusinessException(ErrorCodes.CREDIT_CLIENT_NAME_TAKEN,
+                                Map.of("clientName", trimmedName),
+                                "A client named \"" + trimmedName + "\" already exists.");
                     }
                 } else {
                     // Sub-account — name must be unique within the same parent
                     if (creditClientRepository.existsByParentClientIdAndNameIgnoreCase(client.getParentClientId(), trimmedName)) {
-                        throw new BusinessException("A sub-account named \"" + trimmedName + "\" already exists under this parent.");
+                        throw new BusinessException(ErrorCodes.CREDIT_SUB_ACCOUNT_NAME_TAKEN,
+                                Map.of("clientName", trimmedName),
+                                "A sub-account named \"" + trimmedName + "\" already exists under this parent.");
                     }
                 }
             }
@@ -184,7 +223,9 @@ public class CreditClientController {
                         // Sub-account update — conflict if phone belongs to a client outside this group
                         : creditClientRepository.existsPhoneConflictForSubAccount(pumpId, newPhone, client.getParentClientId());
                 if (conflict) {
-                    throw new BusinessException("Phone number " + newPhone + " is already registered to another client group in this pump.");
+                    throw new BusinessException(ErrorCodes.CREDIT_CLIENT_PHONE_TAKEN,
+                            Map.of(),
+                            "Phone number " + newPhone + " is already registered to another client group in this pump.");
                 }
             }
             client.setPhone(newPhone);
@@ -228,7 +269,9 @@ public class CreditClientController {
             @RequestBody Map<String, Boolean> body) {
 
         Boolean active = body.get("isActive");
-        if (active == null) throw new BusinessException("isActive is required");
+        if (active == null) throw new BusinessException(ErrorCodes.CREDIT_CLIENT_ACTIVE_FLAG_REQUIRED,
+                Map.of(),
+                "isActive is required");
 
         CreditClient client = clientAccessService.requireClientForPump(pumpId, clientId);
 

@@ -11,6 +11,8 @@ public enum AuditAction {
     USER_UPDATED,
     USER_DEACTIVATED,
     USER_STATUS_CHANGED,
+    PASSWORD_RESET,
+    USER_PUMP_CHANGED,
 
     // ── Authentication ────────────────────────────────────────────────────────
     LOGIN,
@@ -25,21 +27,28 @@ public enum AuditAction {
     SHIFT_CLOSED,
     SHIFT_BACKFILLED,
     DISCREPANCY_RESOLVED,
+    DISCREPANCY_INVESTIGATION_STARTED,
 
     // ── Credit management ─────────────────────────────────────────────────────
     CREDIT_ENTRY_VOIDED,
     CREDIT_LIMIT_CHANGED,
     CREDIT_PAYMENT_RECEIVED,
     INTEREST_APPLIED,
+    INTEREST_CHARGE_WAIVED,
+    INTEREST_SETTINGS_CHANGED,
     CREDIT_CLIENT_CREATED,
     CREDIT_CLIENT_DELETED,
     CREDIT_ENTRY_REASSIGNED,
     CREDIT_INVOICE_ISSUED,
     CREDIT_INVOICE_CANCELLED,
+    CREDIT_EXTENSION_GRANTED,
+    CREDIT_EXTENSION_REVOKED,
+    INTEREST_RECALCULATED,
 
     // ── Inventory ─────────────────────────────────────────────────────────────
     DELIVERY_RECORDED,
     DELIVERY_UPDATED,
+    LOT_COST_CORRECTED,
     DELIVERY_DELETED,
     DIP_CHECK_RECORDED,
 
@@ -48,6 +57,8 @@ public enum AuditAction {
 
     // ── Expenses ──────────────────────────────────────────────────────────────
     EXPENSE_RECORDED,
+    EXPENSE_APPROVED,
+    EXPENSE_REJECTED,
 
     // ── Payroll ───────────────────────────────────────────────────────────────
     PAYROLL_APPROVED,
@@ -56,7 +67,12 @@ public enum AuditAction {
     // ── Pump management ───────────────────────────────────────────────────────
     PUMP_CREATED,
     PUMP_DELETED,
+    PUMP_UPDATED,
+    PUMP_SUSPENDED,
+    PUMP_ENABLED,
+    OWNER_ONBOARDED,
     NOZZLE_ADDED,
+    CALIBRATION_LOGGED,
     TANK_ADDED,
 
     // ── Ancillary products ────────────────────────────────────────────────────

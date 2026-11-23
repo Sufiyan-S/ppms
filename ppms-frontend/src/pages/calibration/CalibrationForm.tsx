@@ -1,14 +1,19 @@
 import { useState } from 'react'
+import { codeLabel } from '../../constants/labels'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { calibrationApi } from '../../api/calibrationApi'
 import type { LogCalibrationRequest } from '../../api/calibrationApi'
 import type { NozzleDetail } from '../../types/shift'
 import { SearchableSelect } from '../../components/SearchableSelect'
-import { localDateInputValue } from '../../utils/date'
-import { Reveal } from '../../components/Reveal'
-import { Spinner } from '../../components/Spinner'
+import { addDays, localDateInputValue } from '../../utils/date'
+import { PageSection } from '../../components/layout/PageSection'
+import { FormGrid } from '../../components/layout/FormGrid'
+import { FormField } from '../../components/FormField'
+import { LoadingButton } from '../../components/LoadingButton'
 import { useToastStore } from '../../store/toastStore'
-import { ModalPortal } from '../../components/ModalPortal'
+import { Modal } from '../../components/Modal'
 import { parseApiError } from '../../utils/apiError'
 import { CalibrationReviewRow } from './CalibrationReviewRow'
 import { fmtDate } from './calibrationFormat'
@@ -19,7 +24,24 @@ interface CalibrationFormProps {
   onRecorded: (nozzleId: number) => void
 }
 
+type Field = 'nozzle' | 'calibratedBy' | 'calibrationDate' | 'nextDue' | 'certificate'
+
+interface FieldError {
+  field: Field
+  message: string
+}
+
+function missingDetailError(form: LogCalibrationRequest, t: TFunction<['calibration', 'common']>): FieldError | null {
+  if (!form.calibratedBy?.trim()) return { field: 'calibratedBy', message: t('validation.calibratedByRequired') }
+  if (!form.calibrationDate) return { field: 'calibrationDate', message: t('validation.dateRequired') }
+  if (!form.nextCalibrationDue) return { field: 'nextDue', message: t('validation.nextDueRequired') }
+  if (form.nextCalibrationDue <= form.calibrationDate) return { field: 'nextDue', message: t('validation.nextDueAfterDate') }
+  if (!form.certificateReference?.trim()) return { field: 'certificate', message: t('validation.certificateRequired') }
+  return null
+}
+
 export function CalibrationForm({ pumpId, nozzles, onRecorded }: CalibrationFormProps) {
+  const { t } = useTranslation(['calibration', 'common'])
   const qc           = useQueryClient()
   const { addToast } = useToastStore()
   const [selectedNozzleId, setSelectedNozzleId] = useState<number>(0)
@@ -31,7 +53,8 @@ export function CalibrationForm({ pumpId, nozzles, onRecorded }: CalibrationForm
     certificateReference: null,
     notes: null,
   })
-  const [formError, setFormError] = useState<string | null>(null)
+  const [fieldError, setFieldError] = useState<FieldError | null>(null)
+  const [serverError, setServerError] = useState<string | null>(null)
 
   const createMutation = useMutation({
     mutationFn: (data: LogCalibrationRequest) =>
@@ -40,193 +63,152 @@ export function CalibrationForm({ pumpId, nozzles, onRecorded }: CalibrationForm
       qc.invalidateQueries({ queryKey: ['calibrations', pumpId] })
       onRecorded(selectedNozzleId)
       setForm({ calibrationDate: localDateInputValue(), nextCalibrationDue: null, calibratedBy: null, certificateReference: null, notes: null })
-      setFormError(null)
+      setFieldError(null)
+      setServerError(null)
       setReviewOpen(false)
-      addToast('Calibration recorded successfully', 'success')
+      addToast(t('toast.recorded'), 'success')
     },
     onError: (err) => {
-      const msg = parseApiError(err, 'Failed to record calibration')
-      setFormError(msg)
+      const msg = parseApiError(err, t('toast.recordFailed'))
+      setServerError(msg)
       addToast(msg, 'error')
     },
   })
 
+  const validationError = (): FieldError | null =>
+    selectedNozzleId ? missingDetailError(form, t) : { field: 'nozzle', message: t('validation.selectNozzle') }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedNozzleId) { setFormError('Please select a nozzle'); return }
-    if (!form.calibratedBy?.trim()) { setFormError('Calibrated By is required'); return }
-    if (!form.calibrationDate) { setFormError('Calibration date is required'); return }
-    setFormError(null)
-    setReviewOpen(true)
+    setServerError(null)
+    const error = validationError()
+    setFieldError(error)
+    if (!error) setReviewOpen(true)
   }
 
   const selectedNozzle = nozzles.find((n) => n.id === selectedNozzleId)
+  const nozzleLabel = selectedNozzle
+    ? t('nozzleOption', { number: selectedNozzle.nozzleNumber, fuel: codeLabel(selectedNozzle.fuelType) })
+    : '—'
 
   const submitCalibration = () => {
-    if (!selectedNozzleId) {
-      setFormError('Please select a nozzle')
+    const error = validationError()
+    if (error) {
+      setFieldError(error)
+      setReviewOpen(false)
       return
     }
-    if (!form.calibratedBy?.trim()) {
-      setFormError('Calibrated By is required')
-      return
-    }
+    setServerError(null)
     createMutation.mutate({
       ...form,
-      calibratedBy: form.calibratedBy.trim(),
-      certificateReference: form.certificateReference?.trim() || null,
+      calibratedBy: form.calibratedBy?.trim() ?? null,
+      certificateReference: form.certificateReference?.trim() ?? null,
       notes: form.notes?.trim() || null,
     })
   }
 
+  const errorFor = (field: Field) => fieldError?.field === field ? fieldError.message : undefined
+  const optional = <span className="text-ink-3">{t('common:fields.optionalSuffix')}</span>
+
   return (
     <>
-      {/* ── Record form ── */}
-      <Reveal delay={130}>
-      <form onSubmit={handleSubmit} className="ui-card ui-form-shell">
-        <div className="ui-form-shell__head">
-          <div>
-            <p className="ui-section-kicker mb-2">Calibration Entry</p>
-            <h2 className="ui-title-sm">Record calibration</h2>
-            <p className="ui-subtitle mt-1">Attach the calibration date, technician, and next due date for compliance history.</p>
-          </div>
-        </div>
-
-        <div className="ui-form-shell__grid">
-          <div>
-            <span className="ui-label">Nozzle</span>
-            <SearchableSelect label="Nozzle"
-              value={selectedNozzleId ? selectedNozzleId.toString() : ''}
-              onChange={v => { setSelectedNozzleId(parseInt(v) || 0); setFormError(null) }}
-              placeholder="Select nozzle…"
-              options={nozzles.map((n) => ({
-                value: n.id.toString(),
-                label: `Nozzle #${n.nozzleNumber} — ${n.fuelType}`,
-              }))}
-            />
-          </div>
-
-          <div>
-            <label className="block">
-              <span className="ui-label">Calibration Date</span>
-              <input
-                type="date"
-                value={form.calibrationDate}
-                onChange={e => setForm(f => ({ ...f, calibrationDate: e.target.value }))}
-                className="text-sm"
-                required
+      <PageSection title={t('form.title')} description={t('form.subtitle')}>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <FormGrid>
+            <div>
+              <span className="ui-label">{t('form.nozzle')}</span>
+              <SearchableSelect label={t('form.nozzle')}
+                value={selectedNozzleId ? selectedNozzleId.toString() : ''}
+                onChange={v => { setSelectedNozzleId(parseInt(v) || 0); setFieldError(null) }}
+                placeholder={t('form.nozzlePlaceholder')}
+                options={nozzles.map((n) => ({
+                  value: n.id.toString(),
+                  label: t('nozzleOption', { number: n.nozzleNumber, fuel: codeLabel(n.fuelType) }),
+                }))}
               />
-            </label>
-          </div>
+              {errorFor('nozzle') && <p role="alert" className="ui-error-text">{errorFor('nozzle')}</p>}
+            </div>
 
-          <div>
-            <label className="block">
-              <span className="ui-label">Next Calibration Due (optional)</span>
-              <input
-                type="date"
-                value={form.nextCalibrationDue ?? ''}
-                onChange={e => setForm(f => ({ ...f, nextCalibrationDue: e.target.value || null }))}
-                className="text-sm"
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <span className="ui-label">Calibrated By *</span>
+            <FormField label={t('form.calibratedBy')} help={t('form.calibratedByHelp')} error={errorFor('calibratedBy')}>
               <input
                 type="text"
                 value={form.calibratedBy ?? ''}
                 onChange={e => setForm(f => ({ ...f, calibratedBy: e.target.value || null }))}
-                className="text-sm"
-                placeholder="Technician or agency name"
               />
-            </label>
-          </div>
+            </FormField>
 
-          <div>
-            <label className="block">
-              <span className="ui-label">Certificate Reference (optional)</span>
+            <FormField label={t('form.calibrationDate')} error={errorFor('calibrationDate')}>
+              <input
+                type="date"
+                value={form.calibrationDate}
+                onChange={e => setForm(f => ({ ...f, calibrationDate: e.target.value }))}
+                required
+              />
+            </FormField>
+
+            <FormField label={t('form.nextDue')} error={errorFor('nextDue')}>
+              <input
+                type="date"
+                value={form.nextCalibrationDue ?? ''}
+                min={form.calibrationDate ? addDays(form.calibrationDate, 1) : undefined}
+                onChange={e => setForm(f => ({ ...f, nextCalibrationDue: e.target.value || null }))}
+              />
+            </FormField>
+
+            <FormField label={t('form.certificate')} error={errorFor('certificate')}>
               <input
                 type="text"
                 value={form.certificateReference ?? ''}
                 onChange={e => setForm(f => ({ ...f, certificateReference: e.target.value || null }))}
-                className="text-sm"
-                placeholder="Inspection certificate number"
               />
-            </label>
-          </div>
+            </FormField>
 
-          <div>
-            <label className="block">
-              <span className="ui-label">Notes (optional)</span>
+            <FormField label={<>{t('common:fields.notes')} {optional}</>}>
               <input
                 type="text"
                 value={form.notes ?? ''}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value || null }))}
-                className="text-sm"
-                placeholder="Additional observations"
               />
-            </label>
+            </FormField>
+          </FormGrid>
+
+          {serverError && !reviewOpen && <p role="alert" className="ui-alert ui-alert-danger">{serverError}</p>}
+
+          <div className="flex justify-end">
+            <button type="submit" className="ui-btn ui-btn-primary">{t('form.review')}</button>
           </div>
-        </div>
-
-        {formError && <p role="alert" className="ui-error-text">{formError}</p>}
-
-        <button
-          type="submit"
-          disabled={createMutation.isPending}
-          className="ui-btn ui-btn-primary"
-        >
-          {createMutation.isPending
-          ? <span className="flex items-center gap-1.5"><Spinner className="w-4 h-4" />Saving…</span>
-          : 'Review Calibration'}
-        </button>
-      </form>
-      </Reveal>
+        </form>
+      </PageSection>
 
       {reviewOpen && (
-        <ModalPortal onClose={() => setReviewOpen(false)} closeOnBackdropClick>
-        <div className="ui-modal-backdrop">
-          <div className="ui-modal-panel w-full max-w-md">
-            <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
-              <div className="ui-modal-heading">
-                <h2 className="ui-modal-title">Review Calibration</h2>
-                <p className="ui-modal-subtitle">Verify the nozzle and calibration details before saving.</p>
-              </div>
-              <button type="button" aria-label="Close" onClick={() => setReviewOpen(false)} className="ui-btn ui-btn-ghost ui-modal-close">&times;</button>
-            </div>
-            <div className="ui-modal-body space-y-4">
-              {formError && <div role="alert" className="ui-alert ui-alert-danger text-sm">{formError} Go back to modify the data and try again.</div>}
-              <div className="ui-card-plain ui-card-muted divide-y divide-slate-100 overflow-hidden text-sm">
-                <CalibrationReviewRow
-                  label="Nozzle"
-                  value={selectedNozzle
-                    ? `Nozzle #${selectedNozzle.nozzleNumber} — ${selectedNozzle.fuelType}`
-                    : '—'}
-                />
-                <CalibrationReviewRow label="Calibration Date" value={fmtDate(form.calibrationDate)} />
-                <CalibrationReviewRow label="Next Calibration Due" value={form.nextCalibrationDue ? fmtDate(form.nextCalibrationDue) : '—'} />
-                <CalibrationReviewRow label="Calibrated By" value={form.calibratedBy?.trim() || '—'} />
-                <CalibrationReviewRow label="Certificate Reference" value={form.certificateReference?.trim() || '—'} />
-                <CalibrationReviewRow label="Notes" value={form.notes?.trim() || '—'} />
-              </div>
-            </div>
-            <div className="ui-modal-footer">
-              <button onClick={() => setReviewOpen(false)} className="ui-btn ui-btn-secondary">
-                Back
-              </button>
-              <button
-                onClick={submitCalibration}
-                disabled={createMutation.isPending}
-                className="ui-btn ui-btn-primary"
-              >
-                {createMutation.isPending ? 'Saving…' : 'Confirm Calibration'}
-              </button>
-            </div>
+        <Modal
+          title={t('review.title')}
+          subtitle={nozzleLabel}
+          tone="info"
+          onClose={() => setReviewOpen(false)}
+          canClose={!createMutation.isPending}
+          closeOnBackdropClick
+          bodyClassName="space-y-4"
+          footer={<>
+            <button type="button" onClick={() => setReviewOpen(false)} disabled={createMutation.isPending} className="ui-btn ui-btn-secondary">
+              {t('common:actions.edit')}
+            </button>
+            <LoadingButton type="button" onClick={submitCalibration} isLoading={createMutation.isPending}
+              loadingLabel={t('common:actions.saving')} className="ui-btn-primary">
+              {t('review.confirm')}
+            </LoadingButton>
+          </>}
+        >
+          {serverError && <p role="alert" className="ui-alert ui-alert-danger">{t('common:notices.goBackRetry', { error: serverError })}</p>}
+          <div className="ui-card-plain ui-card-muted divide-y divide-border overflow-hidden text-sm">
+            <CalibrationReviewRow label={t('review.nozzle')} value={nozzleLabel} />
+            <CalibrationReviewRow label={t('review.calibrationDate')} value={fmtDate(form.calibrationDate)} />
+            <CalibrationReviewRow label={t('review.nextDue')} value={form.nextCalibrationDue ? fmtDate(form.nextCalibrationDue) : '—'} />
+            <CalibrationReviewRow label={t('review.calibratedBy')} value={form.calibratedBy?.trim() || '—'} />
+            <CalibrationReviewRow label={t('review.certificate')} value={form.certificateReference?.trim() || '—'} />
+            <CalibrationReviewRow label={t('common:fields.notes')} value={form.notes?.trim() || '—'} />
           </div>
-        </div>
-        </ModalPortal>
+        </Modal>
       )}
     </>
   )

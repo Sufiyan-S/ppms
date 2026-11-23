@@ -1,8 +1,12 @@
 package com.ppms.shift;
 
+import com.ppms.fuel.FuelType;
 import com.ppms.audit.AuditAction;
 import com.ppms.audit.AuditService;
+import com.ppms.common.idempotency.IdempotencyService;
+import com.ppms.common.idempotency.IdempotentRequest;
 import com.ppms.user.User;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -31,20 +35,24 @@ public class ShiftController {
     private final ShiftService shiftService;
     private final ShiftBackfillService shiftBackfillService;
     private final AuditService auditService;
+    private final IdempotencyService idempotencyService;
 
     /**
      * GET /api/pumps/{pumpId}/shifts/active
-     * Returns all currently open shifts for a pump (OPEN or OPEN_OVERDUE).
+     * Returns all currently open shifts for a pump (OPEN or OPEN_OVERDUE); an operator gets only their own.
      */
     @GetMapping("/active")
-    public ResponseEntity<List<ShiftResponse>> getActiveShifts(@PathVariable Long pumpId) {
-        return ResponseEntity.ok(shiftService.getActiveShifts(pumpId));
+    public ResponseEntity<List<ShiftResponse>> getActiveShifts(
+            @PathVariable Long pumpId,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(shiftService.getActiveShifts(pumpId, currentUser));
     }
 
     /**
-     * GET /api/pumps/{pumpId}/shifts/history?page=0&size=50[&from=&to=][&discrepanciesOnly=true[&discrepancyType=SHORT]]
+     * GET /api/pumps/{pumpId}/shifts/history?page=0&size=50[&from=&to=][&discrepanciesOnly=true[&discrepancyType=SHORT]][&fuelType=PETROL]
      * Returns paginated shift history for a pump, newest first. Default page size 50.
-     * from/to filter on the shift's business date (inclusive).
+     * from/to filter on the shift's business date (inclusive); fuelType keeps shifts that sold that fuel and
+     * cannot be combined with discrepanciesOnly. An operator gets only their own shifts.
      */
     @GetMapping("/history")
     public ResponseEntity<Page<ShiftResponse>> getShiftHistory(
@@ -53,20 +61,24 @@ public class ShiftController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "false") boolean discrepanciesOnly,
             @RequestParam(required = false) DiscrepancyType discrepancyType,
-            @PageableDefault(size = 50) Pageable pageable) {
-        ShiftHistoryFilter filter = new ShiftHistoryFilter(from, to, discrepanciesOnly, discrepancyType);
-        return ResponseEntity.ok(shiftService.getShiftHistory(pumpId, filter, pageable));
+            @RequestParam(required = false) FuelType fuelType,
+            @PageableDefault(size = 50) Pageable pageable,
+            @AuthenticationPrincipal User currentUser) {
+        ShiftHistoryFilter filter = new ShiftHistoryFilter(from, to, discrepanciesOnly, discrepancyType, fuelType);
+        return ResponseEntity.ok(shiftService.getShiftHistory(pumpId, filter, pageable, currentUser));
     }
 
     /**
      * GET /api/pumps/{pumpId}/shifts/{id}
-     * Returns a single shift by ID. Validates the shift belongs to the requested pump.
+     * Returns a single shift by ID. Validates the shift belongs to the requested pump,
+     * and answers 404 to an operator asking for another operator's shift.
      */
     @GetMapping("/{id}")
     public ResponseEntity<ShiftResponse> getShift(
             @PathVariable Long pumpId,
-            @PathVariable Long id) {
-        return ResponseEntity.ok(shiftService.getShiftById(pumpId, id));
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(shiftService.getShiftById(pumpId, id, currentUser));
     }
 
     /**
@@ -118,35 +130,47 @@ public class ShiftController {
      * Adds a credit entry to an open shift mid-shift.
      * Operators can record credit sales as they happen rather than at shift close.
      * Service layer enforces that OPERATOR role can only add entries to their own active shift.
+     * An Idempotency-Key header makes a resend after a timeout return the first result instead of adding twice.
      */
     @PostMapping("/{id}/credit-entries")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER', 'OPERATOR')")
-    public ResponseEntity<ShiftResponse> addCreditEntry(
+    public ResponseEntity<?> addCreditEntry(
             @PathVariable Long pumpId,
             @PathVariable Long id,
             @Valid @RequestBody AddCreditEntryRequest request,
+            @RequestHeader(value = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            HttpServletRequest httpRequest,
             @AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(shiftService.addCreditEntry(pumpId, id, request, currentUser));
+        return idempotencyService.runOnce(
+                IdempotentRequest.of(currentUser.getId(), idempotencyKey, httpRequest, request),
+                () -> ResponseEntity.status(HttpStatus.CREATED)
+                        .body(shiftService.addCreditEntry(pumpId, id, request, currentUser)));
     }
 
     /**
      * POST /api/pumps/{pumpId}/shifts/{id}/close
      * Closes a shift. Triggers FIFO inventory deduction and discrepancy calculation.
+     * An Idempotency-Key header makes a resend after a timeout return the first result.
      */
     @PostMapping("/{id}/close")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
-    public ResponseEntity<ShiftResponse> closeShift(
+    public ResponseEntity<?> closeShift(
             @PathVariable Long pumpId,
             @PathVariable Long id,
             @Valid @RequestBody CloseShiftRequest request,
+            @RequestHeader(value = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            HttpServletRequest httpRequest,
             @AuthenticationPrincipal User currentUser) {
-        ShiftResponse response = shiftService.closeShift(pumpId, id, request, currentUser);
-        auditService.log(response.getPumpId(), AuditAction.SHIFT_CLOSED,
-                "Shift", response.getId().toString(),
-                "Shift closed: status=" + response.getStatus() + " totalAmountDue=₹" + response.getTotalAmountDue(),
-                currentUser);
-        return ResponseEntity.ok(response);
+        return idempotencyService.runOnce(
+                IdempotentRequest.of(currentUser.getId(), idempotencyKey, httpRequest, request),
+                () -> {
+                    ShiftResponse response = shiftService.closeShift(pumpId, id, request, currentUser);
+                    auditService.log(response.getPumpId(), AuditAction.SHIFT_CLOSED,
+                            "Shift", response.getId().toString(),
+                            "Shift closed: status=" + response.getStatus() + " totalAmountDue=₹" + response.getTotalAmountDue(),
+                            currentUser);
+                    return ResponseEntity.ok(response);
+                });
     }
 
     /**
@@ -163,6 +187,13 @@ public class ShiftController {
             @Valid @RequestBody ResolveDiscrepancyRequest request,
             @AuthenticationPrincipal User currentUser) {
         ShiftResponse response = shiftService.resolveDiscrepancy(pumpId, id, request, currentUser);
+        if (request.resolutionAction() == DiscrepancyResolution.PENDING_INVESTIGATION) {
+            auditService.log(response.getPumpId(), AuditAction.DISCREPANCY_INVESTIGATION_STARTED,
+                    "Shift", response.getId().toString(),
+                    "Discrepancy under investigation: note=" + response.getInvestigationNote(),
+                    currentUser);
+            return ResponseEntity.ok(response);
+        }
         auditService.log(response.getPumpId(), AuditAction.DISCREPANCY_RESOLVED,
                 "Shift", response.getId().toString(),
                 "Discrepancy resolved: resolution=" + request.resolutionAction()

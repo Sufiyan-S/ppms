@@ -11,6 +11,8 @@ public interface AncillaryLotConsumptionRepository extends JpaRepository<Ancilla
 
     List<AncillaryLotConsumption> findBySaleId(Long saleId);
 
+    List<AncillaryLotConsumption> findByLotId(Long lotId);
+
     @Query("SELECT c FROM AncillaryLotConsumption c WHERE c.saleId IN :saleIds")
     List<AncillaryLotConsumption> findBySaleIdIn(List<Long> saleIds);
 }

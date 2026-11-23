@@ -1,5 +1,6 @@
 package com.ppms.credit;
 
+import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,6 @@ public class CreditClientAccessService {
     public CreditClient requireClientForPump(Long pumpId, Long clientId) {
         return clientRepository.findById(clientId)
                 .filter(client -> client.getPumpId().equals(pumpId))
-                .orElseThrow(() -> new ResourceNotFoundException("Credit client not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(EntityType.CREDIT_CLIENT, "Credit client not found"));
     }
 }
