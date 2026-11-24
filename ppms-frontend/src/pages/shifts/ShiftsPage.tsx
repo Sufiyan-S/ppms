@@ -14,6 +14,7 @@ import OpenShiftModal from './OpenShiftModal'
 import CloseShiftModal from './CloseShiftModal'
 import BackfillShiftModal from './BackfillShiftModal'
 import { SkeletonRows } from '../../components/Skeleton'
+import { LoadError } from '../../components/LoadError'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
 import { ShiftRow } from './active/ShiftRow'
 import { AllShiftsHistory } from './history/AllShiftsHistory'
@@ -107,7 +108,7 @@ export default function ShiftsPage() {
     enabled:  isOwnerOrAdmin,
   })
 
-  const { data: activeShifts = [], isLoading: activeLoading, isFetching: activeFetching, dataUpdatedAt: activeUpdatedAt } = useQuery({
+  const { data: activeShifts = [], isLoading: activeLoading, isLoadingError: activeLoadFailed, refetch: refetchActive, isFetching: activeFetching, dataUpdatedAt: activeUpdatedAt } = useQuery({
     queryKey:      ['activeShifts', pumpId],
     queryFn:       () => shiftApi.getActiveShifts(pumpId!),
     enabled:       !!pumpId,
@@ -193,6 +194,8 @@ export default function ShiftsPage() {
           >
             {activeLoading ? (
               <div className="px-5 py-4"><SkeletonRows count={3} /></div>
+            ) : activeLoadFailed ? (
+              <LoadError onRetry={() => void refetchActive()} className="m-4" />
             ) : activeShifts.length === 0 ? (
               <div className="ui-empty rounded-none border-0 p-6">
                 {canOpenShift

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { withToggled } from '../../../utils/setToggle'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../../utils/apiError'
@@ -11,8 +10,6 @@ import type { NozzlePanel } from './nozzlePanels'
 import { DuCard } from './DuCard'
 import { IncreaseDuLimit } from './IncreaseDuLimit'
 import { CreateDuForm } from './CreateDuForm'
-
-// ── DU / Nozzle content ───────────────────────────────────────────────────────
 
 export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: () => void }) {
   const { t } = useTranslation('setup')
@@ -46,11 +43,6 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
     onError: (err) => { const msg = parseApiError(err, t('nozzles.statusFailed')); setStatusError(msg); addToast(msg, 'error') },
   })
 
-  // Per-DU collapse state — all collapsed by default
-  const [expandedDuIds, setExpandedDuIds] = useState<Set<number>>(new Set())
-  const toggleDU = (duId: number) =>
-    setExpandedDuIds(prev => withToggled(prev, duId))
-
   // Per-DU inline "Add Nozzle" state
   const [addNozzleDuId, setAddNozzleDuId] = useState<number | null>(null)
 
@@ -76,14 +68,12 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
 
       {/* Existing DUs (active + inactive) */}
       {allDUs.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {allDUs.map((du) => (
             <DuCard
               key={du.id}
               pumpId={pump.id}
               du={du}
-              isExpanded={expandedDuIds.has(du.id)}
-              onToggle={() => toggleDU(du.id)}
               tanks={tanks}
               openPanelFor={panelFor}
               onOpenPanel={openPanelFor}
@@ -102,11 +92,13 @@ export function NozzleContent({ pump, onAdded }: { pump: PumpSummary; onAdded: (
       )}
 
       {/* Create DU form or max-reached notice */}
-      {activeDUCount >= pump.maxDuCount ? (
-        <IncreaseDuLimit pump={pump} onUpdated={refreshPump} />
-      ) : (
-        <CreateDuForm pumpId={pump.id} onCreated={refreshPump} />
-      )}
+      <div className="ui-card-plain p-4">
+        {activeDUCount >= pump.maxDuCount ? (
+          <IncreaseDuLimit pump={pump} onUpdated={refreshPump} />
+        ) : (
+          <CreateDuForm pumpId={pump.id} onCreated={refreshPump} />
+        )}
+      </div>
     </div>
   )
 }

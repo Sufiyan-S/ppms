@@ -44,7 +44,7 @@ function VarianceResult({ variance, tolerance }: { variance: number | null; tole
       : <StatusBadge tone="bad" icon={AlertTriangle} label={t('dipCheck.shortage')} />
   return (
     <span className="inline-flex flex-wrap items-center justify-end gap-2">
-      <LitresText value={variance} showSign decimals={1} />
+      <LitresText value={variance} showSign />
       {badge}
     </span>
   )
@@ -127,12 +127,12 @@ export function DipCheckModal({
   }
 
   const figures: LiveFigure[] = [
-    { label: t('dipCheck.figures.bookStock'), value: <LitresText value={tank.currentStock} decimals={1} /> },
+    { label: t('dipCheck.figures.bookStock'), value: <LitresText value={tank.currentStock} /> },
     ...(openShiftNozzles.length > 0 ? [
-      { label: t('dipCheck.figures.soldOnOpenShifts'), value: <LitresText value={soldKnown ? soldOnOpenShifts : null} decimals={1} /> },
-      { label: t('dipCheck.figures.expectedStock'), value: <LitresText value={soldKnown ? expectedStock : null} decimals={1} /> },
+      { label: t('dipCheck.figures.soldOnOpenShifts'), value: <LitresText value={soldKnown ? soldOnOpenShifts : null} /> },
+      { label: t('dipCheck.figures.expectedStock'), value: <LitresText value={soldKnown ? expectedStock : null} /> },
     ] : []),
-    { label: t('dipCheck.figures.measured'), value: <LitresText value={measured === '' ? null : Number(measured)} decimals={1} /> },
+    { label: t('dipCheck.figures.measured'), value: <LitresText value={measured === '' ? null : Number(measured)} /> },
     { label: t('dipCheck.figures.variance'), value: <VarianceResult variance={variance} tolerance={tank.dipTolerance} />, isResult: true },
   ]
 
@@ -217,7 +217,7 @@ export function DipCheckModal({
                   label={n.duName
                     ? t('dipCheck.nozzleReadingWithDu', { number: n.nozzleNumber, du: n.duName })
                     : t('dipCheck.nozzleReading', { number: n.nozzleNumber })}
-                  help={t('dipCheck.openedAt', { reading: formatNumberIn(n.openingReading, { minimumFractionDigits: 3 }) })}
+                  help={t('dipCheck.openedAt', { reading: formatNumberIn(n.openingReading, { maximumFractionDigits: 3 }) })}
                 >
                   <NumericInput
                     required

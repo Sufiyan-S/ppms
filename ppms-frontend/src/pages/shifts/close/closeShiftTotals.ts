@@ -79,6 +79,6 @@ export function needsOwnerApproval(diff: number, escalationThreshold: number | n
 }
 
 /** "12.50 L" or "3.00 kg": the fuel's own unit, which the litre formatter would always print as L. */
-export function formatUnits(amount: number, unit: string, decimals = 2): string {
-  return `${formatDecimal(amount, decimals)} ${unit}`
+export function formatUnits(amount: number, unit: string): string {
+  return `${formatDecimal(amount)} ${unit}`
 }

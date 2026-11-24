@@ -1,15 +1,19 @@
+import { useRef } from 'react'
 import type { ReactNode, RefObject } from 'react'
+import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ModalPortal } from '../ModalPortal'
 import { IconButton } from '../IconButton'
 import type { ModalTone } from '../Modal'
+import { ModalToneIcon } from '../ModalToneIcon'
+import { useExitAnimation } from '../useExitAnimation'
 
 export type SidePanelSize = 'md' | 'lg'
 
 interface SidePanelProps {
   title: ReactNode
   subtitle?: ReactNode
-  /** Header stripe and icon, as on Modal; read-only views keep the default. */
+  /** Header icon, as on Modal; read-only views keep the default. */
   tone?: ModalTone
   size?: SidePanelSize
   onClose: () => void
@@ -44,17 +48,20 @@ export function SidePanel({
   children,
 }: SidePanelProps) {
   const { t } = useTranslation()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const { isClosing, close } = useExitAnimation(panelRef, onClose)
   return (
-    <ModalPortal onClose={onClose} closeOnBackdropClick returnFocusRef={returnFocusRef}>
-      <div className="ui-side-panel-backdrop">
-        <div className={`ui-side-panel ui-side-panel--${size}`}>
+    <ModalPortal onClose={isClosing ? undefined : close} closeOnBackdropClick returnFocusRef={returnFocusRef}>
+      <div className="ui-side-panel-backdrop" data-closing={isClosing || undefined}>
+        <div ref={panelRef} className={`ui-side-panel ui-side-panel--${size}`}>
           <div className={`ui-modal-header ui-modal-header--themed ui-modal-header--${tone} ${headerClassName}`}>
+            <ModalToneIcon tone={tone} />
             <div className="ui-modal-heading">
               <h2 tabIndex={-1} data-autofocus className="ui-modal-title outline-none">{title}</h2>
               {subtitle && <p className="ui-modal-subtitle">{subtitle}</p>}
             </div>
             {headerActions && <div className="flex items-center gap-2">{headerActions}</div>}
-            <IconButton label={t('actions.close')} icon="×" onClick={onClose} className="ui-btn ui-btn-ghost ui-modal-close" />
+            <IconButton label={t('actions.close')} icon={<X size={20} />} onClick={close} className="ui-btn ui-btn-ghost ui-modal-close" />
           </div>
           <div className={`ui-modal-body ${bodyClassName}`}>{children}</div>
           {footer && <div className={`ui-modal-footer ${footerClassName}`}>{footer}</div>}

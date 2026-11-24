@@ -117,7 +117,7 @@ describe('DayViewHistory', () => {
       expect(within(closed).getByText(/#46/).closest('p')).toHaveTextContent('#46 · DU A · #2 Diesel')
       expect(within(closed).getByText('Discrepancy')).toBeInTheDocument()
       expect(within(closed).getByText(/Asha/).closest('p')).toHaveTextContent(/^Asha · Morning · .+–.+$/)
-      expect(within(closed).getByText('SHORT ₹2,000.00')).toBeInTheDocument()
+      expect(within(closed).getByText('Short ₹2,000.00')).toBeInTheDocument()
       expect(within(closed).getByText('₹43,000.00').parentElement).toHaveClass('ml-auto', 'justify-end')
 
       const payments = within(closed).getByTestId('payment-breakdown')

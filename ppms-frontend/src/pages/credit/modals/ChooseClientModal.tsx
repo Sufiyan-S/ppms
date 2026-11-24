@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { CreditClient } from '../../../api/creditApi'
 import { Modal } from '../../../components/Modal'
 import { MoneyText } from '../../../components/AmountText'
+import { SkeletonRows } from '../../../components/Skeleton'
 
 interface ChooseClientModalProps {
   clients: CreditClient[]
@@ -29,6 +30,7 @@ export function ChooseClientModal({ clients, isLoading, onChoose, onClose }: Cho
       size="md"
       onClose={onClose}
       closeOnBackdropClick
+      confirmDiscard={false}
       fullScreenOnPhone
       bodyClassName="space-y-3"
     >
@@ -38,7 +40,7 @@ export function ChooseClientModal({ clients, isLoading, onChoose, onClose }: Cho
           placeholder={t('aging.searchPlaceholder')} className="text-sm" data-autofocus />
       </label>
       {isLoading ? (
-        <p className="text-sm text-ink-3">{t('common:loading.short')}</p>
+        <SkeletonRows count={4} />
       ) : owingClients.length === 0 ? (
         <p className="ui-empty">{query ? t('aging.noMatch', { query: search.trim() }) : t('choosePayer.noneOwing')}</p>
       ) : (

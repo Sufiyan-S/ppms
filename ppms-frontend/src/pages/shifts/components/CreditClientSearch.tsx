@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { pumpApi } from '../../../api/pumpApi'
@@ -11,6 +12,7 @@ import { canAccessPage, canPerformAction } from '../../../permissions/permission
 import { useIsPhone } from '../../../hooks/useIsPhone'
 import { ModalPortal } from '../../../components/ModalPortal'
 import { IconButton } from '../../../components/IconButton'
+import { ModalToneIcon } from '../../../components/ModalToneIcon'
 import { CreditClientListbox } from './CreditClientListbox'
 import { matchingRootClients, optionElementId, toClientOption } from './creditClientOptions'
 import type { CreditClientOption } from './creditClientOptions'
@@ -218,11 +220,12 @@ export function CreditClientSearch({
           <div className="ui-sheet-backdrop">
             <div className="ui-sheet-panel">
               <div className="ui-modal-header ui-modal-header--themed ui-modal-header--info">
+                <ModalToneIcon tone="info" />
                 <div className="ui-modal-heading">
                   <h2 className="ui-modal-title">{t('clientSearch.chooseClient')}</h2>
                   <p className="ui-modal-subtitle">{t('clientSearch.chooseClientSubtitle')}</p>
                 </div>
-                <IconButton label={t('common:actions.close')} icon="×" onClick={closeSheet} className="ui-btn ui-btn-ghost ui-modal-close" />
+                <IconButton label={t('common:actions.close')} icon={<X size={20} />} onClick={closeSheet} className="ui-btn ui-btn-ghost ui-modal-close" />
               </div>
               <div className="space-y-2 px-4 pt-3">
                 <input type="search" aria-label={t('clientSearch.searchAria')} data-autofocus {...comboboxProps} />

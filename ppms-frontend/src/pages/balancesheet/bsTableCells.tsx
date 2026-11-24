@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import type { BsFuelLine, BsShiftLine, NozzleReadingLine } from '../../api/balanceSheetApi'
 import { LitresText, MoneyText } from '../../components/AmountText'
-import { FUEL_BADGE } from './bsFormat'
+import { FUEL_BADGE, fmtLitres } from './bsFormat'
 import { codeLabel } from '../../constants/labels'
 import { shiftUrl } from '../../utils/drillDown'
 
@@ -48,10 +48,10 @@ export function FuelLineRow({ line, shiftsHref }: { line: BsFuelLine; shiftsHref
           </Link>
         )}
       </Td>
-      <Td right><LitresText value={line.openingStock} decimals={1} /></Td>
-      <Td right>{line.deliveredLitres > 0 ? <LitresText value={line.deliveredLitres} decimals={1} /> : <span className="text-ink-3">—</span>}</Td>
-      <Td right><LitresText value={line.soldLitres} decimals={1} /></Td>
-      <Td right><LitresText value={line.closingStock} decimals={1} /></Td>
+      <Td right><LitresText value={line.openingStock} /></Td>
+      <Td right>{line.deliveredLitres > 0 ? <LitresText value={line.deliveredLitres} /> : <span className="text-ink-3">—</span>}</Td>
+      <Td right><LitresText value={line.soldLitres} /></Td>
+      <Td right><LitresText value={line.closingStock} /></Td>
       <Td right><MoneyText value={line.sellingPrice} /><span className="text-ink-3 text-xs">/L</span></Td>
       <Td right><MoneyText value={line.expectedRevenue} /></Td>
       {isOwnerOrAdmin && <Td right><MoneyText value={line.costOfGoods} /></Td>}
@@ -61,7 +61,7 @@ export function FuelLineRow({ line, shiftsHref }: { line: BsFuelLine; shiftsHref
           <span className="text-ink-3">—</span>
         ) : (
           <span className={`font-medium ${line.stockVariance > 0 ? 'text-warn' : 'text-bad'}`}>
-            {line.stockVariance > 0 ? '+' : ''}{line.stockVariance.toFixed(1)} L
+            {line.stockVariance > 0 ? '+' : ''}{fmtLitres(line.stockVariance)}
           </span>
         )}
       </Td>
@@ -96,7 +96,7 @@ export function ShiftLineRow({ line }: { line: BsShiftLine }) {
           {line.duName && <span className="text-xs text-ink-3 ml-1">· {line.duName}</span>}
         </Td>
         <Td><span className="text-xs text-ink-3 block max-w-25">{line.fuelTypesSummary}</span></Td>
-        <Td right><LitresText value={line.litresSold} decimals={1} /></Td>
+        <Td right><LitresText value={line.litresSold} /></Td>
         <Td right><MoneyText value={line.expectedRevenue} /></Td>
         <Td right><MoneyText value={line.cashCollected + line.upiCollected + line.cardCollected + fleetCard} className="font-medium text-ink" /></Td>
         <Td right><AmountOrDash value={line.cashCollected} /></Td>
@@ -120,7 +120,7 @@ export function ShiftLineRow({ line }: { line: BsShiftLine }) {
                 {codeLabel(nr.fuelType)}
               </span>
             </Td>
-            <Td right><LitresText value={nr.litresSold} decimals={1} className="text-xs text-ink-3" /></Td>
+            <Td right><LitresText value={nr.litresSold} className="text-xs text-ink-3" /></Td>
             <Td right><MoneyText value={nr.expectedRevenue} className="text-xs text-ink-3" /></Td>
             <Td colSpan={7}></Td>
           </tr>

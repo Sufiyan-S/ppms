@@ -7,8 +7,8 @@ describe('format helpers', () => {
     expect(formatCurrency(0)).toBe('₹0.00')
   })
 
-  it('formats litres with three decimals', () => {
-    expect(formatLitres(1234.5)).toBe('1,234.500 L')
+  it('formats litres with Indian grouping and two decimals', () => {
+    expect(formatLitres(123456.5)).toBe('1,23,456.50 L')
   })
 
   it('formats decimals to the requested places', () => {

@@ -14,20 +14,33 @@
     "managerNote": "तुम्ही खाली रोजचे इंधन दर बदलू शकता. पंपाची इतर सेटिंग तुमचे मालक किंवा ॲडमिन सांभाळतात.",
     "notConfigured": "सेट केलेले नाही",
     "nozzles": {
-      "summary": "{{max}} पैकी {{used}} DU सेट"
+      "none": "अजून एकही डिस्पेन्सर नाही",
+      "dus_one": "{{count}} DU",
+      "dus_other": "{{count}} DU",
+      "nozzles_one": "{{count}} नोझल",
+      "nozzles_other": "{{count}} नोझल",
+      "withoutTank_one": "{{count}} नोझल टँकशी जोडलेले नाही",
+      "withoutTank_other": "{{count}} नोझल टँकशी जोडलेले नाहीत"
     },
     "tanks": {
-      "tapToConfigure": "क्षमता सेट करण्यासाठी टॅप करा",
-      "addDuFirst": "आधी एक DU जोडा"
+      "addDuFirst": "आधी एक DU जोडा",
+      "none": "अजून एकही टँक नाही",
+      "summary_one": "{{count}} टँक · {{capacity}} L क्षमता",
+      "summary_other": "{{count}} टँक · {{capacity}} L क्षमता",
+      "withoutNozzle_one": "{{count}} टँकला नोझल जोडलेले नाही",
+      "withoutNozzle_other": "{{count}} टँकना नोझल जोडलेले नाही"
     },
     "prices": {
       "notSet": "सेट केलेले नाही",
-      "notUpdatedToday": " · आज अपडेट झाले नाहीत"
+      "notUpdatedToday": "आज अपडेट झाले नाहीत",
+      "updatedToday": "दर आज अपडेट झाले",
+      "updatedOn": "दर {{date}} रोजी अपडेट झाले",
+      "setToday": "आजचे दर सेट करा"
     },
     "staff": {
-      "members_one": "{{count}} सदस्य",
-      "members_other": "{{count}} सदस्य",
-      "noneAdded": "कोणीही जोडलेले नाही"
+      "noneAdded": "कोणीही जोडलेले नाही",
+      "active_one": "{{count}} सक्रिय कर्मचारी",
+      "active_other": "{{count}} सक्रिय कर्मचारी"
     },
     "shifts": {
       "schedules_one": "{{count}} वेळापत्रक",
@@ -51,14 +64,13 @@
     "thresholdLabel": "मालकाच्या मंजुरीची मर्यादा",
     "effectOn": "{{amount}} पेक्षा जास्त कमी किंवा जास्त रक्कम मालक किंवा ॲडमिन सोडवतील.",
     "effectOff": "रिकामे: मॅनेजर प्रत्येक फरक सोडवू शकतात.",
-    "save": "सेटिंग सेव्ह करा"
+    "save": "सेटिंग सेव्ह करा",
+    "escalationTitle": "तफावतीसाठी मालकाची मंजुरी"
   },
   "gst": {
     "saved": "GST तपशील सेव्ह झाला",
     "saveFailed": "GST तपशील सेव्ह झाला नाही",
     "prefixFormat": "इनव्हॉइस प्रीफिक्स 1 ते 5 अक्षरे किंवा अंकांचा असावा.",
-    "introBefore": "क्रेडिट ग्राहकांना टॅक्स इनव्हॉइस देण्याआधी हे आवश्यक आहे. इनव्हॉइस नंबर असे दिसतात:",
-    "introAfter": "आणि दर एप्रिलला पुन्हा सुरू होतात.",
     "legalName": "कायदेशीर नाव (नोंदणीप्रमाणे)",
     "legalNamePlaceholder": "उदा. लक्ष्मी फ्युएल्स प्रा. लि.",
     "state": "राज्य",
@@ -66,7 +78,13 @@
     "invoicePrefix": "इनव्हॉइस प्रीफिक्स",
     "invoicePrefixPlaceholder": "उदा. PMP3",
     "invoicePrefixHelp": "1 ते 5 अक्षरे किंवा अंक.",
-    "save": "GST तपशील सेव्ह करा"
+    "save": "GST तपशील सेव्ह करा",
+    "businessTitle": "व्यवसाय तपशील",
+    "businessHint": "क्रेडिट ग्राहकांना टॅक्स इनव्हॉइस देण्याआधी हे आवश्यक आहे.",
+    "gstinHelp": "15 अक्षरे, तुमच्या GST प्रमाणपत्रावर आहे तशी.",
+    "numberingTitle": "इनव्हॉइस क्रमांक",
+    "numberingHint": "प्रत्येक इनव्हॉइस नंबर या प्रीफिक्सने सुरू होतो, आणि मोजणी दर एप्रिलला पुन्हा सुरू होते.",
+    "firstInvoice": "या वर्षीचा पहिला इनव्हॉइस नंबर"
   },
   "prices": {
     "setFailed": "दर सेट झाला नाही",
@@ -81,10 +99,8 @@
     "samePrices": "तेच दर",
     "currentPrice": "सध्याचा दर",
     "noCurrentPrice": "अजून दर ठरवलेला नाही",
-    "change": "बदल",
     "stillNeededPrice": "किमान एका इंधनाचा नवीन दर",
     "save": "दर सेव्ह करा",
-    "savedSuccess": "दर सेव्ह झाले.",
     "openShiftsTitle": "चालू शिफ्ट आढळल्या",
     "dismissWarning": "इशारा काढा",
     "deviation": {
@@ -95,6 +111,15 @@
       "newPrice": "नवीन दर",
       "deviation": "बदल",
       "body": "तुम्हाला खरंच हा दर सेट करायचा आहे का? हा मागील नोंदवलेल्या दरापेक्षा बराच वेगळा आहे."
+    },
+    "keepHint": "{{price}} ठेवण्यासाठी रिकामे सोडा",
+    "firstPrice": "या इंधनाची पहिली किंमत",
+    "notSet": "सेट नाही",
+    "newPrice": "नवीन किंमत",
+    "change": {
+      "up": "{{current}} पेक्षा {{amount}} जास्त ({{percent}})",
+      "down": "{{current}} पेक्षा {{amount}} कमी ({{percent}})",
+      "same": "सध्याच्या {{current}} इतकीच"
     }
   },
   "tanks": {
@@ -104,11 +129,6 @@
     "nameRequired": "टँकचे नाव आवश्यक आहे.",
     "capacityPositive": "क्षमता 0 पेक्षा जास्त असावी.",
     "intro": "प्रत्येक भूमिगत टँक स्वतः जोडा. एका इंधनाचे अनेक टँक असू शकतात. क्षमता सेट करा म्हणजे स्टॉक बार आणि कमी-स्टॉक अलर्ट बरोबर चालतील.",
-    "loading": "टँक लोड होत आहेत...",
-    "empty": "अजून एकही टँक नाही. खाली एक जोडा.",
-    "disabled": "बंद",
-    "capacityPrefix": "क्षमता:",
-    "stockFrozen": "(स्टॉक गोठवलेला)",
     "disableAria": "टँक {{name}} बंद करा",
     "freezePrompt": "{{percent}}% स्टॉक गोठवला जाईल. निश्चित?",
     "disablePrompt": "हा टँक बंद करायचा?",
@@ -123,7 +143,21 @@
     "dipToleranceHint": "डिप रीडिंग बुक स्टॉकपेक्षा किती वेगळे असू शकते, त्यानंतर ते चिन्हांकित होते.",
     "dipToleranceHelp": "बुक स्टॉकपासून ±{{amount}} च्या आत असलेली डिप तपासणी जुळलेली मानली जाईल.",
     "saveTank": "टँक सेव्ह करा",
-    "add": "टँक जोडा"
+    "add": "टँक जोडा",
+    "emptyTitle": "अजून एकही टँक नाही",
+    "addFirstButton": "तुमचा पहिला टँक जोडा",
+    "cardLabel": "{{name}}, {{fuel}}",
+    "gaugeLabel": "{{name}} मधील स्टॉक",
+    "percentFull": "{{percent}}% भरलेला",
+    "stockOfCapacity": "{{capacity}} पैकी {{stock}}",
+    "lowStock": "कमी स्टॉक",
+    "emptyStock": "रिकामा",
+    "disabledFrozen": "बंद · स्टॉक गोठवलेला",
+    "noNozzles": "एकही नोझल जोडलेले नाही",
+    "mappedNozzles_one": "{{count}} नोझल जोडलेले",
+    "mappedNozzles_other": "{{count}} नोझल जोडलेले",
+    "lastDip": "शेवटची डिप {{date}}",
+    "disabled": "बंद"
   },
   "nozzles": {
     "intro": "प्रत्येक डिस्पेन्सिंग युनिट (DU) हे एक प्रत्यक्ष MPD मशीन आहे. प्रत्येक DU ला एक किंवा अधिक नोझल जोडा — प्रत्येक नोझलमध्ये एकच इंधन असते आणि त्याचे स्वतःचे मीटर असते. CNG नोझल इतर इंधनाच्या DU मध्ये लावता येत नाहीत.",
@@ -137,14 +171,14 @@
     "du": {
       "number": "DU #{{number}}",
       "inactive": "निष्क्रिय",
-      "activeNozzles_one": "{{count}} चालू नोझल",
-      "activeNozzles_other": "{{count}} चालू नोझल",
-      "addNozzle": "नोझल जोडा"
+      "addNozzle": "नोझल जोडा",
+      "nozzleSummary_one": "{{count}} नोझल · {{active}} सक्रिय",
+      "nozzleSummary_other": "{{count}} नोझल · {{active}} सक्रिय",
+      "nozzlesOf": "{{name}} चे नोझल"
     },
     "row": {
       "maintenance": "देखभाल",
       "tankNotMapped": "टँकशी जोडलेले नाही",
-      "actions": "नोझलचे पर्याय",
       "mapTank": "टँक जोडा",
       "mapTankHint": "पुरवठा टँक निवडा",
       "adjustReading": "रीडिंग दुरुस्त करा",
@@ -152,7 +186,8 @@
       "recordDip": "डिप नोंदवा",
       "recordDipHint": "हाताने केलेली डिप तपासणी नोंदवा",
       "disable": "देखभालीसाठी बंद करा",
-      "disableHint": "नोझल काही काळासाठी बंद करा"
+      "disableHint": "नोझल काही काळासाठी बंद करा",
+      "actionsFor": "नोझल #{{number}} चे पर्याय"
     },
     "add": {
       "added": "नोझल जोडले",
@@ -248,6 +283,12 @@
       "addNozzle": "आणखी एक नोझल जोडा",
       "removeNozzle": "नोझल काढा",
       "submit": "DU तयार करा"
+    },
+    "active": "सक्रिय",
+    "tile": {
+      "label": "नोझल #{{number}}, {{fuel}}",
+      "meter": "मीटर {{reading}} {{unit}}",
+      "tank": "टँक {{name}}"
     }
   },
   "staff": {
@@ -264,7 +305,6 @@
     "nightShiftConsent": "रात्रीच्या शिफ्टसाठी संमती",
     "nightShiftConsentHint": "हे निवडले नाही तर शिफ्ट नियोजन या ऑपरेटरला रात्रीची शिफ्ट देणार नाही.",
     "menu": {
-      "label": "कर्मचाऱ्याचे पर्याय",
       "edit": "तपशील बदला",
       "editHint": "नाव, फोन नंबर किंवा भूमिका बदला",
       "resetPassword": "पासवर्ड रीसेट करा",
@@ -281,7 +321,8 @@
       "activate": "कर्मचारी सक्रिय करा",
       "deactivate": "कर्मचारी निष्क्रिय करा",
       "activateHint": "या कर्मचाऱ्याला पुन्हा काम करू द्या",
-      "deactivateHint": "या कर्मचाऱ्याला काही काळ कामातून काढा"
+      "deactivateHint": "या कर्मचाऱ्याला काही काळ कामातून काढा",
+      "labelFor": "{{name}} साठी क्रिया"
     },
     "edit": {
       "failed": "तपशील सेव्ह झाला नाही",
@@ -326,7 +367,6 @@
     },
     "preferences": {
       "title": "{{name}} यांची शिफ्ट पसंती",
-      "loading": "सेव्ह केलेली पसंती लोड होत आहे…",
       "loadFailed": "सेव्ह केलेली पसंती लोड झाली नाही. बंद करून पुन्हा प्रयत्न करा.",
       "failed": "पसंती सेव्ह झाली नाही",
       "shift": "आवडती शिफ्ट",
@@ -351,6 +391,30 @@
       "nightShiftPay": "{{hours}} तासांची रात्रीची शिफ्ट",
       "dayShiftPay": "{{hours}} तासांची दिवसाची शिफ्ट",
       "monthPay": "{{days}} कामाचे दिवस"
+    },
+    "status": {
+      "active": "सक्रिय",
+      "inactive": "निष्क्रिय"
+    },
+    "listLabel": "कर्मचारी",
+    "empty": {
+      "title": "अजून कोणी कर्मचारी नाहीत",
+      "body": "तुमच्या शिफ्ट चालवणाऱ्या लोकांना जोडा. ते आपल्या फोन नंबरने साइन इन करतात."
+    },
+    "filters": {
+      "label": "कर्मचारी फिल्टर करा",
+      "summary": "{{total}} पैकी {{shown}} दाखवले",
+      "search": "कर्मचारी शोधा",
+      "searchPlaceholder": "नाव, फोन किंवा आयडी",
+      "clearSearch": "शोध साफ करा",
+      "allRoles": "सर्व भूमिका",
+      "status": "स्थिती",
+      "statuses": {
+        "all": "कोणतीही स्थिती",
+        "ACTIVE": "सक्रिय",
+        "INACTIVE": "निष्क्रिय"
+      },
+      "noMatch": "या फिल्टरशी कोणताही कर्मचारी जुळत नाही."
     }
   },
   "actions": {
@@ -379,14 +443,16 @@
     "setAsDefault": "डीफॉल्ट करा",
     "setDefault": "डीफॉल्ट करा",
     "default": "डीफॉल्ट",
-    "capacityShort": "{{thousands}}K L",
-    "capacityLong": "{{litres}} L क्षमता",
     "edit": "टँकर बदला",
     "removeAria": "टँकर {{name}} काढा",
     "removePrompt": "काढायचा?",
     "newTanker": "नवीन टँकर",
     "save": "टँकर सेव्ह करा",
-    "add": "टँकर जोडा"
+    "add": "टँकर जोडा",
+    "capacityLitres": "{{litres}} लिटर",
+    "editAria": "टँकर {{name}} बदला",
+    "editTitle": "{{name}} बदला",
+    "remove": "काढा"
   },
   "shiftDefs": {
     "empty": "अजून शिफ्टच्या वेळा ठरवलेल्या नाहीत. खाली पहिले वेळापत्रक जोडा.",
@@ -408,7 +474,7 @@
     "confirmDisable": "वेळापत्रक बंद करा",
     "night": "रात्र",
     "dismissError": "त्रुटी संदेश काढा",
-    "addSchedule": "+ नवीन शिफ्ट वेळापत्रक जोडा",
+    "addSchedule": "शिफ्ट वेळापत्रक जोडा",
     "form": {
       "saveFailed": "शिफ्टच्या वेळा सेव्ह झाल्या नाहीत",
       "startRequired": "सुरू होण्याची तारीख आवश्यक आहे",
@@ -431,15 +497,24 @@
       "endTime": "संपण्याची वेळ",
       "displayOrder": "दाखवण्याचा क्रम",
       "removeRow": "ओळ काढा",
-      "addShift": "+ आणखी एक शिफ्ट जोडा",
-      "save": "वेळापत्रक सेव्ह करा"
+      "addShift": "आणखी एक शिफ्ट जोडा",
+      "save": "वेळापत्रक सेव्ह करा",
+      "shiftsLabel": "या वेळापत्रकातील शिफ्ट"
+    },
+    "scheduleLabel": "{{from}} पासूनचे वेळापत्रक",
+    "shiftCount_one": "{{count}} शिफ्ट",
+    "shiftCount_other": "{{count}} शिफ्ट",
+    "timeline": {
+      "label": "24 तासांची वेळरेषा. {{shifts}}",
+      "gap": "{{range}} या वेळेत कोणतीही शिफ्ट नाही",
+      "overlap": "ओव्हरलॅप: {{names}} दोन्ही {{range}} चालतात",
+      "fullDay": "ओव्हरलॅपशिवाय पूर्ण 24 तास व्यापले"
     }
   },
   "steps": {
     "listLabel": "सेटअपच्या पायऱ्या",
     "navigationLabel": "मागची आणि पुढची पायरी",
     "position": "{{total}} पैकी पायरी {{current}}",
-    "previous": "मागे: {{step}}",
     "next": "पुढची पायरी: {{step}}",
     "names": {
       "nozzles": "डिस्पेन्सर आणि नोझल",
@@ -457,9 +532,21 @@
       "open": "क्रेडिट ग्राहक उघडा"
     },
     "complete": "सेटअप पूर्ण",
-    "reviewChecklist": "चेकलिस्ट पाहा"
+    "back": "मागे: {{step}}",
+    "allSteps": "सर्व पायऱ्या",
+    "finish": "पूर्ण करा",
+    "stillToDo_one": "{{count}} आवश्यक पायरी अजून बाकी आहे",
+    "stillToDo_other": "{{count}} आवश्यक पायऱ्या अजून बाकी आहेत"
   },
   "createPump": {
     "creating": "तयार होत आहे…"
+  },
+  "hub": {
+    "title": "सर्व सेटिंग",
+    "checklist": "सेटअप चेकलिस्ट",
+    "backLink": "सर्व सेटिंग"
+  },
+  "saveBar": {
+    "unsaved": "बदल अजून जतन केलेले नाहीत"
   }
 }

@@ -66,7 +66,7 @@ export function ReportSummary({ columns, children }: { columns: 2 | 3; children:
 export function SummaryCard({ label, value, color, note }: { label: string; value: ReactNode; color: string; note?: ReactNode }) {
   return (
     <div className="ui-card ui-card-muted p-4">
-      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-ink-3">{label}</p>
+      <p className="ui-kpi-label mb-1">{label}</p>
       <p className={`text-lg font-bold ${color}`}>{value}</p>
       {note}
     </div>

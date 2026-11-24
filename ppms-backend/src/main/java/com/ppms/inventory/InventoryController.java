@@ -1,6 +1,7 @@
 package com.ppms.inventory;
 
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.fuel.FuelType;
 import com.ppms.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -113,16 +114,18 @@ public class InventoryController {
     }
 
     /**
-     * GET /api/inventory/{pumpId}/dip-checks?page=0&size=50
-     * Paginated DIP check history, newest first.
+     * GET /api/inventory/{pumpId}/dip-checks?page=0&size=50&tankId=&fuelType=
+     * Paginated DIP check history, newest first, optionally only for one tank and/or one fuel type.
      */
     @GetMapping("/{pumpId}/dip-checks")
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'MANAGER')")
     public ResponseEntity<PagedResponse<DipCheckResponse>> getDipChecks(
             @PathVariable Long pumpId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
-        return ResponseEntity.ok(queryService.getDipChecks(pumpId, page, size));
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) Long tankId,
+            @RequestParam(required = false) FuelType fuelType) {
+        return ResponseEntity.ok(queryService.getDipChecks(pumpId, tankId, fuelType, page, size));
     }
 
     /**

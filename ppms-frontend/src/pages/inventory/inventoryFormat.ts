@@ -1,6 +1,4 @@
 
-import { formatNumberIn } from '../../i18n/format'
-
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
 export { FUEL_STOCK_COLORS as FUEL_COLORS } from '../../constants/fuel'
@@ -11,9 +9,6 @@ export function limitDecimals(value: string, places: number): string {
   return value.slice(0, dot + 1 + places)
 }
 
-export function fmtQty(n: number | null | undefined) {
-  if (n == null) return '—'
-  return `${formatNumberIn(n, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} L`
-}
+export { formatLitres as fmtQty } from '../../utils/format'
 
 export { formatIstDate as fmtDate } from '../../utils/date'

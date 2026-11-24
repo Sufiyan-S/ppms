@@ -34,7 +34,7 @@ export function DiscrepancySection({ diff, canRoundOff, onRoundOff, reason, onRe
           <button
             type="button"
             onClick={onRoundOff}
-            className="shrink-0 text-xs font-medium px-2.5 py-1.5 rounded-control border border-control bg-surface hover:bg-bg text-ink-2 transition-colors"
+            className="ui-btn ui-btn-secondary ui-btn-compact shrink-0"
             title={t('close.discrepancy.roundOffTitle', { amount: fmt(Math.abs(diff)) })}
           >
             {t('close.discrepancy.roundOff', { amount: fmt(Math.abs(diff)) })}

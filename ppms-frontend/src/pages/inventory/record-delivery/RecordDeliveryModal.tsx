@@ -26,6 +26,7 @@ import { DeliveryHeaderFields } from './DeliveryHeaderFields'
 import { DeliveryReviewDialog } from './DeliveryReviewDialog'
 import { NumericInput } from '../../../components/NumericInput'
 import { formatNumberIn } from '../../../i18n/format'
+import { formatDecimal } from '../../../utils/format'
 
 export function RecordDeliveryModal({
   pumpId,
@@ -136,8 +137,8 @@ export function RecordDeliveryModal({
             items: null,
             error: t('recordDelivery.exceedsSpace', {
               tank: rowTank.tankIdentifier,
-              quantity: formatNumberIn(q, { minimumFractionDigits: 1 }),
-              space: formatNumberIn(availableSpace, { minimumFractionDigits: 1 }),
+              quantity: formatDecimal(q),
+              space: formatDecimal(availableSpace),
             }),
           }
         }
@@ -222,7 +223,7 @@ export function RecordDeliveryModal({
 
   const tankOptions = tanks.map(tank => ({
     value: String(tank.tankId),
-    label: t('recordDelivery.tankOption', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType), stock: tank.currentStock.toFixed(0) }),
+    label: t('recordDelivery.tankOption', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType), stock: formatDecimal(tank.currentStock) }),
   }))
 
 
@@ -232,7 +233,7 @@ export function RecordDeliveryModal({
   ]
 
   const totalFigures: LiveFigure[] = [
-    { label: t('recordDelivery.totalQuantity'), value: <LitresText value={totalEnteredQty > 0 ? totalEnteredQty : null} decimals={1} /> },
+    { label: t('recordDelivery.totalQuantity'), value: <LitresText value={totalEnteredQty > 0 ? totalEnteredQty : null} /> },
     ...(isOwnerOrAdmin ? [{
       label: t('recordDelivery.calculatedTotal', { count: rows.length }),
       value: <MoneyText value={grandTotal > 0 ? grandTotal : null} />,

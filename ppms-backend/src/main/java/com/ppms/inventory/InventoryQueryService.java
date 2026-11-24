@@ -4,6 +4,7 @@ import com.ppms.common.dto.PageRequests;
 import com.ppms.common.dto.PagedResponse;
 import com.ppms.common.exception.EntityType;
 import com.ppms.common.exception.ResourceNotFoundException;
+import com.ppms.fuel.FuelType;
 import com.ppms.pump.TankStatus;
 import com.ppms.pump.UndergroundTank;
 import com.ppms.pump.UndergroundTankRepository;
@@ -11,6 +12,7 @@ import com.ppms.user.User;
 import com.ppms.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,8 +83,9 @@ public class InventoryQueryService {
         return openShiftMeterService.findOpenShiftNozzles(tank);
     }
 
-    public PagedResponse<DipCheckResponse> getDipChecks(Long pumpId, int page, int size) {
-        Page<DipCheck> checks = dipCheckRepository.findByPumpIdOrderByCheckedAtDesc(pumpId, PageRequests.of(page, size));
+    /** DIP checks newest first; a null tankId or fuelType leaves that filter off. */
+    public PagedResponse<DipCheckResponse> getDipChecks(Long pumpId, Long tankId, FuelType fuelType, int page, int size) {
+        Page<DipCheck> checks = findDipChecks(pumpId, tankId, fuelType, PageRequests.of(page, size));
 
         Set<Long> userIds = new HashSet<>();
         checks.getContent().forEach(check -> {
@@ -101,6 +104,20 @@ public class InventoryQueryService {
                 userNameById.getOrDefault(check.getLoggedByUserId(), "Unknown"),
                 nameOrUnknown(userNameById, check.getCheckedByUserId()),
                 nameOrUnknown(userNameById, check.getReviewedByUserId()))));
+    }
+
+    private Page<DipCheck> findDipChecks(Long pumpId, Long tankId, FuelType fuelType, Pageable pageable) {
+        if (tankId == null && fuelType == null) {
+            return dipCheckRepository.findByPumpIdOrderByCheckedAtDesc(pumpId, pageable);
+        }
+        List<Long> tankIds = tankRepository.findByPumpId(pumpId).stream()
+                .filter(tank -> tankId == null || tank.getId().equals(tankId))
+                .filter(tank -> fuelType == null || tank.getFuelType() == fuelType)
+                .map(UndergroundTank::getId)
+                .toList();
+        return tankIds.isEmpty()
+                ? Page.empty(pageable)
+                : dipCheckRepository.findByPumpIdAndTankIdInOrderByCheckedAtDesc(pumpId, tankIds, pageable);
     }
 
     /** Active FIFO lots of one tank, oldest first, with each delivery's invoice reference. */

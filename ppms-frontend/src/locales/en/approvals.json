@@ -62,7 +62,10 @@
     "submittedBy": "Submitted by",
     "waiting": "Waiting",
     "date": "Date",
-    "note": "Note"
+    "note": "Note",
+    "decide": "Decision",
+    "approveItem": "Approve {{name}} {{amount}}",
+    "rejectItem": "Reject {{name}} {{amount}}"
   },
   "waiting": {
     "justNow": "just now",

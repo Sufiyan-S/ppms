@@ -8,7 +8,7 @@ import { Reveal } from '../../../components/Reveal'
 import { PageSection } from '../../../components/layout/PageSection'
 import { FUEL_CHART_COLORS } from '../../../constants/fuel'
 import { codeLabel } from '../../../constants/labels'
-import { formatNumberIn } from '../../../i18n/format'
+import { formatCurrency, formatLitres } from '../../../utils/format'
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactRupees } from '../../../constants/chartColors'
 
 export function RevenueTrendChart({ historyShifts }: { historyShifts: Shift[] }) {
@@ -112,8 +112,8 @@ export function RevenueTrendChart({ historyShifts }: { historyShifts: Shift[] })
                   contentStyle={CHART_TOOLTIP_STYLE}
                   formatter={(v, name) => {
                     const n = typeof v === 'number' ? v : 0
-                    if (name === 'revenue') return [`₹${formatNumberIn(n, { maximumFractionDigits: 0 })}`, t('chart.revenue')]
-                    return [`${n.toFixed(2)} L`, codeLabel(String(name))]
+                    if (name === 'revenue') return [formatCurrency(n), t('chart.revenue')]
+                    return [formatLitres(n), codeLabel(String(name))]
                   }}
                   labelStyle={{ color: CHART_COLORS.axis, marginBottom: '0.25rem' }}
                 />

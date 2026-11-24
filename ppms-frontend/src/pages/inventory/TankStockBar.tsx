@@ -47,7 +47,7 @@ export function TankStockBar({
           <span className="truncate text-sm font-semibold text-ink">{tank.tankIdentifier}</span>
         </div>
         <span className={`text-sm font-semibold tabular-nums ${isLow ? 'text-bad' : 'text-ink-2'}`}>
-          {pct.toFixed(1)}%
+          {formatNumberIn(pct, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
         </span>
       </div>
 

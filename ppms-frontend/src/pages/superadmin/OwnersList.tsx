@@ -5,12 +5,14 @@ import { AlertTriangle, Check } from 'lucide-react'
 import type { OwnerSummary } from '../../api/superAdminApi'
 import { ListDetail } from '../../components/layout/ListDetail'
 import { PageSection } from '../../components/layout/PageSection'
+import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
 import { StatusBadge } from '../../components/StatusBadge'
+import { pageSlice } from '../../utils/pageSlice'
 import { OwnerDetail } from './OwnerDetail'
 import { ownerStatusLabel } from './ownerStatus'
 
-const ownersPageSize = 10
+const OWNERS_PAGE_SIZE = 10
 
 function OwnerListItem({ owner, selected }: { owner: OwnerSummary; selected: boolean }) {
   const { t } = useTranslation(['superadmin', 'common'])
@@ -50,14 +52,13 @@ export function OwnersList({ owners, ownersLoading }: { owners: OwnerSummary[]; 
   const { t } = useTranslation(['superadmin', 'common'])
   const [searchParams, setSearchParams] = useSearchParams()
   const [ownersPage, setOwnersPage] = useState(0)
+  const [ownersPageSize, setOwnersPageSize] = useState(OWNERS_PAGE_SIZE)
 
   const ownerText = searchParams.get('owner')
   const selectedId = ownerText !== null && /^\d+$/.test(ownerText) ? Number(ownerText) : null
   const selectedOwner = owners.find((owner) => owner.ownerId === selectedId) ?? null
 
-  const totalPages = Math.max(1, Math.ceil(owners.length / ownersPageSize))
-  const safePage = Math.min(ownersPage, totalPages - 1)
-  const pageOwners = owners.slice(safePage * ownersPageSize, (safePage + 1) * ownersPageSize)
+  const pageData = pageSlice(owners, ownersPage, ownersPageSize)
 
   const closeOwner = () => setSearchParams((params) => {
     const updated = new URLSearchParams(params)
@@ -75,27 +76,17 @@ export function OwnersList({ owners, ownersLoading }: { owners: OwnerSummary[]; 
   ) : (
     <>
       <ul>
-        {pageOwners.map((owner) => (
+        {pageData.content.map((owner) => (
           <li key={owner.ownerId}>
             <OwnerListItem owner={owner} selected={owner.ownerId === selectedId} />
           </li>
         ))}
       </ul>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-2 px-4 py-3">
-          <span className="text-xs text-ink-3">{t('common:pagination.pageOf', { page: safePage + 1, total: totalPages })}</span>
-          <div className="flex gap-1">
-            <button type="button" onClick={() => setOwnersPage(safePage - 1)} disabled={safePage === 0}
-              className="ui-btn ui-btn-secondary ui-btn-compact disabled:opacity-30">
-              {t('common:pagination.prev')}
-            </button>
-            <button type="button" onClick={() => setOwnersPage(safePage + 1)} disabled={safePage >= totalPages - 1}
-              className="ui-btn ui-btn-secondary ui-btn-compact disabled:opacity-30">
-              {t('common:pagination.next')}
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        data={pageData}
+        onPageChange={setOwnersPage}
+        onPageSizeChange={(size) => { setOwnersPageSize(size); setOwnersPage(0) }}
+      />
     </>
   )
 

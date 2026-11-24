@@ -74,7 +74,7 @@ export function SuperAdminHeader() {
         <div className="relative" ref={profileMenuRef}>
           <button
             onClick={() => setProfileMenuOpen((open) => !open)}
-            className="w-9 h-9 bg-white/10 border border-white/25 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"
+            className="ui-btn-icon w-9 h-9 bg-white/10 border border-white/25 rounded-full hover:bg-white/20 transition-colors"
             title={t('header.openProfileMenu')}
           >
             <span className="text-sm font-bold text-surface">

@@ -39,4 +39,8 @@ public class CreateProductRequest {
 
     /** Optional HSN code (4 to 8 digits) printed on tax invoices. */
     private String hsnCode;
+
+    /** Optional. When present, becomes the product's first selling price. */
+    @DecimalMin(value = "0.01", message = "Price must be at least 0.01")
+    private BigDecimal sellingPricePerUnit;
 }

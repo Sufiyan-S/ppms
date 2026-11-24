@@ -13,7 +13,7 @@ vi.mock('../../api/ancillaryApi', () => ({ ancillaryApi: { updateProduct: vi.fn(
 const product = {
   id: 9, pumpId: 1, name: 'Engine Oil', brand: 'Castrol', variant: null, packageSize: 1, unitOfMeasure: 'LITRE',
   currentStockUnits: 12, lowStockThreshold: null, hsnCode: '2710', status: 'ACTIVE', fifoCostPricePerUnit: 310,
-  activeFifoLots: [], displayName: 'Castrol Engine Oil — 1 LITRE', createdAt: '2026-01-01', updatedAt: '2026-01-01',
+  activeFifoLots: [], currentSellingPricePerUnit: 150, soldTodayUnits: 0, soldTodayAmount: 0, displayName: 'Castrol Engine Oil — 1 LITRE', createdAt: '2026-01-01', updatedAt: '2026-01-01',
 } as AncillaryProduct
 
 function renderAs(role: UserRole, onRefresh = vi.fn()) {
@@ -23,6 +23,11 @@ function renderAs(role: UserRole, onRefresh = vi.fn()) {
     <ProductsTab pumpId={1} products={[product]} loading={false} isOwnerOrAdmin={isOwnerOrAdmin}
       isManagerOrAbove={isOwnerOrAdmin || role === 'MANAGER'} isAddingProduct={false} onAddProductClosed={vi.fn()} onRefresh={onRefresh} />,
   )
+}
+
+async function editHsnItem(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'More actions for Castrol Engine Oil' }))
+  return screen.getByRole('menuitem', { name: /Edit HSN/ })
 }
 
 describe('editing the HSN code of an existing product', () => {
@@ -35,9 +40,10 @@ describe('editing the HSN code of an existing product', () => {
     const user = userEvent.setup()
     const onRefresh = vi.fn()
     renderAs('OWNER', onRefresh)
-    expect(screen.getByText(/HSN 2710/)).toBeInTheDocument()
+    const editHsn = await editHsnItem(user)
+    expect(editHsn).toHaveTextContent('HSN 2710')
 
-    await user.click(screen.getByRole('button', { name: `Edit HSN code of ${product.displayName}` }))
+    await user.click(editHsn)
     const dialog = await screen.findByRole('dialog')
     const input = within(dialog).getByLabelText('HSN code')
     expect(input).toHaveValue('2710')
@@ -53,7 +59,7 @@ describe('editing the HSN code of an existing product', () => {
     const user = userEvent.setup()
     renderAs('ADMIN')
 
-    await user.click(screen.getByRole('button', { name: `Edit HSN code of ${product.displayName}` }))
+    await user.click(await editHsnItem(user))
     const dialog = await screen.findByRole('dialog')
     const input = within(dialog).getByLabelText('HSN code')
     await user.clear(input)
@@ -64,8 +70,11 @@ describe('editing the HSN code of an existing product', () => {
     expect(ancillaryApi.updateProduct).not.toHaveBeenCalled()
   })
 
-  it('is not offered to a manager, whom the server refuses', () => {
+  it('is not offered to a manager, whom the server refuses', async () => {
+    const user = userEvent.setup()
     renderAs('MANAGER')
-    expect(screen.queryByRole('button', { name: /Edit HSN code/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions for Castrol Engine Oil' }))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Edit HSN/ })).not.toBeInTheDocument()
   })
 })

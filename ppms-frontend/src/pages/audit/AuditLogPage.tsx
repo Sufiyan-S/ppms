@@ -7,6 +7,7 @@ import type { AuditAction, AuditLog } from '../../api/auditApi'
 import { usePumpStore } from '../../store/usePumpStore'
 import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
+import { LoadError } from '../../components/LoadError'
 import { Page } from '../../components/layout/Page'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { PageSection } from '../../components/layout/PageSection'
@@ -70,7 +71,7 @@ export default function AuditLogPage() {
     hideSignIns: !showSignIns,
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isLoadingError, refetch } = useQuery({
     queryKey:  ['auditLogs', pumpId, page, pageSize, filters],
     queryFn:   () => auditApi.getAuditLogs({ pumpId: pumpId!, page, size: pageSize, ...filters }),
     enabled: !!pumpId,
@@ -204,6 +205,8 @@ export default function AuditLogPage() {
 
         {isLoading ? (
           <div className="px-5 py-4"><SkeletonRows count={5} /></div>
+        ) : isLoadingError ? (
+          <LoadError onRetry={() => void refetch()} className="m-4" />
         ) : logs.length === 0 ? (
           <p className="ui-empty px-5 py-6">
             {hasFilters ? t('page.noEventsForFilters') : t('page.noEvents')}

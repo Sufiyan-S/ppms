@@ -25,7 +25,8 @@
     "enable": "Enable",
     "disable": "Disable",
     "clear": "Clear",
-    "clearFilters": "Clear filters"
+    "clearFilters": "Clear filters",
+    "retry": "Retry"
   },
   "language": {
     "label": "Language",
@@ -53,6 +54,10 @@
     "title": "Discard what you entered?",
     "body": "The details you have typed in this form will be lost."
   },
+  "modal": {
+    "discardQuestion": "Discard your changes?",
+    "dragToClose": "Drag down to close"
+  },
   "rejectDialog": {
     "reason": "Reason",
     "help": "For example: no bill attached. Saved with the rejection.",
@@ -64,8 +69,6 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "rowsPerPage": "Rows per page",
-    "prev": "Prev",
-    "next": "Next",
     "pageOf": "Page {{page}} of {{total}}"
   },
   "select": {
@@ -116,8 +119,8 @@
     "fyToDate": "FY to date"
   },
   "badges": {
-    "short": "SHORT",
-    "over": "OVER",
+    "short": "Short",
+    "over": "Over",
     "balanced": "Balanced",
     "pendingApproval": "Pending approval",
     "rejected": "Rejected",
@@ -177,5 +180,9 @@
   },
   "form": {
     "stillNeeded": "Still needed"
-  }
+  },
+  "loadError": {
+    "message": "Could not load this. Check your connection and retry."
+  },
+  "duNumber": "DU #{{number}}"
 }

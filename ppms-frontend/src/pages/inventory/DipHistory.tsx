@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { codeLabel } from '../../constants/labels'
 import { withToggled } from '../../utils/setToggle'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { inventoryApi } from '../../api/inventoryApi'
@@ -10,6 +10,7 @@ import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SkeletonRows } from '../../components/Skeleton'
+import { LoadError } from '../../components/LoadError'
 import { FilterBar } from '../../components/layout/FilterBar'
 import { PageSection } from '../../components/layout/PageSection'
 import { DipItem } from './DipItem'
@@ -17,17 +18,23 @@ import { fmtDate } from './inventoryFormat'
 
 export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: number; tanks: TankStock[]; canViewFinancials: boolean }) {
   const { t } = useTranslation(['inventory', 'common'])
+  const dipGroupsId = useId()
   const [dipPage,           setDipPage]           = useState(0)
   const [dipPageSize,       setDipPageSize]       = useState(10)
   const [dipTankFilter,          setDipTankFilter]          = useState('')
   const [dipFuelFilter,          setDipFuelFilter]          = useState('')
   const [collapsedDipGroups,     setCollapsedDipGroups]     = useState<Set<string>>(new Set())
 
-  const { data: dipChecksPage, isLoading: dipLoading } = useQuery({
-    queryKey: ['dipChecks', pumpId, dipPage, dipPageSize],
-    queryFn:  () => inventoryApi.getDipChecks(pumpId, dipPage, dipPageSize),
+  const filters = { tankId: dipTankFilter ? Number(dipTankFilter) : undefined, fuelType: dipFuelFilter || undefined }
+  const hasFilters = Boolean(dipTankFilter || dipFuelFilter)
+
+  const { data: dipChecksPage, isLoading: dipLoading, isLoadingError: dipLoadFailed, isPlaceholderData, refetch: refetchDipChecks } = useQuery({
+    queryKey: ['dipChecks', pumpId, dipPage, dipPageSize, filters.tankId, filters.fuelType],
+    queryFn:  () => inventoryApi.getDipChecks(pumpId, dipPage, dipPageSize, filters),
+    placeholderData: keepPreviousData,
   })
   const dipChecks = dipChecksPage?.content ?? []
+  const changeFilter = (change: () => void) => { change(); setDipPage(0) }
 
   // When DIP data loads, collapse all groups except the first (newest) one
   useEffect(() => {
@@ -42,16 +49,16 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
     <PageSection title={t('dipHistory.title')} flush>
       <FilterBar
         label={t('dipHistory.filterTitle')}
-        onClearFilters={() => { setDipTankFilter(''); setDipFuelFilter('') }}
-        hasActiveFilters={Boolean(dipTankFilter || dipFuelFilter)}
+        onClearFilters={() => changeFilter(() => { setDipTankFilter(''); setDipFuelFilter('') })}
+        hasActiveFilters={hasFilters}
       >
         <div className="w-44">
           <SearchableSelect label={t('dipHistory.filterByTank')}
             value={dipTankFilter}
-            onChange={v => setDipTankFilter(v)}
+            onChange={v => changeFilter(() => setDipTankFilter(v))}
             options={[
               { value: '', label: t('filters.allTanks') },
-              ...tanks.map(tank => ({ value: tank.tankIdentifier, label: tank.tankIdentifier })),
+              ...tanks.map(tank => ({ value: String(tank.tankId), label: tank.tankIdentifier })),
             ]}
             placeholder={t('filters.byTank')}
           />
@@ -59,7 +66,7 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
         <div className="w-44">
           <SearchableSelect label={t('dipHistory.filterByFuel')}
             value={dipFuelFilter}
-            onChange={v => setDipFuelFilter(v)}
+            onChange={v => changeFilter(() => setDipFuelFilter(v))}
             options={[
               { value: '', label: t('filters.allFuelTypes') },
               ...Array.from(new Set(tanks.map(tank => tank.fuelType))).map(ft => ({ value: ft, label: codeLabel(ft) })),
@@ -71,26 +78,20 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
 
             {dipLoading ? (
               <div className="p-(--density-card-pad)"><SkeletonRows count={3} /></div>
+            ) : dipLoadFailed ? (
+              <LoadError onRetry={() => void refetchDipChecks()} className="m-4" />
             ) : (() => {
-              // Apply client-side filters on the current page's data
-              const filtered = dipChecks.filter(d =>
-                (!dipTankFilter || d.tankIdentifier === dipTankFilter) &&
-                (!dipFuelFilter || d.fuelType === dipFuelFilter)
-              )
-
-              if (filtered.length === 0) {
+              if (dipChecks.length === 0) {
                 return (
                   <div className="p-(--density-card-pad) text-sm text-ink-3">
-                    {dipChecks.length === 0
-                      ? t('dipHistory.empty')
-                      : t('dipHistory.noMatch')}
+                    {hasFilters ? t('dipHistory.noMatch') : t('dipHistory.empty')}
                   </div>
                 )
               }
 
               // Group by calendar date, sorted newest-first (within current page)
               const groups = Object.entries(
-                filtered.reduce<Record<string, DipCheck[]>>((acc, d) => {
+                dipChecks.reduce<Record<string, DipCheck[]>>((acc, d) => {
                   const key = d.checkedAt.slice(0, 10)
                   ;(acc[key] ??= []).push(d)
                   return acc
@@ -99,7 +100,7 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
 
               return (
                 <>
-                <div className="divide-y divide-border">
+                <div aria-busy={isPlaceholderData} className={`divide-y divide-border transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
                   {groups.map(([dateKey, rows]) => {
                     const allBalanced = rows.every(r => r.variance === 0)
                     const isCollapsed = collapsedDipGroups.has(dateKey)
@@ -109,6 +110,8 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
                         <button
                           type="button"
                           onClick={toggleDip}
+                          aria-expanded={!isCollapsed}
+                          aria-controls={!isCollapsed ? `${dipGroupsId}-${dateKey}` : undefined}
                           className="w-full flex items-center gap-2 text-left hover:opacity-70 transition-opacity"
                         >
                           <span className="text-xs font-semibold text-ink bg-surface-sunken px-2.5 py-1 rounded-control">
@@ -126,7 +129,7 @@ export function DipHistory({ pumpId, tanks, canViewFinancials }: { pumpId: numbe
                           <span className={`ui-accordion-arrow ml-1 ${!isCollapsed ? 'ui-accordion-arrow--open' : ''}`}><ChevronDown size={14} strokeWidth={2} /></span>
                         </button>
                         {!isCollapsed && (
-                          <div className="ui-accordion-content space-y-1.5">
+                          <div id={`${dipGroupsId}-${dateKey}`} className="ui-accordion-content space-y-1.5">
                             {rows.map(d => (
                               <DipItem
                                 key={d.id}

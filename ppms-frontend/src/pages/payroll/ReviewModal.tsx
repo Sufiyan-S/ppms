@@ -51,6 +51,7 @@ export function ReviewModal({ form, selectedStaff, pumpId, formError, isPending,
       size="lg"
       onClose={onClose}
       canClose={!isPending}
+      confirmDiscard={false}
       fullScreenOnPhone
       bodyClassName="space-y-4"
       footerClassName="ui-modal-footer--large"

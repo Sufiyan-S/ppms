@@ -63,7 +63,16 @@
     "noneInView": "No clients in this view",
     "noMatchHint": "Try a different name or phone number.",
     "noneInViewHint": "Choose All to see every client.",
-    "sortBy": "Sort by"
+    "sortBy": "Sort by",
+    "ageBuckets": {
+      "label": "Outstanding by age",
+      "upTo30Days": "0–30 days",
+      "days31To60": "31–60 days",
+      "days61To90": "61–90 days",
+      "over90Days": "Over 90 days"
+    },
+    "overdueDays_one": "{{count}} day overdue",
+    "overdueDays_other": "{{count}} days overdue"
   },
   "portalPin": {
     "removed": "Portal PIN removed for {{name}}",
@@ -74,7 +83,6 @@
     "setAction": "Set portal PIN",
     "remove": "Remove PIN",
     "removeFor": "Remove portal PIN for {{name}}",
-    "removePrompt": "Remove PIN?",
     "saved": "Portal PIN saved for {{name}}",
     "saveFailed": "Failed to save portal PIN",
     "invalid": "PIN must be 4 to 6 digits",
@@ -356,7 +364,6 @@
     "parentBadge_one": "parent · {{count}} sub-account",
     "parentBadge_other": "parent · {{count}} sub-accounts",
     "disabled": "Disabled",
-    "addSubAccountToggle": "+ Sub-account",
     "addSubAccountUnder": "Add sub-account under {{name}}",
     "subNamePlaceholder": "e.g. Driver 1",
     "phonePlaceholder": "e.g. 9876543210",
@@ -369,7 +376,18 @@
     "clientName": "Client name",
     "clientNamePlaceholder": "e.g. ABC Transports",
     "addClient": "Add client",
-    "emptyReadOnlyHint": "Contact the Owner or Admin to add credit clients."
+    "emptyReadOnlyHint": "Contact the Owner or Admin to add credit clients.",
+    "disablePrompt": "Disable this client?",
+    "menu": {
+      "label": "Actions for {{name}}",
+      "edit": "Edit details",
+      "editHint": "Name, phone, notes, GSTIN and billing address",
+      "addSubAccountHint": "A driver or vehicle billed to this client",
+      "pinHint": "The PIN the client uses to check their balance",
+      "removePinHint": "The client can no longer check their balance online",
+      "disableHint": "Hidden from shift dropdowns; records are kept",
+      "enableAria": "Enable client {{name}}"
+    }
   },
   "detail": {
     "interestApplied": "{{amount}} interest applied for {{days}} days ({{from}} – {{to}})",

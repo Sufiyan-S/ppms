@@ -26,9 +26,9 @@ export function ExpensesSection({ expenses }: { expenses: ExpenseSummary }) {
   const { t } = useTranslation('balancesheet')
   return (
     <section>
-      <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">
+      <h3 className="ui-section-heading mb-3">
         {t('expenses.title')}
-        <span className="ml-2 text-ink-3 normal-case font-normal">
+        <span className="ml-2 font-normal text-ink-3">
           {t('expenses.count', { count: expenses.lines.length })}
         </span>
       </h3>

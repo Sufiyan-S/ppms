@@ -23,7 +23,7 @@ import { GrantExtensionModal } from './modals/GrantExtensionModal'
 import { RevokeExtensionModal } from './modals/RevokeExtensionModal'
 import { buildWeekGroups } from './ledgerGroups'
 import { LedgerWeekGroups } from './LedgerWeekGroups'
-import type { LedgerRowActions } from './LedgerWeekGroups'
+import type { LedgerRowActions } from './LedgerEntryActions'
 import { ReassignCreditEntryModal } from './modals/ReassignCreditEntryModal'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { StatementModal } from './modals/StatementModal'
@@ -34,7 +34,7 @@ import { useLedgerFilters } from './useLedgerFilters'
 import { LedgerFilterBar } from './LedgerFilterBar'
 import { ClientSummaryCards } from './ClientSummaryCards'
 import { ClientInvoicesTab } from './ClientInvoicesTab'
-import { formatCurrency } from '../../utils/format'
+import { formatCurrency, formatCurrencyOrDash } from '../../utils/format'
 import { PageTabs } from '../../components/layout/PageTabs'
 import { useActiveTab } from '../../components/layout/useActiveTab'
 import { useUrlParam } from '../../components/layout/useUrlParam'
@@ -112,7 +112,7 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
       invalidateLedger()
       if (result.applied) {
         setApplyInterestFeedback(t('detail.interestApplied', {
-          amount: `₹${result.amount?.toFixed(2)}`, days: result.days, from: result.periodFrom, to: result.periodTo,
+          amount: formatCurrencyOrDash(result.amount), days: result.days, from: result.periodFrom, to: result.periodTo,
         }))
       } else {
         setApplyInterestFeedback(result.reason ? serverText(result.reasonCode, result.reasonParams, result.reason) : t('detail.noInterestApplicable'))
@@ -177,7 +177,7 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
     if (clientsLoading) return <div className="px-5 py-4"><SkeletonRows count={4} /></div>
     return (
       <div className="space-y-4">
-        <p className="ui-alert ui-alert-error text-sm" role="alert">
+        <p className="ui-alert ui-alert-danger text-sm" role="alert">
           {clientsFailed ? t('detail.loadFailed') : t('detail.notFound')}
         </p>
         <button type="button" onClick={onBack} className="ui-btn ui-btn-secondary">{t('detail.back')}</button>
@@ -224,7 +224,7 @@ export function ClientDetail({ clientId, pumpId, onBack }: ClientDetailProps) {
       {rejectingPayment && (
         <RejectReasonDialog
           title={t('detail.rejectPayment')}
-          subtitle={`${formatCurrency(rejectingPayment.amount)} · ${rejectingPayment.reference || codeLabel(rejectingPayment.detail)}`}
+          subtitle={`${formatCurrency(rejectingPayment.amount)} · ${(rejectingPayment.reference && serverText(rejectingPayment.referenceCode, rejectingPayment.referenceParams, rejectingPayment.reference)) || codeLabel(rejectingPayment.detail)}`}
           isPending={approvePaymentMutation.isPending}
           error={rejectError}
           onConfirm={(reason) => approvePaymentMutation.mutate({

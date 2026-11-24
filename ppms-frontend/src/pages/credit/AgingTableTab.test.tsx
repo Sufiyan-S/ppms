@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { creditApi } from '../../api/creditApi'
 import type { CreditAging, CreditAgingRow } from '../../api/creditApi'
+import { resetScreenWidthAfterEach, setScreenWidth } from '../../test/screenWidth'
 import { AgingTableTab } from './AgingTableTab'
 import { AgingSummary } from './AgingSummary'
 import { useCreditAging } from './useCreditAging'
@@ -107,5 +108,45 @@ describe('AgingTableTab credit aging', () => {
     await user.click(screen.getByRole('button', { name: 'Outstanding' }))
     expect(router.state.location.search).toBe('?tab=ledger&sort=outstanding&dir=asc')
     expect((await clientNames())[0]).toBe('Anand Roadways')
+  })
+})
+
+describe('AgingTableTab credit aging on a phone', () => {
+  resetScreenWidthAfterEach()
+
+  beforeEach(() => {
+    setScreenWidth(375)
+    vi.mocked(creditApi.getAging).mockResolvedValue(aging)
+  })
+
+  it('shows each client as a card with the total and only the age buckets that hold money', async () => {
+    renderLedger('/dashboard/credit?tab=ledger')
+
+    const table = await screen.findByRole('table', { name: /unpaid balance by age/ })
+    expect(table).toHaveClass('ui-table-cards')
+    const cards = screen.getAllByTestId('aging-card')
+    expect(cards).toHaveLength(4)
+
+    const city = cards[0]
+    expect(within(city).getByRole('button', { name: 'City Transport' })).toBeInTheDocument()
+    expect(within(city).getByText('₹10,000.00')).toBeInTheDocument()
+    const terms = within(city).getAllByRole('term')
+    expect(terms.map(term => term.textContent)).toEqual(['0–30 days', '61–90 days'])
+    expect(terms[1].nextElementSibling).toHaveTextContent('₹9,000.00')
+    expect(terms[0].closest('dl')).toHaveAttribute('aria-label', 'Outstanding by age')
+    expect(within(city).getByText('40 days overdue')).toBeInTheDocument()
+    expect(within(city).getByRole('button', { name: 'View ledger of City Transport' })).not.toHaveClass('ui-btn-compact')
+    expect(screen.queryByRole('columnheader', { name: '31–60' })).not.toBeInTheDocument()
+  })
+
+  it('offers a sort menu because the column headers are hidden on a phone', async () => {
+    const user = userEvent.setup()
+    const router = renderLedger('/dashboard/credit?tab=ledger')
+    await screen.findAllByTestId('aging-card')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'name')
+
+    expect(router.state.location.search).toContain('sort=name')
+    expect(within(screen.getAllByTestId('aging-card')[0]).getByRole('button', { name: 'Anand Roadways' })).toBeInTheDocument()
   })
 })

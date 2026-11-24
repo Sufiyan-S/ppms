@@ -21,14 +21,15 @@ describe('MoneyText', () => {
 })
 
 describe('LitresText', () => {
-  it('formats litres with three decimals and the unit', () => {
-    render(<LitresText value={1234.5} />)
-    expect(screen.getByText('1,234.500 L')).toBeInTheDocument()
+  it('formats litres with Indian grouping, two decimals and the unit', () => {
+    render(<><LitresText value={123456.5} /><LitresText value={12.345} /></>)
+    expect(screen.getByText('1,23,456.50 L')).toHaveClass('tabular-nums')
+    expect(screen.getByText('12.35 L')).toBeInTheDocument()
   })
 
-  it('uses the given number of decimals', () => {
-    render(<><LitresText value={1234.56} decimals={1} /><LitresText value={1500} decimals={2} /></>)
-    expect(screen.getByText('1,234.6 L')).toBeInTheDocument()
-    expect(screen.getByText('1,500.00 L')).toBeInTheDocument()
+  it('shows a dash when there is no value and a sign when asked', () => {
+    render(<><LitresText value={undefined} /><LitresText value={-4.5} showSign /></>)
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('−4.50 L')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cashApi } from '../../../api/cashApi'
 import { creditApi } from '../../../api/creditApi'
@@ -25,6 +26,7 @@ function tile(label: string) {
 
 describe('MoneyOverview', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.mocked(cashApi.getCashEvents).mockResolvedValue({ currentBalance: 12_500, events: {} } as Awaited<ReturnType<typeof cashApi.getCashEvents>>)
     vi.mocked(creditApi.getLedgerSummary).mockResolvedValue([
       { id: 1, parentClientId: null, outstandingBalance: 5_000 },
@@ -53,5 +55,21 @@ describe('MoneyOverview', () => {
 
     expect(await within(tile('Waiting for approval')).findByText('2')).toBeInTheDocument()
     expect(creditApi.getPendingPayments).not.toHaveBeenCalled()
+  })
+
+  it('says the figures could not load, rather than showing blanks, and retries only what failed', async () => {
+    signIn('OWNER')
+    const user = userEvent.setup()
+    vi.mocked(cashApi.getCashEvents).mockRejectedValueOnce(new Error('down'))
+    renderWithProviders(<MoneyOverview pumpId={6} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this.')
+    expect(cashApi.getCashEvents).toHaveBeenCalledOnce()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await within(tile('Cash in drawer')).findByText('₹12,500.00')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(expenseApi.getSummary).toHaveBeenCalledOnce()
   })
 })

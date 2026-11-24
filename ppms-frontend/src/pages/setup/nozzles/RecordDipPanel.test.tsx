@@ -73,6 +73,6 @@ describe('RecordDipPanel', () => {
 
     await user.type(screen.getByLabelText('Litres removed'), '12.5')
 
-    expect(leftInTank()).toBe('487.5 L')
+    expect(leftInTank()).toBe('487.50 L')
   })
 })

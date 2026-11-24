@@ -5,6 +5,7 @@ import { formatIstDateTime } from '../../../utils/date'
 import { StatusBadge } from '../../../components/StatusBadge'
 import { shiftStatusBadge } from '../../../components/statusBadges'
 import { codeLabel } from '../../../constants/labels'
+import { formatCurrency } from '../../../utils/format'
 
 // ── Active shift row ──────────────────────────────────────────────────────────
 
@@ -13,18 +14,15 @@ export function ShiftRow({ shift, onClose, onHandOver, onAddCredit }: {
 }) {
   const { t } = useTranslation(['shifts', 'common'])
   const startTime = formatIstDateTime(shift.actualStartTime, { hour: '2-digit', minute: '2-digit' })
-  const fuelAbbr: Record<string, string> = {
-    PETROL: 'P', SPEED_PETROL: 'SP', DIESEL: 'D', SPEED_DIESEL: 'SD', CNG: 'CNG',
-  }
   const prices = shift.fuelReadings
-    .map((r) => `${fuelAbbr[r.fuelType] ?? r.fuelType}:₹${r.priceSnapshot}`)
+    .map((r) => `${codeLabel(r.fuelType)} ${formatCurrency(r.priceSnapshot)}`)
     .join(' · ')
 
   return (
     <tr>
       <td className="px-6 py-3 font-medium text-ink">
         <span className="text-xs text-ink-3 block">
-          {shift.duName ?? `DU #${shift.duNumber}`}
+          {shift.duName ?? t('common:duNumber', { number: shift.duNumber })}
         </span>
         {shift.nozzles.map((n) => `#${n.nozzleNumber} ${codeLabel(n.fuelType)}`).join(', ')}
       </td>

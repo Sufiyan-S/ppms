@@ -5,7 +5,7 @@ import { LoadingButton } from '../../../components/LoadingButton'
 import { formatNumberIn } from '../../../i18n/format'
 import { LitresText, MoneyText } from '../../../components/AmountText'
 import { StatusBadge } from '../../../components/StatusBadge'
-import { formatCurrency } from '../../../utils/format'
+import { formatCurrency, formatDecimal, formatLitres } from '../../../utils/format'
 import { fmtDate } from '../inventoryFormat'
 import type { PreparedDeliveryItem } from './deliveryRows'
 
@@ -75,13 +75,13 @@ export function DeliveryReviewDialog({
 
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SummaryFigure label={t('review.tanks')}>{t('deliveries.tankCount', { count: items.length })}</SummaryFigure>
-        <SummaryFigure label={t('review.totalQuantity')}><LitresText value={totalQty} decimals={1} /></SummaryFigure>
+        <SummaryFigure label={t('review.totalQuantity')}><LitresText value={totalQty} /></SummaryFigure>
         {showBill ? (
           <SummaryFigure label={t('review.billAmount')}>
             <MoneyText value={billTotalNum} />
             {isOwnerOrAdmin && billTotalManual && otherCharges !== 0 && (
               <span className="mt-1 block text-xs font-normal text-ink-3">
-                {t('review.calculated', { amount: formatNumberIn(calcTotal, { minimumFractionDigits: 2 }) })}
+                {t('review.calculated', { amount: formatDecimal(calcTotal) })}
                 {' · '}
                 {t('review.otherCharges', { amount: `${otherCharges > 0 ? '+' : '−'}${formatCurrency(Math.abs(otherCharges))}` })}
               </span>
@@ -109,7 +109,7 @@ export function DeliveryReviewDialog({
                 <LitresText value={item.quantityDelivered} className="text-right text-ink-2" />
                 {isOwnerOrAdmin && (
                   <span className="text-right text-ink-3 tabular-nums">
-                    ₹{item.costPricePerUnit.toFixed(4)}/L
+                    {formatCurrency(item.costPricePerUnit)}/L
                   </span>
                 )}
                 {isOwnerOrAdmin && (
@@ -119,7 +119,7 @@ export function DeliveryReviewDialog({
               {item.stockAfter !== null && (
                 <p className="mt-2 text-xs text-ink-3">
                   {t('review.stockAfterDelivery')} <span className="font-medium text-ink tabular-nums">
-                    {formatNumberIn(item.stockAfter, { minimumFractionDigits: 1 })} L
+                    {formatLitres(item.stockAfter)}
                   </span>
                   {item.capacity !== null && <>{' '}{t('review.ofCapacity', { capacity: formatNumberIn(item.capacity, { minimumFractionDigits: 0 }) })}</>}
                 </p>

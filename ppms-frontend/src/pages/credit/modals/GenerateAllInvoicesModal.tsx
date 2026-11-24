@@ -61,6 +61,7 @@ export function GenerateAllInvoicesModal({ pumpId, onClose }: GenerateAllInvoice
       size="md-wide"
       onClose={onClose}
       canClose={!mutation.isPending}
+      confirmDiscard={result === null}
       onSubmit={result ? undefined : handleSubmit}
       bodyClassName="space-y-4"
       footer={

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -74,6 +74,7 @@ export function DiscrepancyTab({ pumpId }: { pumpId: number }) {
   const [from, setFrom] = useState(query.from)
   const [to,   setTo]   = useState(query.to)
   const [expandedOp, setExpandedOp] = useState<number | null>(null)
+  const operatorShiftsId = useId()
 
   const [page, setPage]   = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -169,17 +170,20 @@ export function DiscrepancyTab({ pumpId }: { pumpId: number }) {
             paged.content.map((op) => (
               <div key={op.operatorId} className="border-b border-border">
                 <button
-                  className="ui-accordion-trigger"
+                  type="button"
+                  className="ui-accordion-trigger flex-wrap"
+                  aria-expanded={expandedOp === op.operatorId}
+                  aria-controls={expandedOp === op.operatorId ? `${operatorShiftsId}-${op.operatorId}` : undefined}
                   onClick={() => setExpandedOp(expandedOp === op.operatorId ? null : op.operatorId)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-sm font-semibold text-ink">{op.operatorName}</span>
                     <span className="text-xs text-ink-3">{t('discrepancy.shiftCount', { value: op.discrepancyShiftCount })}</span>
                     {op.unresolvedCount > 0 && (
                       <StatusBadge tone="bad" icon={AlertTriangle} label={t('discrepancy.unresolved', { value: op.unresolvedCount })} />
                     )}
                   </div>
-                  <div className="flex items-center gap-4 text-xs">
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs">
                     {op.totalShortAmount > 0 && (
                       <span className="text-bad font-semibold">{t('discrepancy.short')} <MoneyText value={op.totalShortAmount} /></span>
                     )}
@@ -193,15 +197,17 @@ export function DiscrepancyTab({ pumpId }: { pumpId: number }) {
                   </div>
                 </button>
                 {expandedOp === op.operatorId && (
-                  <DataTable
-                    caption={t('discrepancy.operatorCaption', { name: op.operatorName })}
-                    captionHidden
-                    columns={screenColumns(t)}
-                    rows={op.shifts}
-                    rowKey={(s) => s.shiftId}
-                    className="rounded-none border-x-0 border-b-0"
-                    tableClassName="text-xs"
-                  />
+                  <div id={`${operatorShiftsId}-${op.operatorId}`}>
+                    <DataTable
+                      caption={t('discrepancy.operatorCaption', { name: op.operatorName })}
+                      captionHidden
+                      columns={screenColumns(t)}
+                      rows={op.shifts}
+                      rowKey={(s) => s.shiftId}
+                      className="rounded-none border-x-0 border-b-0"
+                      tableClassName="text-xs"
+                    />
+                  </div>
                 )}
               </div>
             ))

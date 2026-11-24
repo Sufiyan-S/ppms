@@ -9,7 +9,7 @@ import type { NozzleDetail } from '../../../types/shift'
 import { useToastStore } from '../../../store/toastStore'
 import { codeLabel } from '../../../constants/labels'
 import { FUEL_UNIT } from '../../../constants/fuel'
-import { formatNumberIn } from '../../../i18n/format'
+import { formatDecimal } from '../../../utils/format'
 import { FormField } from '../../../components/FormField'
 import { LiveFigures } from '../../../components/LiveFigures'
 import { LoadingButton } from '../../../components/LoadingButton'
@@ -49,7 +49,7 @@ export function RecordDipPanel({ pumpId, nozzle, tank, onClose }: Props) {
   })
 
   const unit = FUEL_UNIT[nozzle.fuelType] ?? 'L'
-  const formatQuantity = (value: number) => `${formatNumberIn(value, { maximumFractionDigits: 3 })} ${unit}`
+  const formatQuantity = (value: number) => `${formatDecimal(value)} ${unit}`
   const litres = Number(dipLitres)
   const hasLitres = dipLitres !== '' && Number.isFinite(litres) && litres > 0
   const tooMuch = tank !== null && hasLitres && litres > tank.currentStock

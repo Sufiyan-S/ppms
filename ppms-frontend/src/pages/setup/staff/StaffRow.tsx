@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { CircleOff, Settings, CalendarDays, RotateCcw, Pencil, KeyRound, ArrowRightLeft } from 'lucide-react'
+import { Check, CircleOff, Phone, Settings, CalendarDays, RotateCcw, Pencil, KeyRound, ArrowRightLeft } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { StaffMember } from '../../../api/userApi'
 import type { ShiftDefinition } from '../../../api/shiftDefinitionApi'
@@ -7,6 +7,7 @@ import { RowActionMenu } from '../../../components/RowActionMenu'
 import type { RowActionMenuItem } from '../../../components/RowActionMenu'
 import { useRowPanelFocus } from '../../../hooks/useRowPanelFocus'
 import { ROLE_BADGE } from './staffForm'
+import { avatarTint, staffInitials } from './staffList'
 import type { StaffPanel } from './staffForm'
 import { EditStaffPanel } from './EditStaffPanel'
 import { PreferencesPanel } from './PreferencesPanel'
@@ -79,78 +80,68 @@ export function StaffRow({
   ]
 
   return (
-    <div
-      key={member.id}
-      className={`ui-card-plain relative ${menuOpen ? 'z-20' : 'z-0'} ${isInactive ? 'border-border opacity-70' : 'border-border'}`}
+    <li
+      aria-label={member.fullName}
+      className={`ui-card-plain relative ${menuOpen ? 'z-20' : 'z-0'} ${isInactive ? 'bg-bg' : ''}`}
     >
-      {/* Staff row */}
-      <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center">
-        <div aria-hidden="true" className={`h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
-          ROLE_BADGE[member.role] ?? 'bg-surface-sunken text-ink-2'
+      <div className="flex items-start gap-3 px-4 py-3">
+        <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+          isInactive ? 'bg-surface-sunken text-ink-3' : avatarTint(member.fullName)
         }`}>
-          {member.fullName.charAt(0).toUpperCase()}
-        </div>
+          {staffInitials(member.fullName)}
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-ink">{member.fullName}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-3">
-                {member.phoneNumber ? <span>{member.phoneNumber}</span> : null}
-                {member.employeeId ? <span>{member.employeeId}</span> : null}
-                {member.gender ? (
-                  <span>{codeLabel(member.gender)}</span>
-                ) : null}
-                {member.role === 'OPERATOR' && member.gender === 'FEMALE' ? (
-                  <span className={member.nightShiftConsent ? 'text-ok' : 'text-warn'}>
-                    {member.nightShiftConsent ? t('staff.nightShiftOkay') : t('staff.noNightShift')}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`text-xs px-2 py-0.5 rounded-badge font-semibold ${ROLE_BADGE[member.role] ?? 'bg-surface-sunken text-ink-2'}`}>
-                {codeLabel(member.role)}
+          <p className={`truncate text-base font-semibold ${isInactive ? 'text-ink-3' : 'text-ink'}`}>{member.fullName}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className={`rounded-badge px-2 py-0.5 text-xs font-semibold ${ROLE_BADGE[member.role] ?? 'bg-surface-sunken text-ink-2'}`}>
+              {codeLabel(member.role)}
+            </span>
+            {isInactive
+              ? <StatusBadge tone="neutral" icon={CircleOff} label={t('staff.status.inactive')} />
+              : <StatusBadge tone="ok" icon={Check} label={t('staff.status.active')} />}
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
+            {member.phoneNumber ? (
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <Phone size={12} strokeWidth={2} aria-hidden="true" />{member.phoneNumber}
               </span>
-              {isInactive && (
-                <StatusBadge tone="bad" icon={CircleOff} label={t('nozzles.du.inactive')} />
-              )}
-            </div>
+            ) : null}
+            {member.employeeId ? <span className="tabular-nums">{member.employeeId}</span> : null}
+            {member.gender ? <span>{codeLabel(member.gender)}</span> : null}
+            {member.role === 'OPERATOR' && member.gender === 'FEMALE' ? (
+              <span className={member.nightShiftConsent ? 'text-ok' : 'text-warn'}>
+                {member.nightShiftConsent ? t('staff.nightShiftOkay') : t('staff.noNightShift')}
+              </span>
+            ) : null}
           </div>
         </div>
         {menuItems.length > 0 && (
-          <div className="md:ml-auto">
-            <RowActionMenu
-              label={t('staff.menu.label')}
-              open={menuOpen}
-              onOpenChange={(open) => onMenuChange(open ? member.id : null)}
-              triggerRef={menuButtonRef}
-              triggerClassName="flex h-10 w-10 items-center justify-center rounded-card border border-border bg-bg text-lg leading-none text-ink-2 transition-colors hover:border-control hover:bg-surface hover:text-ink"
-              menuClassName="absolute right-0 top-full z-6 mt-2 w-64 overflow-hidden rounded-card border border-border bg-surface p-1.5 shadow-overlay"
-              items={menuItems}
-            />
-          </div>
+          <RowActionMenu
+            label={t('staff.menu.labelFor', { name: member.fullName })}
+            open={menuOpen}
+            onOpenChange={(open) => onMenuChange(open ? member.id : null)}
+            triggerRef={menuButtonRef}
+            triggerClassName="ui-btn-icon h-11 w-11 shrink-0 rounded-card border border-border bg-bg text-lg leading-none text-ink-2 transition-colors hover:border-control hover:bg-surface hover:text-ink md:h-10 md:w-10"
+            menuClassName="absolute right-0 top-full z-6 mt-2 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-card border border-border bg-surface p-1.5 shadow-overlay"
+            items={menuItems}
+          />
         )}
       </div>
 
       <div ref={panelRef}>
-      {/* Edit details panel */}
       {openPanel === 'edit' && (
         <EditStaffPanel pumpId={pumpId} member={member} canAssignAdmin={canPerformAction('staff:create-admin', viewerRole)} onClose={onClosePanel} />
 
       )}
 
-      {/* Preferences panel */}
       {isPrefOpen && (
         <PreferencesPanel pumpId={pumpId} member={member} activeShiftDefs={activeShiftDefs} onClose={onClosePanel} />
       )}
 
-      {/* Pay Rates panel */}
       {openPanel === 'rates' && (
         <PayRatesPanel pumpId={pumpId} member={member} onClose={onClosePanel} />
       )}
 
-      {/* Leave management panel */}
       {isLeaveOpen && (
         <LeavePanel pumpId={pumpId} member={member} onClose={onClosePanel} />
       )}
@@ -171,6 +162,6 @@ export function StaffRow({
       {resetDialogOpen && (
         <ResetPasswordDialog userId={member.id} userName={member.fullName} onClose={() => setResetDialogOpen(false)} />
       )}
-    </div>
+    </li>
   )
 }

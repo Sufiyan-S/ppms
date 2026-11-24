@@ -1,21 +1,24 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
+import { ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { parseApiError } from '../../utils/apiError'
 import { pumpApi } from '../../api/pumpApi'
 import type { PumpSummary } from '../../api/pumpApi'
 import { useToastStore } from '../../store/toastStore'
 import { FormField } from '../../components/FormField'
-import { LoadingButton } from '../../components/LoadingButton'
+import { FormGrid } from '../../components/layout/FormGrid'
 import { NumericInput } from '../../components/NumericInput'
 import { formatCurrency } from '../../utils/format'
-
-// ── Pump Settings Content ─────────────────────────────────────────────────────
+import { SetupFormGroup } from './SetupFormGroup'
+import { SetupSaveBar } from './SetupSaveBar'
 
 export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; onUpdated: () => void }) {
   const { t } = useTranslation(['setup', 'common'])
   const { addToast } = useToastStore()
-  const [threshold, setThreshold] = useState(pump.discrepancyEscalationThreshold?.toString() ?? '')
+  const [savedThreshold, setSavedThreshold] = useState(pump.discrepancyEscalationThreshold?.toString() ?? '')
+  const [threshold, setThreshold] = useState(savedThreshold)
+  const [fieldError, setFieldError] = useState<string | null>(null)
   const [error, setError]         = useState<string | null>(null)
 
   const mutation = useMutation({
@@ -24,6 +27,7 @@ export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; on
     onSuccess: () => {
       addToast(t('settings.saved'), 'success')
       setError(null)
+      setSavedThreshold(threshold)
       onUpdated()
     },
     onError: (err) => setError(parseApiError(err, t('settings.saveFailed'))),
@@ -38,7 +42,7 @@ export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; on
     }
     const num = parseFloat(val)
     if (isNaN(num) || num < 0) {
-      setError(t('settings.invalidAmount'))
+      setFieldError(t('settings.invalidAmount'))
       return
     }
     mutation.mutate(num)
@@ -52,22 +56,22 @@ export function PumpSettingsContent({ pump, onUpdated }: { pump: PumpSummary; on
     : null
 
   return (
-    <form onSubmit={handleSave} className="space-y-4 pt-2">
-      <p className="text-xs text-ink-3">{t('settings.explanation')}</p>
+    <form onSubmit={handleSave} className="space-y-4">
+      <SetupFormGroup icon={ShieldCheck} title={t('settings.escalationTitle')} hint={t('settings.explanation')}>
+        <FormGrid>
+          <FormField
+            label={<>{t('settings.thresholdLabel')} <span className="text-ink-3 font-normal">{t('common:fields.optionalSuffix')}</span></>}
+            help={effect ?? undefined}
+            error={fieldError ?? undefined}
+          >
+            <NumericInput min="0" step="1" unit="₹" value={threshold}
+              onChange={(e) => { setThreshold(e.target.value); setFieldError(null); setError(null) }} />
+          </FormField>
+        </FormGrid>
+      </SetupFormGroup>
 
-      <FormField
-        className="max-w-xs"
-        label={<>{t('settings.thresholdLabel')} <span className="text-ink-3 font-normal">{t('common:fields.optionalSuffix')}</span></>}
-        help={effect ?? undefined}
-        error={error ?? undefined}
-      >
-        <NumericInput min="0" step="1" unit="₹" value={threshold}
-          onChange={(e) => { setThreshold(e.target.value); setError(null) }} />
-      </FormField>
-
-      <LoadingButton type="submit" isLoading={mutation.isPending} loadingLabel={t('common:actions.saving')} className="ui-btn-primary">
-        {t('settings.save')}
-      </LoadingButton>
+      <SetupSaveBar hasChanges={threshold.trim() !== savedThreshold.trim()} isSaving={mutation.isPending}
+        saveLabel={t('settings.save')} error={error} />
     </form>
   )
 }

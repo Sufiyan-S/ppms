@@ -27,6 +27,7 @@ import { DashboardColumns, KpiRow } from '../../components/layout/DashboardGrid'
 import { AttentionInbox } from './overview/AttentionInbox'
 import { OverviewHeader } from './overview/OverviewHeader'
 import { codeLabel } from '../../constants/labels'
+import { formatDecimal } from '../../utils/format'
 
 const RevenueTrendChart = lazy(() => import('./overview/RevenueTrendChart').then((module) => ({ default: module.RevenueTrendChart })))
 
@@ -250,7 +251,7 @@ export default function OverviewPage() {
               <div className="flex flex-wrap gap-2">
                 {lowStockTanks.map(tank => (
                   <StatusBadge key={tank.tankId} tone="bad" icon={Gauge}
-                    label={t('overview.lowStock.tank', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType), percent: tank.stockPercentage.toFixed(1) })} />
+                    label={t('overview.lowStock.tank', { tank: tank.tankIdentifier, fuel: codeLabel(tank.fuelType), percent: formatDecimal(tank.stockPercentage, 1) })} />
                 ))}
               </div>
             </div>

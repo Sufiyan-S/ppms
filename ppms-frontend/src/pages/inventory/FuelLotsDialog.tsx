@@ -11,6 +11,7 @@ import type { DataTableColumn } from '../../components/DataTable'
 import { StatusBadge } from '../../components/StatusBadge'
 import { LitresText } from '../../components/AmountText'
 import { fmtDate } from './inventoryFormat'
+import { formatCurrency } from '../../utils/format'
 
 function lotColumns(t: TFunction<['inventory', 'common']>): DataTableColumn<InventoryLotDetail>[] {
   return [
@@ -26,7 +27,7 @@ function lotColumns(t: TFunction<['inventory', 'common']>): DataTableColumn<Inve
     key: 'cost',
     header: t('lots.costPrice'),
     numeric: true,
-    cell: (lot) => lot.isDipAdjustment ? '—' : `₹${Number(lot.costPricePerUnit).toFixed(4)}`,
+    cell: (lot) => lot.isDipAdjustment ? '—' : formatCurrency(Number(lot.costPricePerUnit)),
   },
   {
     key: 'remaining',

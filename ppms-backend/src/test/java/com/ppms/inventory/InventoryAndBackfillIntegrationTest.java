@@ -10,9 +10,12 @@ import com.ppms.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +36,8 @@ class InventoryAndBackfillIntegrationTest extends ApiIntegrationTest {
     @Autowired private InventoryLotRepository lotRepository;
 
     @Autowired private DipCheckNozzleReadingRepository dipCheckNozzleReadingRepository;
+
+    @Autowired private DipCheckRepository dipCheckRepository;
 
     private PumpSetup setup;
 
@@ -239,6 +244,27 @@ class InventoryAndBackfillIntegrationTest extends ApiIntegrationTest {
         return request;
     }
 
+    private DipCheck saveDipCheck(Long tankId) {
+        return dipCheckRepository.save(DipCheck.builder()
+                .pumpId(setup.pumpId())
+                .tankId(tankId)
+                .measuredQuantity(new BigDecimal("1000"))
+                .systemStock(new BigDecimal("1000"))
+                .checkedAt(OffsetDateTime.now())
+                .loggedByUserId(setup.manager().getId())
+                .status(DipCheckStatus.WITHIN_TOLERANCE)
+                .build());
+    }
+
+    private List<Long> dipCheckIds(Map<String, String> filters) throws Exception {
+        MockHttpServletRequestBuilder request = get("/api/inventory/{pumpId}/dip-checks", setup.pumpId());
+        filters.forEach(request::param);
+        JsonNode page = json(perform(request, setup.manager()).andExpect(status().isOk()));
+        List<Long> ids = new ArrayList<>();
+        page.get("content").forEach(check -> ids.add(check.get("id").asLong()));
+        return ids;
+    }
+
     private UndergroundTank saveDieselTank() {
         return tankRepository.save(UndergroundTank.builder()
                 .pumpId(setup.pumpId())
@@ -397,6 +423,31 @@ class InventoryAndBackfillIntegrationTest extends ApiIntegrationTest {
                 .andExpect(status().isBadRequest());
 
         assertThat(tankRepository.findById(emptyPump.tank().getId()).orElseThrow().getCurrentStock()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void dipCheckHistoryIsFilteredByTankAndFuelOnTheServerAcrossAllPages() throws Exception {
+        UndergroundTank dieselTank = saveDieselTank();
+        Long petrolCheckId = saveDipCheck(setup.tank().getId()).getId();
+        Long dieselCheckId = saveDipCheck(dieselTank.getId()).getId();
+        PumpSetup otherPump = createPumpWithStock("500");
+
+        assertThat(dipCheckIds(Map.of())).containsExactlyInAnyOrder(petrolCheckId, dieselCheckId);
+        assertThat(dipCheckIds(Map.of("tankId", dieselTank.getId().toString()))).containsExactly(dieselCheckId);
+        assertThat(dipCheckIds(Map.of("fuelType", setup.tank().getFuelType().name()))).containsExactly(petrolCheckId);
+        assertThat(dipCheckIds(Map.of("tankId", dieselTank.getId().toString(), "fuelType", setup.tank().getFuelType().name()))).isEmpty();
+        assertThat(dipCheckIds(Map.of("tankId", otherPump.tank().getId().toString()))).isEmpty();
+
+        JsonNode firstPage = json(perform(get("/api/inventory/{pumpId}/dip-checks", setup.pumpId())
+                .param("tankId", dieselTank.getId().toString()).param("size", "1"), setup.manager())
+                .andExpect(status().isOk()));
+        assertThat(firstPage.get("totalElements").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void dipCheckHistoryWithAnUnknownFuelTypeIsRefused() throws Exception {
+        perform(get("/api/inventory/{pumpId}/dip-checks", setup.pumpId()).param("fuelType", "KEROSENE"), setup.manager())
+                .andExpect(status().isBadRequest());
     }
 
     @Test

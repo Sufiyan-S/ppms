@@ -63,7 +63,16 @@
     "noneInView": "या यादीत ग्राहक नाहीत",
     "noMatchHint": "दुसरे नाव किंवा फोन नंबर वापरून पाहा.",
     "noneInViewHint": "सर्व ग्राहक पाहण्यासाठी \"सर्व\" निवडा.",
-    "sortBy": "क्रम"
+    "sortBy": "क्रम",
+    "ageBuckets": {
+      "label": "किती दिवस जुनी थकबाकी",
+      "upTo30Days": "0–30 दिवस",
+      "days31To60": "31–60 दिवस",
+      "days61To90": "61–90 दिवस",
+      "over90Days": "90 दिवसांपेक्षा जास्त"
+    },
+    "overdueDays_one": "{{count}} दिवस थकीत",
+    "overdueDays_other": "{{count}} दिवस थकीत"
   },
   "portalPin": {
     "removed": "{{name}} यांचा पोर्टल PIN काढला",
@@ -74,7 +83,6 @@
     "setAction": "पोर्टल PIN सेट करा",
     "remove": "PIN काढा",
     "removeFor": "{{name}} यांचा पोर्टल PIN काढा",
-    "removePrompt": "PIN काढायचा?",
     "saved": "{{name}} यांचा पोर्टल PIN सेव्ह झाला",
     "saveFailed": "पोर्टल PIN सेव्ह करता आला नाही",
     "invalid": "PIN 4 ते 6 अंकी असावा",
@@ -356,7 +364,6 @@
     "parentBadge_one": "मुख्य · {{count}} उप-खाते",
     "parentBadge_other": "मुख्य · {{count}} उप-खाती",
     "disabled": "बंद",
-    "addSubAccountToggle": "+ उप-खाते",
     "addSubAccountUnder": "{{name}} मध्ये उप-खाते जोडा",
     "subNamePlaceholder": "उदा. ड्रायव्हर 1",
     "phonePlaceholder": "उदा. 9876543210",
@@ -369,7 +376,18 @@
     "clientName": "ग्राहकाचे नाव",
     "clientNamePlaceholder": "उदा. ABC ट्रान्सपोर्ट्स",
     "addClient": "ग्राहक जोडा",
-    "emptyReadOnlyHint": "क्रेडिट ग्राहक जोडण्यासाठी मालक किंवा ॲडमिनशी संपर्क साधा."
+    "emptyReadOnlyHint": "क्रेडिट ग्राहक जोडण्यासाठी मालक किंवा ॲडमिनशी संपर्क साधा.",
+    "disablePrompt": "हा ग्राहक बंद करायचा?",
+    "menu": {
+      "label": "{{name}} साठी पर्याय",
+      "edit": "माहिती बदला",
+      "editHint": "नाव, फोन, नोंद, GSTIN आणि बिलाचा पत्ता",
+      "addSubAccountHint": "या ग्राहकाच्या नावे बिल होणारा चालक किंवा वाहन",
+      "pinHint": "ग्राहक या PIN ने आपली बाकी रक्कम पाहतो",
+      "removePinHint": "ग्राहकाला आता ऑनलाइन बाकी पाहता येणार नाही",
+      "disableHint": "शिफ्टच्या यादीतून लपेल; नोंदी राहतील",
+      "enableAria": "ग्राहक {{name}} सुरू करा"
+    }
   },
   "detail": {
     "interestApplied": "{{days}} दिवसांचे ({{from}} – {{to}}) {{amount}} व्याज लावले",

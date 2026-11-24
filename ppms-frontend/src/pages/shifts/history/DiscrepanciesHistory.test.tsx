@@ -71,7 +71,7 @@ describe('DiscrepanciesHistory', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Shift #11 · Ravi')).toBeInTheDocument()
-    expect(within(dialog).getByText('SHORT ₹2,000.00')).toBeInTheDocument()
+    expect(within(dialog).getByText('Short ₹2,000.00')).toBeInTheDocument()
     expect(within(dialog).getByText('Reason given at close').nextSibling).toHaveTextContent('Cash bag missing')
   })
 
@@ -87,13 +87,98 @@ describe('DiscrepanciesHistory', () => {
     const escalated = cards[0]
     expect(within(escalated).getByText('Ravi')).toBeInTheDocument()
     expect(within(escalated).getByText('2026-03-15 · MORNING')).toBeInTheDocument()
-    expect(within(escalated).getByText('SHORT ₹2,000.00')).toBeInTheDocument()
+    expect(within(escalated).getByText('Short ₹2,000.00')).toBeInTheDocument()
     expect(within(escalated).getByText('Needs Approval')).toBeInTheDocument()
     expect(within(escalated).getByText('Cash bag missing')).toBeInTheDocument()
     const approve = within(escalated).getByRole('button', { name: `Approve discrepancy for shift ${ESCALATED_ID}` })
-    expect(approve).toHaveClass('ui-btn', 'w-full')
+    expect(approve).toHaveClass('ui-btn', 'ui-btn-primary', 'w-full')
 
     await user.click(approve)
     expect(await screen.findByRole('dialog')).toHaveTextContent('Shift #11 · Ravi')
+  })
+
+  it('labels totals and filters in sentence case and right-aligns the amount column', async () => {
+    signIn('OWNER')
+    renderWithProviders(<DiscrepanciesHistory pumpId={3} />)
+
+    expect(await screen.findByText('Short total:')).toBeInTheDocument()
+    expect(screen.getByText('Over total:')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Short' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Over' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Amount' })).toHaveClass('text-right', 'tabular-nums')
+  })
+
+  it('puts the dates and type chips in a filter bar that clears back to every discrepancy', async () => {
+    const user = userEvent.setup()
+    signIn('OWNER')
+    renderWithProviders(<DiscrepanciesHistory pumpId={3} />)
+
+    const filters = await screen.findByRole('group', { name: 'Discrepancy filters' })
+    expect(within(filters).getByLabelText('From date')).toBeInTheDocument()
+    const short = within(filters).getByRole('button', { name: 'Short' })
+    expect(short).toHaveClass('ui-chip')
+    expect(within(filters).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(short)
+
+    const filtered = await screen.findByRole('group', { name: 'Discrepancy filters' })
+    expect(within(filtered).getByRole('button', { name: 'Short' })).toHaveAttribute('aria-pressed', 'true')
+    expect(shiftApi.getShiftHistory).toHaveBeenLastCalledWith(3, expect.objectContaining({ discrepancyType: 'SHORT' }))
+
+    await user.click(within(filtered).getByRole('button', { name: 'Clear filters' }))
+
+    const cleared = await screen.findByRole('group', { name: 'Discrepancy filters' })
+    expect(within(cleared).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(cleared).queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
+  it('pages through discrepancies with the shared pagination bar', async () => {
+    const user = userEvent.setup()
+    signIn('OWNER')
+    vi.mocked(shiftApi.getShiftHistory).mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => shortShift(100 + index, 'CLOSED_DISCREPANCY_PENDING')))
+    renderWithProviders(<DiscrepanciesHistory pumpId={3} />)
+
+    expect(await screen.findByText('1–10')).toBeInTheDocument()
+    expect(screen.getByText('100')).toBeInTheDocument()
+    expect(screen.queryByText('110')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+
+    expect(screen.getByText('11–12')).toBeInTheDocument()
+    expect(screen.getByText('110')).toBeInTheDocument()
+    expect(screen.queryByText('100')).not.toBeInTheDocument()
+  })
+
+  it('names a dispenser without a name by its translated number', async () => {
+    signIn('OWNER')
+    vi.mocked(shiftApi.getShiftHistory).mockResolvedValue([{ ...shortShift(PENDING_ID, 'CLOSED_DISCREPANCY_PENDING'), duName: null, duNumber: 4 }])
+    renderWithProviders(<DiscrepanciesHistory pumpId={3} />)
+
+    expect(within(await rowOf(PENDING_ID)).getByText('DU #4')).toBeInTheDocument()
+  })
+
+  it('keeps the current rows on screen, marked busy, while a new filter loads instead of flashing a skeleton', async () => {
+    const user = userEvent.setup()
+    signIn('OWNER')
+    let finishShortOnly: (shifts: Shift[]) => void = () => {}
+    vi.mocked(shiftApi.getShiftHistory).mockImplementation((_pumpId, filters) => filters?.discrepancyType === 'SHORT'
+      ? new Promise(resolve => { finishShortOnly = resolve })
+      : Promise.resolve([shortShift(ESCALATED_ID, 'CLOSED_DISCREPANCY_PENDING_APPROVAL'), shortShift(PENDING_ID, 'CLOSED_DISCREPANCY_PENDING')]))
+    renderWithProviders(<DiscrepanciesHistory pumpId={3} />)
+    await rowOf(PENDING_ID)
+
+    await user.click(screen.getByRole('button', { name: 'Short' }))
+
+    const results = screen.getByTestId('discrepancy-results')
+    expect(results).toHaveAttribute('aria-busy', 'true')
+    expect(results).toHaveClass('opacity-60')
+    expect(screen.getByText(String(PENDING_ID))).toBeInTheDocument()
+    expect(document.querySelector('.ui-skeleton')).toBeNull()
+
+    finishShortOnly([shortShift(PENDING_ID, 'CLOSED_DISCREPANCY_PENDING')])
+    await vi.waitFor(() => expect(results).toHaveAttribute('aria-busy', 'false'))
+    expect(screen.queryByText(String(ESCALATED_ID))).not.toBeInTheDocument()
   })
 })

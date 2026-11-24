@@ -8,6 +8,8 @@ import type { CreditEntry } from '../../../types/shift'
 import { MoneyText } from '../../../components/AmountText'
 import { focusOnMount } from '../../../utils/focus'
 import { codeLabel } from '../../../constants/labels'
+import { formatCurrency } from '../../../utils/format'
+import { formatUnits } from './closeShiftTotals'
 
 interface Props {
   shift: Shift
@@ -75,7 +77,7 @@ export function PreRecordedCreditList({ shift, entries, total, onEdit, onVoided 
                   </div>
                   {liters && price ? (
                     <p className="text-xs text-ink-3 mt-0.5">
-                      {liters.toFixed(2)} {unit} × ₹{price} =&nbsp;
+                      {formatUnits(liters, unit)} × {formatCurrency(price)} =&nbsp;
                       <MoneyText value={e.amount} className="font-semibold text-ok" />
                     </p>
                   ) : (

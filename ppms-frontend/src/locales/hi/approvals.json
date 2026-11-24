@@ -62,7 +62,10 @@
     "submittedBy": "किसने भेजा",
     "waiting": "कब से बाकी",
     "date": "तारीख",
-    "note": "नोट"
+    "note": "नोट",
+    "decide": "फ़ैसला",
+    "approveItem": "मंज़ूर करें {{name}} {{amount}}",
+    "rejectItem": "अस्वीकार करें {{name}} {{amount}}"
   },
   "waiting": {
     "justNow": "अभी-अभी",

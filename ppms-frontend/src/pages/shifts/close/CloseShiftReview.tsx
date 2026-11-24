@@ -6,7 +6,7 @@ import type { DataTableColumn } from '../../../components/DataTable'
 import { MoneyText } from '../../../components/AmountText'
 import { DiscrepancyBadge } from '../components/DiscrepancyBadge'
 import { fmt } from '../components/creditRow'
-import { discrepancyTypeOf, needsOwnerApproval } from './closeShiftTotals'
+import { discrepancyTypeOf, formatUnits, needsOwnerApproval } from './closeShiftTotals'
 
 export interface NozzleSaleLine {
   nozzleId: number
@@ -41,7 +41,7 @@ interface Props {
 function saleColumns(t: TFunction<['shifts', 'common']>): DataTableColumn<NozzleSaleLine>[] {
   return [
     { key: 'nozzle', header: t('close.review.columns.nozzle'), cell: (line) => line.label },
-    { key: 'sold', header: t('close.review.columns.sold'), numeric: true, cell: (line) => `${line.units.toFixed(3)} ${line.unit}` },
+    { key: 'sold', header: t('close.review.columns.sold'), numeric: true, cell: (line) => formatUnits(line.units, line.unit) },
     { key: 'amount', header: t('close.review.columns.amount'), numeric: true, cell: (line) => <MoneyText value={line.amount} /> },
   ]
 }

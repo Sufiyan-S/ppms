@@ -6,6 +6,9 @@ import { FUEL_BADGE, bsColumn, fmtIstTime } from '../bsFormat'
 import { DataTable } from '../../../components/DataTable'
 import type { DataTableColumn } from '../../../components/DataTable'
 import { codeLabel } from '../../../constants/labels'
+import { formatNumberIn } from '../../../i18n/format'
+
+const formatReading = (reading: number) => formatNumberIn(reading, { maximumFractionDigits: 3 })
 
 function amendmentColumns(t: TFunction<['balancesheet', 'common']>): DataTableColumn<MeterAmendmentLine>[] {
   return [
@@ -24,9 +27,9 @@ export function MeterAmendmentsSection({ detail }: { detail: BalanceSheetDetail 
   const { t } = useTranslation(['balancesheet', 'common'])
   return (
     <section>
-      <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">
+      <h3 className="ui-section-heading mb-3">
         {t('meter.title')}
-        <span className="ml-2 text-ink-3 normal-case font-normal">
+        <span className="ml-2 font-normal text-ink-3">
           {t('meter.count', { count: detail.meterAmendments.length })}
         </span>
       </h3>
@@ -52,11 +55,11 @@ export function MeterAmendmentsSection({ detail }: { detail: BalanceSheetDetail 
                   {a.adjustmentType === 'RESET' ? t('meter.resetToZero') : t('meter.custom')}
                 </span>
               </Td>
-              <Td right><span className="font-mono text-ink-2">{a.previousReading.toFixed(2)}</span></Td>
-              <Td right><span className="font-mono text-ink font-medium">{a.newReading.toFixed(2)}</span></Td>
+              <Td right><span className="font-mono text-ink-2">{formatReading(a.previousReading)}</span></Td>
+              <Td right><span className="font-mono text-ink font-medium">{formatReading(a.newReading)}</span></Td>
               <Td right>
                 <span className={`font-medium ${deltaColor}`}>
-                  {a.delta > 0 ? '+' : ''}{a.delta.toFixed(2)}
+                  {a.delta > 0 ? '+' : ''}{formatReading(a.delta)}
                 </span>
               </Td>
               <Td><span className="text-xs text-ink-3">{a.reason}</span></Td>

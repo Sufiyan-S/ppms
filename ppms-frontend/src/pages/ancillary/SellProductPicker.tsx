@@ -26,6 +26,7 @@ export function SellProductPicker({
       title={t('sell.title')}
       subtitle={t('sellPicker.subtitle')}
       onClose={onClose}
+      confirmDiscard={false}
       bodyClassName="space-y-3"
       footer={<>
         <StillNeeded id={stillNeededId} items={stillNeeded} />
@@ -49,7 +50,11 @@ export function SellProductPicker({
             value={productId}
             onChange={setProductId}
             placeholder={t('fields.selectProduct')}
-            options={sellable.map(p => ({ value: p.id.toString(), label: t('fields.productOption', { name: p.displayName, stock: p.currentStockUnits }) }))}
+            options={sellable.map(p => ({
+              value: p.id.toString(),
+              label: t(p.currentSellingPricePerUnit == null ? 'fields.productOptionNoPrice' : 'fields.productOption',
+                { name: p.displayName, stock: p.currentStockUnits }),
+            }))}
           />
         </div>
       )}

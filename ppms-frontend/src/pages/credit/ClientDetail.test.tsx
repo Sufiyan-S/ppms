@@ -319,3 +319,39 @@ describe('ClientDetail from the address', () => {
     expect(within(tabs).getByRole('link', { name: 'Invoices' })).toHaveAttribute('href', '/?records=invoices')
   })
 })
+
+describe('ClientDetail apply interest', () => {
+  const interestClient: CreditClient = { ...client, monthlyInterestRate: 1.5 }
+
+  beforeEach(() => {
+    vi.mocked(creditApi.getLedgerSummary).mockResolvedValue([interestClient])
+    vi.mocked(creditApi.getActiveExtensions).mockResolvedValue([])
+    vi.mocked(creditApi.getAllTransactions).mockResolvedValue([pendingPayment])
+    vi.mocked(creditApi.getPendingPayments).mockResolvedValue([pendingPaymentRecord])
+    signIn('OWNER', 1)
+  })
+
+  it('shows the monthly rate with two decimals', async () => {
+    await renderClient()
+    expect(screen.getByText('1.50%/mo')).toBeInTheDocument()
+  })
+
+  it('shows the applied amount in rupees with two decimals', async () => {
+    const user = userEvent.setup()
+    vi.mocked(creditApi.applyInterest).mockResolvedValue({ applied: true, amount: 1234.5, days: 30, periodFrom: '2026-02-01', periodTo: '2026-03-02' })
+    await renderClient()
+
+    await user.click(screen.getByRole('button', { name: 'Apply interest' }))
+    expect(await screen.findByText('₹1,234.50 interest applied for 30 days (2026-02-01 – 2026-03-02)')).toBeInTheDocument()
+  })
+
+  it('shows a dash instead of "₹undefined" when the server sends no amount', async () => {
+    const user = userEvent.setup()
+    vi.mocked(creditApi.applyInterest).mockResolvedValue({ applied: true, days: 30, periodFrom: '2026-02-01', periodTo: '2026-03-02' })
+    await renderClient()
+
+    await user.click(screen.getByRole('button', { name: 'Apply interest' }))
+    expect(await screen.findByText('— interest applied for 30 days (2026-02-01 – 2026-03-02)')).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
+  })
+})

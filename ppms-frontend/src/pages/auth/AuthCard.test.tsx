@@ -21,4 +21,17 @@ describe('signed-out screens', () => {
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(screen.getByLabelText('Language')).toBeInTheDocument()
   })
+
+  it('gives credit customers their own brand line instead of the pump-staff one', () => {
+    renderWithProviders(<CreditBalancePortalPage />)
+
+    expect(screen.getByText('Your fuel credit, at a glance.')).toBeInTheDocument()
+    expect(screen.queryByText('Run every pump shift with clarity.')).not.toBeInTheDocument()
+  })
+
+  it('shows the pump-staff brand line on the staff screens', () => {
+    renderWithProviders(<ForgotPasswordPage />)
+
+    expect(screen.getByText('Run every pump shift with clarity.')).toBeInTheDocument()
+  })
 })

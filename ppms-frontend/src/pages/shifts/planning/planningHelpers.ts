@@ -9,12 +9,6 @@ export const SHIFT_ROW_ACCENTS = [
   'ui-plan-accent--4',
 ]
 
-export const STATUS_BADGE: Record<string, string> = {
-  PLANNED:   'bg-surface-sunken text-ink-2',
-  CONFIRMED: 'bg-ok-bg text-ok',
-  ABSENT:    'bg-bad-bg text-bad',
-}
-
 export function formatDay(iso: string): string {
   return formatIstDate(iso, { weekday: 'short', day: 'numeric', month: 'short' })
 }

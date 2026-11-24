@@ -46,7 +46,7 @@ export function SettlementSection({ summary }: { summary: SettlementSummary }) {
 
   return (
     <section className="mt-6 space-y-3">
-      <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wide">
+      <h3 className="ui-section-heading">
         {t('settlements.title')}
       </h3>
       <DataTable
@@ -82,7 +82,7 @@ export function SettlementSection({ summary }: { summary: SettlementSummary }) {
       />
       {summary.settlementsOnDate.length > 0 && (
         <div className="ui-card-plain ui-card-muted p-3 text-sm">
-          <p className="text-xs font-medium text-ink-3 mb-2 uppercase tracking-wide">{t('settlements.recordedOnDate')}</p>
+          <p className="ui-kpi-label mb-2">{t('settlements.recordedOnDate')}</p>
           <div className="space-y-1">
             {summary.settlementsOnDate.map(s => (
               <div key={s.id} className="flex items-center gap-3 text-xs text-ink-2">

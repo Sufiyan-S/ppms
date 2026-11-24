@@ -8,10 +8,10 @@ export function formatCurrency(n: number): string {
 }
 
 /**
- * Formats a litre value, 3 decimal places by default: 1,234.567 L
+ * Formats a litre value with 2 decimal places: 1,23,456.50 L
  */
-export function formatLitres(n: number, decimals = 3): string {
-  return formatLitresIn(n, decimals)
+export function formatLitres(n: number): string {
+  return formatLitresIn(n)
 }
 
 /**

@@ -47,6 +47,10 @@ public final class ServerTextCodes {
     public static final String INTEREST_NOT_DUE = "INTEREST_NOT_DUE";
     public static final String INTEREST_CHARGE_DETAILS = "INTEREST_CHARGE_DETAILS";
 
+    public static final String COUNTER_SALE_DETAILS = "COUNTER_SALE_DETAILS";
+    public static final String COUNTER_SALE_DETAILS_WITH_BILL = "COUNTER_SALE_DETAILS_WITH_BILL";
+    public static final String UNKNOWN_STAFF = "UNKNOWN_STAFF";
+
     public static final String STALE_DRAIN_RECORDED = "STALE_DRAIN_RECORDED";
     public static final String STALE_SHIFT_BACKFILLED = "STALE_SHIFT_BACKFILLED";
     public static final String STALE_SHIFT_CLOSED = "STALE_SHIFT_CLOSED";

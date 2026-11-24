@@ -6,6 +6,7 @@ import com.ppms.ancillary.AncillaryProductRepository;
 import com.ppms.ancillary.AncillarySale;
 import com.ppms.ancillary.AncillarySaleRepository;
 import com.ppms.common.dto.PagedResponse;
+import com.ppms.common.text.CodedText;
 import com.ppms.common.text.ServerTextCodes;
 import com.ppms.common.time.BusinessClock;
 import com.ppms.expense.ExpenseApprovalStatus;
@@ -36,6 +37,7 @@ public class CreditLedgerQueryService {
     private static final String ACTIVE = "ACTIVE";
     private static final String WAIVED = "WAIVED";
     private static final String COUNTER_SALE = "COUNTER_SALE";
+    static final String UNKNOWN_STAFF_NAME = "Unknown staff";
     private static final Comparator<CreditTransactionResponse> OLDEST_FIRST =
             Comparator.comparing(CreditTransactionResponse::getBusinessDate)
                     .thenComparing(CreditTransactionResponse::getOccurredAt)
@@ -190,7 +192,7 @@ public class CreditLedgerQueryService {
                 .map(CreditPayment::getRecordedById)
                 .collect(Collectors.toSet()));
         return payments.stream()
-                .map(payment -> toPaymentResponse(payment, nameById.getOrDefault(payment.getRecordedById(), "Unknown")))
+                .map(payment -> toPaymentResponse(payment, nameById.getOrDefault(payment.getRecordedById(), UNKNOWN_STAFF_NAME)))
                 .toList();
     }
 
@@ -227,27 +229,35 @@ public class CreditLedgerQueryService {
                         .map(AncillarySale::getProductId)
                         .collect(Collectors.toSet())).stream()
                 .collect(Collectors.toMap(AncillaryProduct::getId, Function.identity()));
-        counterSales.forEach(sale -> transactions.add(CreditTransactionResponse.builder()
-                .type(COUNTER_SALE)
-                .referenceId(sale.getId())
-                .reference(counterSaleLabel(sale, productsById.get(sale.getProductId())))
-                .amount(sale.getTotalWithGst().setScale(2, RoundingMode.HALF_UP))
-                .occurredAt(sale.getCreatedAt())
-                .businessDate(sale.getSaleDate())
-                .status(ACTIVE)
-                .countedInBalance(true)
-                .build()));
+        counterSales.forEach(sale -> {
+            CodedText label = counterSaleLabel(sale, productsById.get(sale.getProductId()));
+            transactions.add(CreditTransactionResponse.builder()
+                    .type(COUNTER_SALE)
+                    .referenceId(sale.getId())
+                    .reference(label.text())
+                    .referenceCode(label.code())
+                    .referenceParams(label.params())
+                    .amount(sale.getTotalWithGst().setScale(2, RoundingMode.HALF_UP))
+                    .occurredAt(sale.getCreatedAt())
+                    .businessDate(sale.getSaleDate())
+                    .status(ACTIVE)
+                    .countedInBalance(true)
+                    .build());
+        });
 
         List<CreditPayment> payments = paymentRepository.findByClientIdOrderByPaidAtDesc(clientId);
         Map<Long, String> paymentUserNames = loadUserNames(payments.stream()
                 .map(CreditPayment::getRecordedById)
                 .collect(Collectors.toSet()));
         payments.forEach(payment -> {
-            String recordedBy = paymentUserNames.getOrDefault(payment.getRecordedById(), "Unknown");
+            String recordedBy = paymentUserNames.get(payment.getRecordedById());
+            boolean showsUnknownRecorder = payment.getNotes() == null && recordedBy == null;
+            String reference = payment.getNotes() != null ? payment.getNotes() : recordedBy;
             transactions.add(CreditTransactionResponse.builder()
                     .type("PAYMENT")
                     .referenceId(payment.getId())
-                    .reference(payment.getNotes() != null ? payment.getNotes() : recordedBy)
+                    .reference(showsUnknownRecorder ? UNKNOWN_STAFF_NAME : reference)
+                    .referenceCode(showsUnknownRecorder ? ServerTextCodes.UNKNOWN_STAFF : null)
                     .detail(payment.getPaymentMode().name())
                     .amount(payment.getAmount().setScale(2, RoundingMode.HALF_UP))
                     .occurredAt(payment.getCreatedAt())
@@ -297,12 +307,18 @@ public class CreditLedgerQueryService {
         }
     }
 
-    private static String counterSaleLabel(AncillarySale sale, AncillaryProduct product) {
+    private static CodedText counterSaleLabel(AncillarySale sale, AncillaryProduct product) {
         String productName = product != null ? AncillaryProductQueryService.buildDisplayName(product) : "Product";
         String label = productName + " × " + sale.getQuantityUnits();
-        return sale.getBillNo() != null && !sale.getBillNo().isBlank()
-                ? label + " (Bill " + sale.getBillNo() + ")"
-                : label;
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("productName", productName);
+        params.put("quantity", sale.getQuantityUnits());
+        if (sale.getBillNo() == null || sale.getBillNo().isBlank()) {
+            return new CodedText(ServerTextCodes.COUNTER_SALE_DETAILS, params, label);
+        }
+        params.put("billNo", sale.getBillNo());
+        return new CodedText(ServerTextCodes.COUNTER_SALE_DETAILS_WITH_BILL, params,
+                label + " (Bill " + sale.getBillNo() + ")");
     }
 
     private CreditClientResponse toClientResponse(CreditClient client,

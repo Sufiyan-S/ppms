@@ -54,7 +54,7 @@ export function LeavePanel({ pumpId, member, onClose }: Props) {
   return (
     <RowPanel title={t('staff.leave.title', { name: member.fullName })}>
       {openLeaves.length === 0 ? (
-        <p className="text-xs text-ink-3">{t('staff.leave.empty')}</p>
+        <p className="ui-empty">{t('staff.leave.empty')}</p>
       ) : (
         <ul className="space-y-1">
           {openLeaves.map(lv => (

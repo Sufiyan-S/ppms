@@ -40,11 +40,12 @@ describe('AllShiftsHistory', () => {
     expect(shiftApi.getShiftHistory).not.toHaveBeenCalled()
     expect(screen.getByText(/23 shifts/)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
 
     expect(await screen.findByRole('link', { name: /Shift #11/ })).toBeInTheDocument()
     await waitFor(() => expect(shiftApi.getShiftHistoryPage).toHaveBeenLastCalledWith(5, expect.anything(), 1, 10))
-    expect(screen.getByText(/Page 2 of 3/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByText('11–20')).toBeInTheDocument()
   })
 
   it('keeps the dates in the address and offers to clear them', async () => {

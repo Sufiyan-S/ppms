@@ -63,7 +63,16 @@
     "noneInView": "इस सूची में कोई ग्राहक नहीं",
     "noMatchHint": "कोई दूसरा नाम या फ़ोन नंबर आज़माएँ।",
     "noneInViewHint": "सभी ग्राहक देखने के लिए \"सभी\" चुनें।",
-    "sortBy": "क्रम"
+    "sortBy": "क्रम",
+    "ageBuckets": {
+      "label": "कितने दिन पुराना बकाया",
+      "upTo30Days": "0–30 दिन",
+      "days31To60": "31–60 दिन",
+      "days61To90": "61–90 दिन",
+      "over90Days": "90 दिन से ज़्यादा"
+    },
+    "overdueDays_one": "{{count}} दिन से बकाया",
+    "overdueDays_other": "{{count}} दिन से बकाया"
   },
   "portalPin": {
     "removed": "{{name}} का पोर्टल PIN हटाया गया",
@@ -74,7 +83,6 @@
     "setAction": "पोर्टल PIN सेट करें",
     "remove": "PIN हटाएँ",
     "removeFor": "{{name}} का पोर्टल PIN हटाएँ",
-    "removePrompt": "PIN हटाएँ?",
     "saved": "{{name}} का पोर्टल PIN सेव हुआ",
     "saveFailed": "पोर्टल PIN सेव नहीं हो सका",
     "invalid": "PIN 4 से 6 अंकों का होना चाहिए",
@@ -356,7 +364,6 @@
     "parentBadge_one": "मुख्य · {{count}} उप-खाता",
     "parentBadge_other": "मुख्य · {{count}} उप-खाते",
     "disabled": "बंद",
-    "addSubAccountToggle": "+ उप-खाता",
     "addSubAccountUnder": "{{name}} में उप-खाता जोड़ें",
     "subNamePlaceholder": "जैसे ड्राइवर 1",
     "phonePlaceholder": "जैसे 9876543210",
@@ -369,7 +376,18 @@
     "clientName": "ग्राहक का नाम",
     "clientNamePlaceholder": "जैसे ABC ट्रांसपोर्ट्स",
     "addClient": "ग्राहक जोड़ें",
-    "emptyReadOnlyHint": "क्रेडिट ग्राहक जोड़ने के लिए मालिक या एडमिन से संपर्क करें।"
+    "emptyReadOnlyHint": "क्रेडिट ग्राहक जोड़ने के लिए मालिक या एडमिन से संपर्क करें।",
+    "disablePrompt": "यह ग्राहक बंद करें?",
+    "menu": {
+      "label": "{{name}} के विकल्प",
+      "edit": "जानकारी बदलें",
+      "editHint": "नाम, फ़ोन, नोट, GSTIN और बिल का पता",
+      "addSubAccountHint": "इस ग्राहक के नाम बिल होने वाला ड्राइवर या वाहन",
+      "pinHint": "ग्राहक इस PIN से अपनी बकाया राशि देखता है",
+      "removePinHint": "ग्राहक अब ऑनलाइन बकाया नहीं देख पाएगा",
+      "disableHint": "शिफ्ट की सूची से छिप जाएगा; रिकॉर्ड बने रहेंगे",
+      "enableAria": "ग्राहक {{name}} चालू करें"
+    }
   },
   "detail": {
     "interestApplied": "{{days}} दिनों ({{from}} – {{to}}) का {{amount}} ब्याज लगाया गया",

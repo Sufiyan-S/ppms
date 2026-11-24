@@ -106,7 +106,7 @@
     "filterByTank": "Filter DIP checks by tank",
     "filterByFuel": "Filter DIP checks by fuel type",
     "empty": "No DIP checks recorded yet.",
-    "noMatch": "No DIP checks match the selected filters on this page.",
+    "noMatch": "No DIP checks match the selected filters.",
     "tanksChecked_one": "{{count}} tank checked",
     "tanksChecked_other": "{{count}} tanks checked",
     "allBalanced": "All Balanced",

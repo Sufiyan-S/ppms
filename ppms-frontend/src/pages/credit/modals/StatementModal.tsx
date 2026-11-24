@@ -55,6 +55,7 @@ export function StatementModal({ pumpId, clientId, clientName, phone, outstandin
       subtitle={clientName}
       tone="info"
       onClose={onClose}
+      confirmDiscard={false}
       bodyClassName="space-y-4"
       footer={
         <>

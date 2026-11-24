@@ -45,3 +45,16 @@ export function searchForStep(current: URLSearchParams, key: SectionKey): string
   next.set('section', key)
   return `?${next.toString()}`
 }
+
+/** The current address without a step or ?action=, which opens the settings hub once setup is complete. */
+export function searchForHub(current: URLSearchParams): string {
+  const next = new URLSearchParams(current)
+  next.delete('action')
+  next.delete('section')
+  const search = next.toString()
+  return search ? `?${search}` : ''
+}
+
+export function isSetupComplete(checklist: SetupChecklist | undefined): boolean {
+  return !!checklist && checklist.doneCount === checklist.requiredCount
+}

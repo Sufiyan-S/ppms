@@ -13,12 +13,13 @@ import { LoadingButton } from '../../components/LoadingButton'
 import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
 import { ReviewList, ReviewRow } from './ReviewRow'
-import { UNITS } from './ancillaryFormat'
+import { UNITS, fmtCurrency, parseSellingPrice } from './ancillaryFormat'
 import { isValidHsnCode } from '../../utils/gst'
 
 interface FieldErrors {
   name?: string
   packageSize?: string
+  sellingPrice?: string
   hsnCode?: string
 }
 
@@ -38,6 +39,7 @@ export function AddProductDialog({
     name: '', brand: '', variant: '', hsnCode: '',
     packageSize: 1, unitOfMeasure: 'PIECE',
   })
+  const [sellingPriceText, setSellingPriceText] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -59,11 +61,13 @@ export function AddProductDialog({
   const normalizedVariant = form.variant?.trim() || undefined
   const normalizedThreshold = form.lowStockThreshold && form.lowStockThreshold > 0 ? form.lowStockThreshold : undefined
   const normalizedHsnCode = form.hsnCode?.trim() || undefined
+  const sellingPrice = parseSellingPrice(sellingPriceText)
 
   const validate = (): FieldErrors => {
     const errors: FieldErrors = {}
     if (!normalizedName) errors.name = t('addProduct.nameMissing')
     if (!form.packageSize || form.packageSize <= 0) errors.packageSize = t('addProduct.packageSizePositive')
+    if (sellingPrice == null) errors.sellingPrice = t('addProduct.sellingPriceInvalid')
     if (!isValidHsnCode(form.hsnCode ?? '')) errors.hsnCode = t('validation.hsnInvalid')
     return errors
   }
@@ -90,6 +94,7 @@ export function AddProductDialog({
       unitOfMeasure: form.unitOfMeasure,
       lowStockThreshold: normalizedThreshold,
       hsnCode: normalizedHsnCode,
+      sellingPricePerUnit: sellingPrice ?? undefined,
     })
   }
 
@@ -100,6 +105,7 @@ export function AddProductDialog({
   const stillNeeded = [
     ...(normalizedName ? [] : [t('addProduct.needName')]),
     ...(form.packageSize > 0 ? [] : [t('addProduct.needPackageSize')]),
+    ...(sellingPriceText.trim() ? [] : [t('addProduct.needSellingPrice')]),
   ]
 
   return (
@@ -184,6 +190,15 @@ export function AddProductDialog({
                   options={UNITS.map(u => ({ value: u, label: t(`units.${u}`) }))}
                 />
               </div>
+              <FormField label={t('addProduct.sellingPrice')} error={fieldErrors.sellingPrice} help={fieldErrors.sellingPrice ? undefined : t('addProduct.sellingPriceHelp')}>
+                <NumericInput
+                  unit="₹"
+                  min="0.01"
+                  step="0.01"
+                  value={sellingPriceText}
+                  onChange={e => setSellingPriceText(e.target.value)}
+                />
+              </FormField>
               <FormField label={optional(t('addProduct.lowStock'))} help={t('addProduct.lowStockHelp')}>
                 <NumericInput
                   unit={t('fields.unitsSuffix')}
@@ -206,6 +221,7 @@ export function AddProductDialog({
               <ReviewRow label={t('addProduct.brand')} value={normalizedBrand ?? '—'} />
               <ReviewRow label={t('addProduct.variant')} value={normalizedVariant ?? '—'} />
               <ReviewRow label={t('addProduct.packageSize')} value={`${form.packageSize} ${t(`units.${form.unitOfMeasure}`)}`} />
+              <ReviewRow label={t('addProduct.sellingPrice')} value={fmtCurrency(sellingPrice)} />
               <ReviewRow label={t('fields.hsnCode')} value={normalizedHsnCode ?? '—'} />
               <ReviewRow label={t('addProduct.lowStock')} value={normalizedThreshold != null ? t('addProduct.lowStockValue', { value: normalizedThreshold }) : t('addProduct.lowStockDisabled')} />
             </ReviewList>

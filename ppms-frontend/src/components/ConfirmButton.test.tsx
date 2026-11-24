@@ -49,4 +49,24 @@ describe('ConfirmButton', () => {
     render(<ConfirmButton onConfirm={vi.fn()} disabled />)
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
+
+  it('shows a destructive prompt in red with a red Yes by default', async () => {
+    const user = userEvent.setup()
+    render(<ConfirmButton onConfirm={vi.fn()} prompt="Delete this entry?" />)
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(screen.getByText('Delete this entry?')).toHaveClass('text-bad')
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveClass('ui-btn-danger')
+  })
+
+  it('shows a neutral prompt in ink with a primary Yes when the tone is neutral', async () => {
+    const user = userEvent.setup()
+    render(<ConfirmButton onConfirm={vi.fn()} triggerLabel="Mark as paid" triggerAriaLabel="Mark as paid" prompt="Mark this as paid?" tone="neutral" />)
+    await user.click(screen.getByRole('button', { name: 'Mark as paid' }))
+    const prompt = screen.getByText('Mark this as paid?')
+    expect(prompt).toHaveClass('text-ink')
+    expect(prompt).not.toHaveClass('text-bad')
+    const yes = screen.getByRole('button', { name: 'Yes' })
+    expect(yes).toHaveClass('ui-btn-primary')
+    expect(yes).not.toHaveClass('ui-btn-danger')
+  })
 })

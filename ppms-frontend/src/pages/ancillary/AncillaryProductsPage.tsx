@@ -150,11 +150,7 @@ export default function AncillaryProductsPage() {
           pumpId={pumpId}
           product={productToSell}
           onClose={closeSale}
-          onSuccess={() => {
-            closeSale()
-            refreshProducts()
-            qc.invalidateQueries({ queryKey: ['ancillarySales', pumpId] })
-          }}
+          onSuccess={closeSale}
         />
       )}
     </Page>

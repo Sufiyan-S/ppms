@@ -54,5 +54,12 @@ public interface AncillarySaleRepository extends JpaRepository<AncillarySale, Lo
     List<Object[]> findOldestSaleDatesByClientIdsAndPaymentMode(@Param("clientIds") Collection<Long> clientIds,
                                                                 @Param("paymentMode") TransactionPaymentMode paymentMode);
 
+    /** Rows of [productId, units sold, amount sold] for the given products on one sale date. */
+    @Query("SELECT s.productId, SUM(s.quantityUnits), SUM(s.totalWithGst) FROM AncillarySale s "
+            + "WHERE s.pumpId = :pumpId AND s.productId IN :productIds AND s.saleDate = :saleDate GROUP BY s.productId")
+    List<Object[]> sumSalesByProductIdsOnDate(@Param("pumpId") Long pumpId,
+                                              @Param("productIds") Collection<Long> productIds,
+                                              @Param("saleDate") LocalDate saleDate);
+
     boolean existsByIdAndPumpId(Long id, Long pumpId);
 }

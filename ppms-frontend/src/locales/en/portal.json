@@ -1,6 +1,10 @@
 {
   "title": "Credit balance portal",
   "subtitle": "Check your outstanding fuel credit balance",
+  "brand": {
+    "tagline": "Your fuel credit, at a glance.",
+    "supportingLine": "Check what you owe your pump any time, with your phone number and PIN."
+  },
   "form": {
     "pumpId": "Pump ID",
     "pumpIdHelp": "Ask the pump manager for the Pump ID",

@@ -56,8 +56,8 @@ describe('RecordDeliveryModal', () => {
     await user.type(screen.getByLabelText('Cost per litre'), '90')
 
     expect(figure('Amount (litres × rate)')).toHaveTextContent('₹90,000.00')
-    expect(figure('Stock after delivery')).toHaveTextContent('2,000.0 L')
-    expect(figure('Total received')).toHaveTextContent('1,000.0 L')
+    expect(figure('Stock after delivery')).toHaveTextContent('2,000.00 L')
+    expect(figure('Total received')).toHaveTextContent('1,000.00 L')
     expect(screen.getByLabelText('Bill amount')).toHaveValue(90000)
 
     await user.clear(screen.getByLabelText('Bill amount'))
@@ -73,7 +73,7 @@ describe('RecordDeliveryModal', () => {
 
     await user.type(screen.getByLabelText('Quantity received'), '9500')
 
-    expect(screen.getByLabelText('Quantity received')).toHaveAccessibleDescription('More than the free space of 9,000.0 L')
+    expect(screen.getByLabelText('Quantity received')).toHaveAccessibleDescription('More than the free space of 9,000.00 L')
     const review = screen.getByRole('button', { name: 'Review' })
     expect(review).toBeDisabled()
     expect(review).toHaveAccessibleDescription(/Still needed\s*One or more tank quantities exceed available capacity/)
@@ -92,7 +92,7 @@ describe('RecordDeliveryModal', () => {
 
     const review = await screen.findByRole('dialog', { name: 'Review tanker delivery' })
     expect(review).toHaveTextContent('Bill no. INV-7')
-    expect(within(review).getByText('Total received').nextElementSibling).toHaveTextContent('1,000.0 L')
+    expect(within(review).getByText('Total received').nextElementSibling).toHaveTextContent('1,000.00 L')
     expect(within(review).getByText('Calculated amount').nextElementSibling).toHaveTextContent('₹90,000.00')
 
     await user.click(within(review).getByRole('button', { name: 'Edit' }))

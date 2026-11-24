@@ -6,6 +6,7 @@ import client from '../../api/client'
 import { superAdminApi } from '../../api/superAdminApi'
 import type { OwnerSummary } from '../../api/superAdminApi'
 import { useAuthStore } from '../../store/authStore'
+import { useToastStore } from '../../store/toastStore'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { resetScreenWidthAfterEach, setScreenWidth } from '../../test/screenWidth'
 import SuperAdminPage from './SuperAdminPage'
@@ -35,6 +36,25 @@ function CurrentSearch() {
 
 function renderPage(route = '/super-admin') {
   return renderWithProviders(<><SuperAdminPage /><CurrentSearch /></>, { route })
+}
+
+async function onboardLakshmi(user: ReturnType<typeof userEvent.setup>) {
+  vi.mocked(superAdminApi.onboardOwner).mockResolvedValue({
+    ownerId: 12, employeeId: 'OWN-12', fullName: 'Lakshmi Rao', phoneNumber: '9876500012',
+    pumpId: 4, pumpName: 'Rao Fuels', createdAt: '2026-11-23T00:00:00Z',
+  })
+  await user.type(await screen.findByLabelText('Full name'), 'Lakshmi Rao')
+  await user.type(screen.getByLabelText('Phone number'), '9876500012')
+  await user.type(screen.getByLabelText('Initial password'), 'Start@2026')
+  await user.type(screen.getByLabelText('Pump name'), 'Rao Fuels')
+  await user.type(screen.getByLabelText('Max DU count'), '4')
+  await user.type(screen.getByLabelText('Pump address'), 'Pune')
+  await user.click(screen.getByRole('button', { name: 'Onboard owner' }))
+  await screen.findByText('Owner account created — share these login details')
+}
+
+function toastMessages() {
+  return useToastStore.getState().toasts.map((toast) => [toast.variant, toast.message])
 }
 
 function ownerList() {
@@ -139,5 +159,35 @@ describe('SuperAdminPage', () => {
     })
     expect(screen.getByLabelText('Address search')).toHaveTextContent('?owner=12')
     expect(within(screen.getByRole('region', { name: 'Owner details' })).getByRole('heading', { name: 'Lakshmi Rao' })).toBeInTheDocument()
+  })
+
+  it('copies the login details, says so, then clears them', async () => {
+    setScreenWidth(1280)
+    useToastStore.setState({ toasts: [] })
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    renderPage('/super-admin?action=onboard-owner')
+    await onboardLakshmi(user)
+
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Password: Start@2026'))
+    expect(toastMessages()).toContainEqual(['success', 'Copied'])
+    expect(screen.queryByText('Owner account created — share these login details')).not.toBeInTheDocument()
+  })
+
+  it('keeps the login details on screen with the password shown when copying fails', async () => {
+    setScreenWidth(1280)
+    useToastStore.setState({ toasts: [] })
+    const user = userEvent.setup()
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+    renderPage('/super-admin?action=onboard-owner')
+    await onboardLakshmi(user)
+
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(toastMessages()).toContainEqual(['error', 'Could not copy. The login details are still shown, so copy them by hand.'])
+    expect(screen.getByText('Owner account created — share these login details')).toBeInTheDocument()
+    expect(screen.getByText('Start@2026')).toBeInTheDocument()
   })
 })

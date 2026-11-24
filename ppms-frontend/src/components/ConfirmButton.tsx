@@ -15,8 +15,20 @@ interface ConfirmButtonProps {
   prompt?: string
   /** Tailwind classes for the trigger button */
   triggerClassName?: string
-  /** Tailwind classes for the confirm (Yes) button */
-  confirmClassName?: string
+  /** 'danger' for deleting or removing; 'neutral' for confirms that change nothing irreversibly, e.g. "Mark as paid". */
+  tone?: ConfirmTone
+}
+
+type ConfirmTone = 'danger' | 'neutral'
+
+const PROMPT_CLASS: Record<ConfirmTone, string> = {
+  danger: 'text-bad',
+  neutral: 'text-ink',
+}
+
+const CONFIRM_CLASS: Record<ConfirmTone, string> = {
+  danger: 'ui-btn ui-btn-danger ui-btn-compact',
+  neutral: 'ui-btn ui-btn-primary ui-btn-compact',
 }
 
 /**
@@ -24,7 +36,7 @@ interface ConfirmButtonProps {
  *
  * Renders as a single icon button. On first click it expands to show
  * "Prompt? [Yes] [No]" inline. Pressing Yes calls onConfirm; No collapses back.
- * This avoids disruptive confirm dialogs for row-level destructive actions.
+ * This avoids disruptive confirm dialogs for row-level actions.
  */
 export function ConfirmButton({
   onConfirm,
@@ -33,7 +45,7 @@ export function ConfirmButton({
   triggerAriaLabel,
   prompt,
   triggerClassName,
-  confirmClassName = 'ui-btn ui-btn-danger min-h-0 px-2 py-0.5 text-xs',
+  tone = 'danger',
 }: ConfirmButtonProps) {
   const { t } = useTranslation()
   const triggerName = triggerAriaLabel ?? t('actions.delete')
@@ -66,13 +78,13 @@ export function ConfirmButton({
   if (confirming) {
     return (
       <span role="group" aria-label={promptText} className="flex items-center gap-1">
-        <span className="text-xs text-bad font-medium">{promptText}</span>
+        <span className={`text-xs font-medium ${PROMPT_CLASS[tone]}`}>{promptText}</span>
         <button
           type="button"
           onClick={() => { onConfirm(); close() }}
           onKeyDown={closeOnEscape}
           disabled={disabled}
-          className={confirmClassName}
+          className={CONFIRM_CLASS[tone]}
         >
           {t('actions.yes')}
         </button>

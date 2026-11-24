@@ -25,12 +25,12 @@ export function StatCard({
   const content = (
     <>
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs font-semibold text-ink-3 uppercase tracking-wide">{label}</span>
+        <span className="ui-kpi-label">{label}</span>
         <div className={`w-10 h-10 ${color} rounded-card flex items-center justify-center text-surface`}>
           <Icon size={18} strokeWidth={2} />
         </div>
       </div>
-      <p className={`text-3xl font-bold tracking-tight tabular-nums ${alert ? 'text-bad' : 'text-ink'}`}>
+      <p className={`ui-stat-value font-bold tracking-tight tabular-nums ${alert ? 'text-bad' : 'text-ink'}`}>
         {money ? <MoneyText value={animated} /> : animated}
       </p>
       <p className="text-xs text-ink-3 mt-1.5 leading-relaxed">{sub}</p>

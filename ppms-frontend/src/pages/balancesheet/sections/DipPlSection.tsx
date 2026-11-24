@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { BalanceSheetDetail, DipPlLine } from '../../../api/balanceSheetApi'
 import { Td } from '../bsTableCells'
-import { FUEL_BADGE, bsColumn, fmtIstTime } from '../bsFormat'
+import { FUEL_BADGE, bsColumn, fmtIstTime, fmtLitres } from '../bsFormat'
 import { DataTable } from '../../../components/DataTable'
 import type { DataTableColumn } from '../../../components/DataTable'
 import { StatusBadge } from '../../../components/StatusBadge'
@@ -29,9 +29,9 @@ export function DipPlSection({ detail }: { detail: BalanceSheetDetail }) {
   const { t } = useTranslation(['balancesheet', 'common'])
   return (
     <section>
-      <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">
+      <h3 className="ui-section-heading mb-3">
         {t('dip.title')}
-        <span className="ml-2 text-ink-3 normal-case font-normal">
+        <span className="ml-2 font-normal text-ink-3">
           {t('dip.count', { count: detail.dipPlEntries.length })}
         </span>
       </h3>
@@ -61,7 +61,7 @@ export function DipPlSection({ detail }: { detail: BalanceSheetDetail }) {
               </Td>
               <Td right>
                 <span className={`font-mono ${litresColor}`}>
-                  {entry.type === 'DIP_CHECK' && entry.litres > 0 ? '+' : ''}{entry.litres.toFixed(2)} L
+                  {entry.type === 'DIP_CHECK' && entry.litres > 0 ? '+' : ''}{fmtLitres(entry.litres)}
                 </span>
               </Td>
               <Td right>

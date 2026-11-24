@@ -26,7 +26,7 @@ export function WalletCards({ wallet, loadingWallet, canWrite, onRecord }: Walle
               return (
                 <div key={type} className="ui-dashboard-stat">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-ink-3 uppercase tracking-wide">
+                    <span className="ui-kpi-label">
                       {typeLabel(type)}
                     </span>
                     <div className={`w-9 h-9 ${accent.icon} rounded-card flex items-center justify-center text-on-primary shadow-raised`}>

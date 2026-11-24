@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { approvalApi } from '../../api/approvalApi'
 import type { ApprovalItem } from '../../api/approvalApi'
 import { usePumpStore } from '../../store/usePumpStore'
+import { resetScreenWidthAfterEach, setScreenWidth } from '../../test/screenWidth'
 import ApprovalsPage from './ApprovalsPage'
 
 vi.mock('../../api/approvalApi', () => ({ approvalApi: { getPending: vi.fn(), decide: vi.fn() } }))
@@ -110,5 +111,74 @@ describe('ApprovalsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Expenses' }))
     expect(router.state.location.search).toBe('?kind=expenses')
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2)
+  })
+})
+
+describe('ApprovalsPage on a phone', () => {
+  resetScreenWidthAfterEach()
+
+  beforeEach(() => {
+    setScreenWidth(375)
+    usePumpStore.setState({ selectedPumpId: 3, suspendedPumpId: null })
+    vi.mocked(approvalApi.getPending).mockResolvedValue([expense, payment, ownPayment])
+    vi.mocked(approvalApi.decide).mockReset()
+  })
+
+  it('shows each item as a card with large Approve and Reject buttons, and none on an item the user may not decide', async () => {
+    renderApprovals()
+
+    const table = await screen.findByRole('table', { name: /waiting for approval/ })
+    expect(table).toHaveClass('ui-table-cards')
+    const cards = screen.getAllByTestId('approval-card')
+    expect(cards).toHaveLength(3)
+    expect(within(cards[0]).getByText('Maintenance')).toBeInTheDocument()
+    expect(within(cards[0]).getByText('Expense · Ravi Manager · 3 days · 20 Nov 2026')).toBeInTheDocument()
+    expect(within(cards[0]).getByText('Compressor repair')).toBeInTheDocument()
+    expect(within(cards[0]).getByText('₹1,200.00')).toBeInTheDocument()
+
+    const approve = within(cards[0]).getByRole('button', { name: 'Approve Maintenance ₹1,200.00' })
+    expect(approve).toHaveClass('ui-btn')
+    expect(approve).not.toHaveClass('ui-btn-compact')
+    expect(within(cards[2]).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(cards[2]).getByRole('checkbox', { name: /Select credit payment Gupta Logistics/ })).toBeDisabled()
+  })
+
+  it('approves one item straight from its card', async () => {
+    const user = userEvent.setup()
+    vi.mocked(approvalApi.decide).mockResolvedValue({
+      succeeded: 1, failed: 0, results: [{ kind: 'CREDIT_PAYMENT', id: 12, succeeded: true, message: null, code: null, params: null }],
+    })
+    renderApprovals()
+
+    await user.click(await screen.findByRole('button', { name: 'Approve Sharma Transport ₹5,000.00' }))
+
+    expect(approvalApi.decide).toHaveBeenCalledWith(3, [{ kind: 'CREDIT_PAYMENT', id: 12 }], 'APPROVED', undefined)
+    expect(await screen.findByText('1 item approved.')).toBeInTheDocument()
+  })
+
+  it('asks for a reason before rejecting one item from its card', async () => {
+    const user = userEvent.setup()
+    vi.mocked(approvalApi.decide).mockResolvedValue({
+      succeeded: 1, failed: 0, results: [{ kind: 'EXPENSE', id: 7, succeeded: true, message: null, code: null, params: null }],
+    })
+    renderApprovals()
+
+    await user.click(await screen.findByRole('button', { name: 'Reject Maintenance ₹1,200.00' }))
+    const dialog = screen.getByRole('dialog', { name: 'Reject 1 item' })
+    expect(within(dialog).getByText('₹1,200.00 in total; the reason is saved with each rejection')).toBeInTheDocument()
+    await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'Duplicate bill')
+    await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
+
+    expect(approvalApi.decide).toHaveBeenCalledWith(3, [{ kind: 'EXPENSE', id: 7 }], 'REJECTED', 'Duplicate bill')
+  })
+
+  it('still selects an item from its card for a bulk decision', async () => {
+    const user = userEvent.setup()
+    renderApprovals()
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Select expense Maintenance ₹1,200.00' }))
+
+    expect(screen.getByText('1 selected · ₹1,200.00')).toBeInTheDocument()
+    expect(screen.getAllByTestId('approval-card')[0]).toHaveClass('bg-info-bg')
   })
 })

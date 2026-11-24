@@ -57,13 +57,13 @@ describe('BackfillShiftModal', () => {
 
     await user.type(screen.getByLabelText('Nozzle #1 · Petrol opening reading'), '1000')
     await user.type(screen.getByLabelText('Nozzle #1 · Petrol closing reading'), '1010')
-    expect(screen.getByText(/10\.000 L × ₹100\.00 =/)).toHaveTextContent('₹1,000.00')
+    expect(screen.getByText(/10\.00 L × ₹100\.00 =/)).toHaveTextContent('₹1,000.00')
     expect(summaryValue('Total due')).toHaveTextContent('₹1,000.00')
     expect(summaryValue('Difference')).toHaveTextContent('—')
 
     await user.type(screen.getByLabelText('Cash (₹)'), '990')
     expect(summaryValue('Collected')).toHaveTextContent('₹990.00')
-    expect(within(summaryValue('Difference') as HTMLElement).getByText('SHORT ₹10.00')).toBeInTheDocument()
+    expect(within(summaryValue('Difference') as HTMLElement).getByText('Short ₹10.00')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Fill rest · ₹1,000.00' }))
     expect(screen.getByLabelText('Cash (₹)')).toHaveValue(1000)

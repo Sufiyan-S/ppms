@@ -46,6 +46,7 @@ export default function BackfillShiftModal({ pumpId, onClose }: BackfillShiftMod
         onClose={requestClose}
         canClose={!isPending}
         closeOnBackdropClick
+        confirmDiscard={false}
         onSubmit={handleSubmit}
         footer={
           <>

@@ -57,9 +57,9 @@
     "deleteFailed": "Failed to delete payroll",
     "statusFailed": "Failed to update status",
     "statusUpdated": {
-      "DRAFT": "Status updated to DRAFT",
-      "APPROVED": "Status updated to APPROVED",
-      "PAID": "Status updated to PAID"
+      "DRAFT": "Marked as draft",
+      "APPROVED": "Marked as approved",
+      "PAID": "Marked as paid"
     },
     "filtersLabel": "Payroll filters",
     "count_one": "{{count}} record",
@@ -87,11 +87,12 @@
     "daysWorkedTotal_other": "{{count}} days worked",
     "shiftsTotal_one": "{{count}} shift total",
     "shiftsTotal_other": "{{count}} shifts total",
-    "deleting": "Deleting…",
     "mark": {
-      "DRAFT": "Mark DRAFT",
-      "APPROVED": "Mark APPROVED",
-      "PAID": "Mark PAID"
-    }
+      "DRAFT": "Mark as draft",
+      "APPROVED": "Mark as approved",
+      "PAID": "Mark as paid"
+    },
+    "markPaidPrompt": "Mark as paid? This is final and cannot be undone.",
+    "deletePrompt": "Delete this draft? The record is removed for good."
   }
 }

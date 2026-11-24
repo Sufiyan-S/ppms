@@ -8,7 +8,7 @@ import type { PreferredDayOff, StaffPreference } from '../../../api/shiftPlanApi
 import type { StaffMember } from '../../../api/userApi'
 import type { ShiftDefinition } from '../../../api/shiftDefinitionApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
-import { Spinner } from '../../../components/Spinner'
+import { SkeletonRows } from '../../../components/Skeleton'
 import { LoadingButton } from '../../../components/LoadingButton'
 import { FormGrid } from '../../../components/layout/FormGrid'
 import { RowPanel, RowPanelActions } from './RowPanel'
@@ -30,9 +30,7 @@ export function PreferencesPanel({ pumpId, member, activeShiftDefs, onClose }: P
   return (
     <RowPanel title={t('staff.preferences.title', { name: member.fullName })}>
       {isLoading ? (
-        <div className="flex items-center gap-2 text-xs text-ink-3" role="status">
-          <Spinner className="w-3 h-3" />{t('staff.preferences.loading')}
-        </div>
+        <SkeletonRows count={2} />
       ) : isError ? (
         <p className="ui-error-text" role="alert">{t('staff.preferences.loadFailed')}</p>
       ) : (

@@ -14,9 +14,10 @@ interface EditCreditClientFormProps {
   client: PumpCreditClient
   indent?: boolean
   onSaved: () => void
+  onCancel: () => void
 }
 
-export function EditCreditClientForm({ pumpId, client, indent = false, onSaved }: EditCreditClientFormProps) {
+export function EditCreditClientForm({ pumpId, client, indent = false, onSaved, onCancel }: EditCreditClientFormProps) {
   const { t } = useTranslation(['credit', 'common'])
   const qc = useQueryClient()
   const [editName, setEditName]   = useState(client.name)
@@ -77,10 +78,15 @@ export function EditCreditClientForm({ pumpId, client, indent = false, onSaved }
         </FormField>
       </FormGrid>
       {editError && <p role="alert" className="ui-error-text">{editError}</p>}
-      <LoadingButton type="submit" isLoading={updateMutation.isPending} loadingLabel={t('common:actions.saving')}
-        className="ui-btn-primary">
-        {t('common:actions.save')}
-      </LoadingButton>
+      <div className="flex flex-wrap gap-2">
+        <LoadingButton type="submit" isLoading={updateMutation.isPending} loadingLabel={t('common:actions.saving')}
+          className="ui-btn-primary">
+          {t('common:actions.save')}
+        </LoadingButton>
+        <button type="button" onClick={onCancel} className="ui-btn ui-btn-secondary">
+          {t('common:actions.cancel')}
+        </button>
+      </div>
     </form>
   )
 }

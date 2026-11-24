@@ -324,6 +324,107 @@ class AncillaryProductIntegrationTest extends ApiIntegrationTest {
         assertThat(product().get("currentStockUnits").asInt()).isEqualTo(10);
     }
 
+    @Test
+    void productCreatedWithAPriceStartsWithThatPriceAsItsFirstPriceRow() throws Exception {
+        JsonNode created = json(createProduct(Map.of("sellingPricePerUnit", new BigDecimal("120.5")))
+                .andExpect(status().isCreated()));
+        long pricedProductId = created.get("id").asLong();
+        assertThat(created.get("currentSellingPricePerUnit").decimalValue()).isEqualByComparingTo("120.50");
+
+        JsonNode history = json(perform(get("/api/pumps/{pumpId}/ancillary/products/{id}/prices",
+                setup.pumpId(), pricedProductId), setup.manager()).andExpect(status().isOk()));
+        assertThat(history.size()).isEqualTo(1);
+        assertThat(history.get(0).get("pricePerUnit").decimalValue()).isEqualByComparingTo("120.50");
+        assertThat(history.get(0).get("setByUserId").asLong()).isEqualTo(setup.owner().getId());
+    }
+
+    @Test
+    void productWithASellingPriceBelowOnePaisaIsRefusedAndNotCreated() throws Exception {
+        Integer productsBefore = productCount();
+
+        createProduct(Map.of("sellingPricePerUnit", new BigDecimal("0"))).andExpect(status().isBadRequest());
+
+        assertThat(productCount()).isEqualTo(productsBefore);
+    }
+
+    @Test
+    void productListShowsTheLatestPriceInEffectAndNoPriceForAnUnpricedProduct() throws Exception {
+        long unpricedProductId = json(createProduct(Map.of()).andExpect(status().isCreated())).get("id").asLong();
+        perform(post("/api/pumps/{pumpId}/ancillary/products/{id}/prices", setup.pumpId(), productId), setup.owner(),
+                Map.of("pricePerUnit", new BigDecimal("470.00")))
+                .andExpect(status().isCreated());
+        jdbcTemplate.update("""
+                INSERT INTO ancillary_product_prices (product_id, pump_id, price_per_unit, effective_from, set_by_user_id)
+                VALUES (?, ?, 999.00, now() + INTERVAL '1 day', ?)""", productId, setup.pumpId(), setup.owner().getId());
+
+        assertThat(product().get("currentSellingPricePerUnit").decimalValue()).isEqualByComparingTo("470.00");
+        assertThat(productById(unpricedProductId).get("currentSellingPricePerUnit").isNull()).isTrue();
+    }
+
+    @Test
+    void productListShowsOnlyTodaysSalesOfThisPumpAsSoldToday() throws Exception {
+        sell(2, "450.00").andExpect(status().isCreated());
+        sell(1, "450.00").andExpect(status().isCreated());
+        long yesterdaySaleId = json(sell(4, "450.00").andExpect(status().isCreated())).get("id").asLong();
+        jdbcTemplate.update("UPDATE ancillary_sales SET sale_date = ? WHERE id = ?",
+                java.sql.Date.valueOf(TestDates.today().minusDays(1)), yesterdaySaleId);
+        PumpSetup other = createPumpWithStock("0");
+        jdbcTemplate.update("""
+                INSERT INTO ancillary_sales (pump_id, product_id, quantity_units, selling_price_per_unit, total_amount,
+                    gst_amount, total_with_gst, gst_rate_percent, payment_mode, sold_by_user_id, sale_date, created_at)
+                VALUES (?, ?, 5, 450.00, 2250.00, 0, 2250.00, 18, 'CASH', ?, ?, now())""",
+                other.pumpId(), productId, other.owner().getId(), java.sql.Date.valueOf(TestDates.today()));
+        long unsoldProductId = json(createProduct(Map.of()).andExpect(status().isCreated())).get("id").asLong();
+
+        JsonNode product = product();
+        assertThat(product.get("soldTodayUnits").asInt()).isEqualTo(3);
+        assertThat(product.get("soldTodayAmount").decimalValue()).isEqualByComparingTo("1350.00");
+        JsonNode unsold = productById(unsoldProductId);
+        assertThat(unsold.get("soldTodayUnits").asInt()).isZero();
+        assertThat(unsold.get("soldTodayAmount").decimalValue()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void productListRunsTheSameNumberOfQueriesWhateverTheNumberOfProducts() throws Exception {
+        sell(1, "450.00").andExpect(status().isCreated());
+        long fewProducts = statementsRunBy(get("/api/pumps/{pumpId}/ancillary/products", setup.pumpId()), setup.manager());
+        for (int i = 0; i < 4; i++) {
+            productId = json(createProduct(Map.of("sellingPricePerUnit", new BigDecimal("50.00")))
+                    .andExpect(status().isCreated())).get("id").asLong();
+            stockIn(2, "30.00");
+            sell(1, "50.00").andExpect(status().isCreated());
+        }
+        long manyProducts = statementsRunBy(get("/api/pumps/{pumpId}/ancillary/products", setup.pumpId()), setup.manager());
+
+        assertThat(manyProducts).isEqualTo(fewProducts);
+    }
+
+    @Test
+    void productCanBeSoldRightAfterItsFirstPriceIsSet() throws Exception {
+        productId = json(createProduct(Map.of()).andExpect(status().isCreated())).get("id").asLong();
+        stockIn(3, "60.00");
+        sell(1, "80.00").andExpect(status().isBadRequest());
+
+        perform(post("/api/pumps/{pumpId}/ancillary/products/{id}/prices", setup.pumpId(), productId), setup.owner(),
+                Map.of("pricePerUnit", new BigDecimal("80.00")))
+                .andExpect(status().isCreated());
+
+        sell(1, "80.00").andExpect(status().isCreated());
+        assertThat(product().get("currentStockUnits").asInt()).isEqualTo(2);
+    }
+
+    private ResultActions createProduct(Map<String, Object> extraFields) throws Exception {
+        Map<String, Object> request = new HashMap<>(Map.of("name", "Coolant " + shortId(),
+                "packageSize", new BigDecimal("1"), "unitOfMeasure", "LITRE"));
+        request.putAll(extraFields);
+        return perform(post("/api/pumps/{pumpId}/ancillary/products", setup.pumpId()), setup.owner(), request);
+    }
+
+    private Integer productCount() {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM ancillary_products WHERE pump_id = ?",
+                Integer.class, setup.pumpId());
+    }
+
     private void stockIn(int units, String cost) throws Exception {
         perform(post("/api/pumps/{pumpId}/ancillary/products/{id}/deliveries", setup.pumpId(), productId), setup.manager(),
                 Map.of("quantityUnits", units, "costPricePerUnit", new BigDecimal(cost),
@@ -338,14 +439,18 @@ class AncillaryProductIntegrationTest extends ApiIntegrationTest {
     }
 
     private JsonNode product() throws Exception {
+        return productById(productId);
+    }
+
+    private JsonNode productById(long id) throws Exception {
         JsonNode products = json(perform(get("/api/pumps/{pumpId}/ancillary/products", setup.pumpId()), setup.manager())
                 .andExpect(status().isOk()));
         JsonNode list = products.has("content") ? products.get("content") : products;
         for (JsonNode product : list) {
-            if (product.get("id").asLong() == productId) {
+            if (product.get("id").asLong() == id) {
                 return product;
             }
         }
-        throw new AssertionError("Product " + productId + " missing from " + products);
+        throw new AssertionError("Product " + id + " missing from " + products);
     }
 }

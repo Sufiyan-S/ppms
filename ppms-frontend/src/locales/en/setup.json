@@ -14,20 +14,33 @@
     "managerNote": "You can update daily fuel prices below. Other pump settings are managed by your Owner or Admin.",
     "notConfigured": "Not configured",
     "nozzles": {
-      "summary": "{{used}} of {{max}} DUs configured"
+      "none": "No dispensers yet",
+      "dus_one": "{{count}} DU",
+      "dus_other": "{{count}} DUs",
+      "nozzles_one": "{{count}} nozzle",
+      "nozzles_other": "{{count}} nozzles",
+      "withoutTank_one": "{{count}} nozzle has no tank",
+      "withoutTank_other": "{{count}} nozzles have no tank"
     },
     "tanks": {
-      "tapToConfigure": "Tap to configure capacity",
-      "addDuFirst": "Add a DU first"
+      "addDuFirst": "Add a DU first",
+      "none": "No tanks yet",
+      "summary_one": "{{count}} tank · {{capacity}} L capacity",
+      "summary_other": "{{count}} tanks · {{capacity}} L capacity",
+      "withoutNozzle_one": "{{count}} tank has no nozzle",
+      "withoutNozzle_other": "{{count}} tanks have no nozzle"
     },
     "prices": {
       "notSet": "Not set",
-      "notUpdatedToday": " · not updated today"
+      "notUpdatedToday": "Not updated today",
+      "updatedToday": "Prices updated today",
+      "updatedOn": "Prices updated on {{date}}",
+      "setToday": "Set today's prices"
     },
     "staff": {
-      "members_one": "{{count}} member",
-      "members_other": "{{count}} members",
-      "noneAdded": "None added"
+      "noneAdded": "None added",
+      "active_one": "{{count}} active staff member",
+      "active_other": "{{count}} active staff"
     },
     "shifts": {
       "schedules_one": "{{count}} schedule",
@@ -51,14 +64,13 @@
     "thresholdLabel": "Owner approval limit",
     "effectOn": "Shortages or overages above {{amount}} will need Owner or Admin to resolve.",
     "effectOff": "Blank: managers can resolve every discrepancy.",
-    "save": "Save settings"
+    "save": "Save settings",
+    "escalationTitle": "Owner approval for discrepancies"
   },
   "gst": {
     "saved": "GST details saved",
     "saveFailed": "Failed to save GST details",
     "prefixFormat": "Invoice prefix must be 1 to 5 letters or digits.",
-    "introBefore": "Needed before you can issue tax invoices to credit clients. Invoice numbers look like",
-    "introAfter": "and restart every April.",
     "legalName": "Legal name (as registered)",
     "legalNamePlaceholder": "e.g. Lakshmi Fuels Pvt Ltd",
     "state": "State",
@@ -66,7 +78,13 @@
     "invoicePrefix": "Invoice prefix",
     "invoicePrefixPlaceholder": "e.g. PMP3",
     "invoicePrefixHelp": "1 to 5 letters or digits.",
-    "save": "Save GST details"
+    "save": "Save GST details",
+    "businessTitle": "Business details",
+    "businessHint": "Needed before you can issue tax invoices to credit clients.",
+    "gstinHelp": "15 characters, as on your GST certificate.",
+    "numberingTitle": "Invoice numbering",
+    "numberingHint": "Every invoice number starts with this prefix, and the count restarts every April.",
+    "firstInvoice": "First invoice number this year"
   },
   "prices": {
     "setFailed": "Failed to set price",
@@ -81,10 +99,8 @@
     "samePrices": "Same prices",
     "currentPrice": "Current price",
     "noCurrentPrice": "No price set yet",
-    "change": "change",
     "stillNeededPrice": "A new price for at least one fuel",
     "save": "Save prices",
-    "savedSuccess": "Prices saved successfully.",
     "openShiftsTitle": "Open shifts found",
     "dismissWarning": "Dismiss warning",
     "deviation": {
@@ -95,6 +111,15 @@
       "newPrice": "New price",
       "deviation": "Change",
       "body": "Are you sure you want to set this price? This is a significant deviation from the last recorded price."
+    },
+    "keepHint": "Leave blank to keep {{price}}",
+    "firstPrice": "First price for this fuel",
+    "notSet": "Not set",
+    "newPrice": "New price",
+    "change": {
+      "up": "Up {{amount}} ({{percent}}) from {{current}}",
+      "down": "Down {{amount}} ({{percent}}) from {{current}}",
+      "same": "Same as the current {{current}}"
     }
   },
   "tanks": {
@@ -104,11 +129,6 @@
     "nameRequired": "Tank name is required.",
     "capacityPositive": "Capacity must be greater than 0.",
     "intro": "Add each underground tank manually. Multiple tanks per fuel type are allowed. Set capacity so that stock level bars and low-stock alerts work correctly.",
-    "loading": "Loading tanks...",
-    "empty": "No tanks yet. Add one below.",
-    "disabled": "Disabled",
-    "capacityPrefix": "Capacity:",
-    "stockFrozen": "(stock frozen)",
     "disableAria": "Disable tank {{name}}",
     "freezePrompt": "{{percent}}% stock will be frozen. Confirm?",
     "disablePrompt": "Disable this tank?",
@@ -123,7 +143,21 @@
     "dipToleranceHint": "How far a dip reading may differ from book stock before it is flagged.",
     "dipToleranceHelp": "Dip checks within ±{{amount}} of book stock count as matching.",
     "saveTank": "Save tank",
-    "add": "Add tank"
+    "add": "Add tank",
+    "emptyTitle": "No tanks yet",
+    "addFirstButton": "Add your first tank",
+    "cardLabel": "{{name}}, {{fuel}}",
+    "gaugeLabel": "Stock in {{name}}",
+    "percentFull": "{{percent}}% full",
+    "stockOfCapacity": "{{stock}} of {{capacity}}",
+    "lowStock": "Low stock",
+    "emptyStock": "Empty",
+    "disabledFrozen": "Disabled · stock frozen",
+    "noNozzles": "No nozzle mapped",
+    "mappedNozzles_one": "{{count}} nozzle mapped",
+    "mappedNozzles_other": "{{count}} nozzles mapped",
+    "lastDip": "Last dip {{date}}",
+    "disabled": "Disabled"
   },
   "nozzles": {
     "intro": "Each Dispensary Unit (DU) is a physical MPD machine. Add one or more nozzles to each DU — each nozzle carries exactly one fuel type with its own meter counter. CNG nozzles cannot share a DU with other fuel types.",
@@ -137,14 +171,14 @@
     "du": {
       "number": "DU #{{number}}",
       "inactive": "Inactive",
-      "activeNozzles_one": "{{count}} active nozzle(s)",
-      "activeNozzles_other": "{{count}} active nozzle(s)",
-      "addNozzle": "Add nozzle"
+      "addNozzle": "Add nozzle",
+      "nozzleSummary_one": "{{count}} nozzle · {{active}} active",
+      "nozzleSummary_other": "{{count}} nozzles · {{active}} active",
+      "nozzlesOf": "Nozzles on {{name}}"
     },
     "row": {
       "maintenance": "Maintenance",
-      "tankNotMapped": "tank not mapped",
-      "actions": "Nozzle actions",
+      "tankNotMapped": "No tank mapped",
       "mapTank": "Map tank",
       "mapTankHint": "Assign the supply tank",
       "adjustReading": "Adjust reading",
@@ -152,7 +186,8 @@
       "recordDip": "Record dip",
       "recordDipHint": "Log a manual dip check",
       "disable": "Disable for maintenance",
-      "disableHint": "Temporarily take nozzle offline"
+      "disableHint": "Temporarily take nozzle offline",
+      "actionsFor": "Actions for nozzle #{{number}}"
     },
     "add": {
       "added": "Nozzle added",
@@ -248,6 +283,12 @@
       "addNozzle": "Add another nozzle",
       "removeNozzle": "Remove nozzle",
       "submit": "Create DU"
+    },
+    "active": "Active",
+    "tile": {
+      "label": "Nozzle #{{number}}, {{fuel}}",
+      "meter": "Meter {{reading}} {{unit}}",
+      "tank": "Tank {{name}}"
     }
   },
   "staff": {
@@ -264,7 +305,6 @@
     "nightShiftConsent": "Okay for night shift",
     "nightShiftConsentHint": "If left unchecked, shift planning will skip night-shift assignment for this operator.",
     "menu": {
-      "label": "Staff actions",
       "edit": "Edit details",
       "editHint": "Update name, phone number, or role",
       "resetPassword": "Reset password",
@@ -281,7 +321,8 @@
       "activate": "Activate staff",
       "deactivate": "Deactivate staff",
       "activateHint": "Allow this staff member to work again",
-      "deactivateHint": "Temporarily remove this staff member from active use"
+      "deactivateHint": "Temporarily remove this staff member from active use",
+      "labelFor": "Actions for {{name}}"
     },
     "edit": {
       "failed": "Failed to save details",
@@ -297,7 +338,7 @@
       "passwordHint": "They choose their own password at first sign-in.",
       "success": "Staff member added successfully.",
       "submit": "Add staff",
-      "open": "Add staff"
+      "open": "Add staff member"
     },
     "move": {
       "failed": "Failed to move staff member",
@@ -326,7 +367,6 @@
     },
     "preferences": {
       "title": "Shift preferences for {{name}}",
-      "loading": "Loading saved preferences…",
       "loadFailed": "Could not load saved preferences. Close and try again.",
       "failed": "Failed to save preferences",
       "shift": "Preferred shift",
@@ -351,6 +391,30 @@
       "nightShiftPay": "{{hours}}-hour night shift",
       "dayShiftPay": "{{hours}}-hour day shift",
       "monthPay": "{{days}} working days"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "listLabel": "Staff members",
+    "empty": {
+      "title": "No staff yet",
+      "body": "Add the people who run your shifts. They sign in with their phone number."
+    },
+    "filters": {
+      "label": "Filter staff",
+      "summary": "{{shown}} of {{total}} shown",
+      "search": "Search staff",
+      "searchPlaceholder": "Name, phone or ID",
+      "clearSearch": "Clear search",
+      "allRoles": "All roles",
+      "status": "Status",
+      "statuses": {
+        "all": "Any status",
+        "ACTIVE": "Active",
+        "INACTIVE": "Inactive"
+      },
+      "noMatch": "No staff match these filters."
     }
   },
   "actions": {
@@ -379,14 +443,16 @@
     "setAsDefault": "Set as default",
     "setDefault": "Make default",
     "default": "Default",
-    "capacityShort": "{{thousands}}K L",
-    "capacityLong": "{{litres}} L capacity",
     "edit": "Edit tanker",
     "removeAria": "Remove tanker {{name}}",
     "removePrompt": "Remove?",
     "newTanker": "New tanker",
     "save": "Save tanker",
-    "add": "Add tanker"
+    "add": "Add tanker",
+    "capacityLitres": "{{litres}} L",
+    "editAria": "Edit tanker {{name}}",
+    "editTitle": "Edit {{name}}",
+    "remove": "Remove"
   },
   "shiftDefs": {
     "empty": "No shift definitions yet. Add your first schedule below.",
@@ -408,7 +474,7 @@
     "confirmDisable": "Disable schedule",
     "night": "Night",
     "dismissError": "Dismiss error",
-    "addSchedule": "+ Add new shift schedule",
+    "addSchedule": "Add shift schedule",
     "form": {
       "saveFailed": "Failed to save shift definitions",
       "startRequired": "Start date is required",
@@ -431,15 +497,24 @@
       "endTime": "End time",
       "displayOrder": "Display order",
       "removeRow": "Remove row",
-      "addShift": "+ Add another shift",
-      "save": "Save schedule"
+      "addShift": "Add another shift",
+      "save": "Save schedule",
+      "shiftsLabel": "Shifts in this schedule"
+    },
+    "scheduleLabel": "Schedule from {{from}}",
+    "shiftCount_one": "{{count}} shift",
+    "shiftCount_other": "{{count}} shifts",
+    "timeline": {
+      "label": "24-hour timeline. {{shifts}}",
+      "gap": "No shift covers {{range}}",
+      "overlap": "Overlap: {{names}} both run {{range}}",
+      "fullDay": "Covers all 24 hours with no overlaps"
     }
   },
   "steps": {
     "listLabel": "Setup steps",
     "navigationLabel": "Previous and next step",
     "position": "Step {{current}} of {{total}}",
-    "previous": "Previous: {{step}}",
     "next": "Next step: {{step}}",
     "names": {
       "nozzles": "Dispensers & nozzles",
@@ -457,9 +532,21 @@
       "open": "Open Credit clients"
     },
     "complete": "Setup complete",
-    "reviewChecklist": "Review checklist"
+    "back": "Back: {{step}}",
+    "allSteps": "All steps",
+    "finish": "Finish",
+    "stillToDo_one": "{{count}} required step is still to do",
+    "stillToDo_other": "{{count}} required steps are still to do"
   },
   "createPump": {
     "creating": "Creating…"
+  },
+  "hub": {
+    "title": "All settings",
+    "checklist": "Setup checklist",
+    "backLink": "All settings"
+  },
+  "saveBar": {
+    "unsaved": "Unsaved changes"
   }
 }

@@ -6,6 +6,8 @@ import { ancillaryApi } from '../../api/ancillaryApi'
 import type { AncillaryStockDelivery, AncillaryProduct } from '../../api/ancillaryApi'
 import { Pagination } from '../../components/Pagination'
 import { EmptyState } from '../../components/EmptyState'
+import { LoadError } from '../../components/LoadError'
+import { SkeletonRows } from '../../components/Skeleton'
 import { StockInDialog } from './StockInDialog'
 import { fmtDate } from './ancillaryFormat'
 import { DataTable } from '../../components/DataTable'
@@ -13,6 +15,7 @@ import type { DataTableColumn } from '../../components/DataTable'
 import { StatusBadge } from '../../components/StatusBadge'
 import { MoneyText } from '../../components/AmountText'
 import { PageSection } from '../../components/layout/PageSection'
+import { useIsPhone } from '../../hooks/useIsPhone'
 
 export function StockInTab({
   pumpId, products, isManagerOrAbove, isRecording, onRecordClosed, onRefresh,
@@ -30,17 +33,37 @@ export function StockInTab({
   const [deliveryPageSize, setDeliveryPageSize] = useState(10)
   const productMap = new Map(products.map((product) => [product.id, product]))
 
-  const { data: deliveriesPage } = useQuery({
+  const { data: deliveriesPage, isLoading, isLoadingError, refetch } = useQuery({
     queryKey: ['ancillaryDeliveries', pumpId, deliveryPage, deliveryPageSize],
     queryFn:  () => ancillaryApi.getDeliveries(pumpId, deliveryPage, deliveryPageSize),
   })
   const deliveries = deliveriesPage?.content ?? []
+  const isPhone = useIsPhone()
+  const productName = (d: AncillaryStockDelivery) => productMap.get(d.productId)?.displayName ?? t('stockInTab.productFallback', { id: d.productId })
 
-  const columns: DataTableColumn<AncillaryStockDelivery>[] = [
+  const phoneColumns: DataTableColumn<AncillaryStockDelivery>[] = [
+    {
+      key: 'product', header: t('fields.product'), cell: (d) => (
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block font-medium text-ink">{productName(d)}</span>
+            <span className="block text-xs text-ink-3">
+              {fmtDate(d.deliveryDate)} · {d.quantityUnits} × <MoneyText value={d.costPricePerUnit} />
+              {d.invoiceReference && ` · ${d.invoiceReference}`}
+            </span>
+          </span>
+          <MoneyText value={d.costPricePerUnit * d.quantityUnits} className="font-semibold text-ink" />
+        </span>
+      ),
+    },
+    { key: 'type', header: t('fields.type'), cell: (d) => d.isBackfilled && <StatusBadge tone="info" icon={History} label={t('fields.backfilled')} /> },
+  ]
+
+  const columns: DataTableColumn<AncillaryStockDelivery>[] = isPhone ? phoneColumns : [
     { key: 'date', header: t('fields.date'), className: 'px-5 text-ink-2', cell: (d) => fmtDate(d.deliveryDate) },
     { key: 'product', header: t('fields.product'), className: 'px-5', cell: (d) => (
       <div className="flex flex-col">
-        <span className="font-medium text-ink">{productMap.get(d.productId)?.displayName ?? t('stockInTab.productFallback', { id: d.productId })}</span>
+        <span className="font-medium text-ink">{productName(d)}</span>
         <span className="text-xs text-ink-3">#{d.productId}</span>
       </div>
     ) },
@@ -74,7 +97,11 @@ export function StockInTab({
       )}
 
       <PageSection title={t('stockInTab.recent')} flush>
-        {deliveries.length === 0 ? (
+        {isLoading ? (
+          <div className="px-5 py-4" aria-busy="true"><SkeletonRows count={5} /></div>
+        ) : isLoadingError ? (
+          <LoadError onRetry={() => void refetch()} className="m-4" />
+        ) : deliveries.length === 0 ? (
           <EmptyState icon="generic" title={t('stockInTab.emptyTitle')} subtitle={t('stockInTab.emptySubtitle')} />
         ) : (
           <>
@@ -84,6 +111,7 @@ export function StockInTab({
             columns={columns}
             rows={deliveries}
             rowKey={(d) => d.id}
+            cardsOnPhone
             className="rounded-none border-0"
           />
           {deliveriesPage && (

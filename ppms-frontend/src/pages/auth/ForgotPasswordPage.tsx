@@ -1,17 +1,22 @@
 import { useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { authApi } from '../../api/authApi'
+import { Spinner } from '../../components/Spinner'
 import { parseApiError } from '../../utils/apiError'
 import { AuthCard, AuthScreen } from './AuthCard'
 import { BackToLogin } from './BackToLogin'
+import { PhoneNumberField } from './PhoneNumberField'
 
 function NoEmailHelp() {
   const { t } = useTranslation('auth')
   return (
-    <div className="ui-alert text-sm">
-      <p className="font-medium">{t('forgotPassword.noEmailTitle')}</p>
-      <p className="mt-1">{t('forgotPassword.noEmailBody')}</p>
+    <div className="ui-auth-notice">
+      <Info size={18} strokeWidth={2} aria-hidden="true" className="ui-auth-notice__icon" />
+      <div>
+        <p className="ui-auth-notice__title">{t('forgotPassword.noEmailTitle')}</p>
+        <p>{t('forgotPassword.noEmailBody')}</p>
+      </div>
     </div>
   )
 }
@@ -25,10 +30,10 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phoneNumber.trim()) { setError(t('forgotPassword.phoneRequired')); return }
+    if (!phoneNumber) { setError(t('forgotPassword.phoneRequired')); return }
     setLoading(true); setError(null)
     try {
-      await authApi.forgotPassword(phoneNumber.trim())
+      await authApi.forgotPassword(phoneNumber)
       setSent(true)
     } catch (err) {
       setError(parseApiError(err))
@@ -62,30 +67,18 @@ export default function ForgotPasswordPage() {
       <AuthCard title={t('forgotPassword.title')} description={t('forgotPassword.subtitle')} footer={<BackToLogin />}>
         <NoEmailHelp />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="phoneNumber" className="ui-label">{t('fields.phoneNumber')}</label>
-            <input
-              id="phoneNumber"
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel"
-              value={phoneNumber}
-              onChange={e => setPhoneNumber(e.target.value)}
-              placeholder={t('forgotPassword.phonePlaceholder')}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'forgot-phone-error' : undefined}
-              className="shadow-raised"
-            />
-            {error && <p id="forgot-phone-error" className="ui-error-text" role="alert">{error}</p>}
-          </div>
+        <form onSubmit={handleSubmit} className="ui-auth-form">
+          <PhoneNumberField
+            id="phoneNumber"
+            value={phoneNumber}
+            onChange={setPhoneNumber}
+            placeholder={t('forgotPassword.phonePlaceholder')}
+            error={error ?? undefined}
+            readOnly={loading}
+          />
 
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="ui-btn ui-btn-primary w-full"
-          >
+          <button type="submit" disabled={loading} aria-busy={loading || undefined} className="ui-btn ui-btn-primary ui-auth-submit">
+            {loading && <Spinner />}
             {loading ? t('forgotPassword.sending') : t('forgotPassword.send')}
           </button>
         </form>

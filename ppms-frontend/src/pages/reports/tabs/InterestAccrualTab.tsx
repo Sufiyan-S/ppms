@@ -15,6 +15,7 @@ import { DateRangeInputs, ErrorBox, PrintHeader, ReportFilterBar, ReportSummary,
 import { PageSection } from '../../../components/layout/PageSection'
 import { fmtAmt, fmtShortDate } from '../reportFormat'
 import { MoneyText } from '../../../components/AmountText'
+import { formatDecimal } from '../../../utils/format'
 
 type InterestCsvRow = InterestChargeLine & { clientName: string }
 
@@ -105,7 +106,7 @@ export function InterestAccrualTab({ pumpId }: { pumpId: number }) {
                     <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                       <div className="text-ink-3 space-y-0.5">
                         <p>{t('interest.period', { from: fmtShortDate(c.periodFrom), to: fmtShortDate(c.periodTo), days: c.daysApplied })}</p>
-                        <p>{t('interest.balanceAtRate', { balance: fmtAmt(c.outstandingBalance), rate: c.rateApplied, source: codeLabel(c.source) })}</p>
+                        <p>{t('interest.balanceAtRate', { balance: fmtAmt(c.outstandingBalance), rate: formatDecimal(c.rateApplied), source: codeLabel(c.source) })}</p>
                       </div>
                       <MoneyText value={c.amount} className="font-medium text-ink flex-shrink-0" />
                     </div>

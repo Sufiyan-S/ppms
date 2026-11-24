@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { codeLabel } from '../../../constants/labels'
 import { useTranslation } from 'react-i18next'
 import { formatNumberIn } from '../../../i18n/format'
+import { formatDecimal } from '../../../utils/format'
 import type { TankStock } from '../../../api/inventoryApi'
 import { SearchableSelect } from '../../../components/SearchableSelect'
 import { IconButton } from '../../../components/IconButton'
@@ -52,7 +53,7 @@ export function DeliveryRowEditor({
               <span className="text-sm font-medium text-ink truncate">
                 {tank?.tankIdentifier ?? '—'} · {codeLabel(tank?.fuelType)}
               </span>
-              <LitresText value={enteredQty} decimals={1} className="text-xs text-ink-2" />
+              <LitresText value={enteredQty} className="text-xs text-ink-2" />
               {rowOverflow && <span className="text-xs font-semibold text-bad">{t('row.overCapacity')}</span>}
               {!rowOverflow && isOwnerOrAdmin && rowCost > 0 && (
                 <MoneyText value={rowCost} className="text-sm font-semibold text-ink" />
@@ -86,7 +87,7 @@ export function DeliveryRowEditor({
     }] : []),
     ...(tank && availableSpace !== null ? [{
       label: t('row.freeSpace'),
-      value: <LitresText value={availableSpace} decimals={1} />,
+      value: <LitresText value={availableSpace} />,
     }] : []),
     ...(afterStock !== null ? [{
       label: t('row.stockAfter'),
@@ -94,7 +95,7 @@ export function DeliveryRowEditor({
         ? <span className="font-semibold text-bad">{t('row.overCapacity')}</span>
         : (
           <span>
-            <LitresText value={enteredQty > 0 ? afterStock : null} decimals={1} />
+            <LitresText value={enteredQty > 0 ? afterStock : null} />
             {tank && tank.capacity > 0 && enteredQty > 0 && (
               <span className="text-ink-3"> {t('row.ofCapacity', { capacity: formatNumberIn(tank.capacity, { minimumFractionDigits: 0 }) })}</span>
             )}
@@ -133,7 +134,7 @@ export function DeliveryRowEditor({
           label={t('row.quantity')}
           className={isOwnerOrAdmin ? undefined : 'ui-form-grid__full'}
           error={rowOverflow && availableSpace !== null
-            ? t('row.exceedsCapacity', { value: formatNumberIn(availableSpace, { minimumFractionDigits: 1 }) })
+            ? t('row.exceedsCapacity', { value: formatDecimal(availableSpace) })
             : undefined}
         >
           <NumericInput

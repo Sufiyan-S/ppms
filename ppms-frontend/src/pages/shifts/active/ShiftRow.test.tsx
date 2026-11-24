@@ -27,7 +27,12 @@ describe('ShiftRow', () => {
 
   it('shows window, start time and prices on a second line for phones, where those columns are hidden', () => {
     renderRow(shift)
-    expect(screen.getByText(/^MORNING · Started .+ · P:₹100$/)).toHaveClass('md:hidden')
+    expect(screen.getByText(/^MORNING · Started .+ · Petrol ₹100\.00$/)).toHaveClass('md:hidden')
+  })
+
+  it('names each fuel in full and shows its price with two decimals', () => {
+    renderRow({ ...shift, fuelReadings: [{ fuelType: 'PETROL', priceSnapshot: 102.5 }, { fuelType: 'SPEED_PETROL', priceSnapshot: 110 }] } as unknown as Shift)
+    expect(screen.getByText('Petrol ₹102.50 · Speed Petrol ₹110.00')).toBeInTheDocument()
   })
 
   it('offers no handover once the shift is overdue', () => {

@@ -16,7 +16,9 @@
     "staffMembers": "Staff Members",
     "copiedCredentials": "PPMS Login Credentials\nPhone: {{phone}}\nPassword: {{password}}\nPump: {{pump}}",
     "description": "Onboard pump owners and look after their pumps and setup.",
-    "totalsLabel": "Platform totals"
+    "totalsLabel": "Platform totals",
+    "copied": "Copied",
+    "copyFailed": "Could not copy. The login details are still shown, so copy them by hand."
   },
   "created": {
     "title": "Owner account created — share these login details",

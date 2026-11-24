@@ -67,4 +67,16 @@ describe('AuditLogPage', () => {
     await waitFor(() => expect(auditApi.getAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({ from: undefined, to: undefined })))
     expect(screen.getByRole('heading', { level: 2, name: /All Events/ })).toBeInTheDocument()
   })
+
+  it('shows a load error with Retry instead of "no events" when the log fails to load', async () => {
+    const user = userEvent.setup()
+    vi.mocked(auditApi.getAuditLogs).mockRejectedValueOnce(new Error('down'))
+    renderWithProviders(<AuditLogPage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load this.')
+    expect(screen.queryByText('No audit events found.')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Closed shift')).toBeInTheDocument()
+  })
 })

@@ -7,6 +7,7 @@ import { IconButton } from '../../components/IconButton'
 import { LitresText, MoneyText } from '../../components/AmountText'
 import { EditDeliveryModal } from './EditDeliveryModal'
 import { FUEL_COLORS } from './inventoryFormat'
+import { formatCurrency } from '../../utils/format'
 
 // ── Delivery item (compact card inside invoice group) ─────────────────────────
 
@@ -31,7 +32,7 @@ export function DeliveryItem({ delivery, pumpId, isOwnerOrAdmin }: {
         </span>
         <LitresText value={delivery.quantityDelivered} className="text-right text-ink-2" />
         {isOwnerOrAdmin && (
-          <span className="text-right text-ink-3 tabular-nums">₹{delivery.costPricePerUnit.toFixed(4)}/L</span>
+          <span className="text-right text-ink-3 tabular-nums">{formatCurrency(delivery.costPricePerUnit)}/L</span>
         )}
         {isOwnerOrAdmin && (
           <MoneyText value={delivery.totalCost} className="text-right font-semibold text-ink" />

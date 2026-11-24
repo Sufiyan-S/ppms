@@ -26,17 +26,20 @@ public interface AncillaryProductPriceRepository extends JpaRepository<Ancillary
             Long productId, OffsetDateTime asOf);
 
     /**
-     * Returns the latest price row for each product in the supplied list, in a single query.
-     * Used by the product list endpoint to avoid N+1 (one price query per product).
-     * Products with no price set will simply be absent from the result map.
+     * Returns the price in effect at {@code asOf} for each listed product, in a single query.
+     * Products with no price in effect are absent from the result.
      */
     @Query("""
             SELECT p FROM AncillaryProductPrice p
             WHERE p.productId IN :productIds
-              AND p.effectiveFrom = (
-                  SELECT MAX(p2.effectiveFrom) FROM AncillaryProductPrice p2
-                  WHERE p2.productId = p.productId
+              AND p.effectiveFrom <= :asOf
+              AND NOT EXISTS (
+                  SELECT 1 FROM AncillaryProductPrice newer
+                  WHERE newer.productId = p.productId
+                    AND newer.effectiveFrom <= :asOf
+                    AND (newer.effectiveFrom > p.effectiveFrom
+                         OR (newer.effectiveFrom = p.effectiveFrom AND newer.id > p.id))
               )
             """)
-    List<AncillaryProductPrice> findLatestPricesForProducts(List<Long> productIds);
+    List<AncillaryProductPrice> findPricesInEffectForProducts(List<Long> productIds, OffsetDateTime asOf);
 }

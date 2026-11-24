@@ -17,6 +17,13 @@
     "KG": "kg",
     "PIECE": "Piece"
   },
+  "packSize": {
+    "litre": "{{value}} L",
+    "millilitre": "{{value}} ml",
+    "kg": "{{value}} kg",
+    "gram": "{{value}} g",
+    "piece": "{{value}} pc"
+  },
   "actions": {
     "recording": "Recording…"
   },
@@ -36,37 +43,85 @@
     "selectProduct": "Select product…",
     "productOption": "{{name}} (stock: {{stock}})",
     "backfilled": "Backfilled",
-    "hsnCode": "HSN code"
+    "hsnCode": "HSN code",
+    "productOptionNoPrice": "{{name}} (stock: {{stock}}) · No price"
   },
   "validation": {
     "quantityMin": "Quantity must be at least 1",
     "selectProduct": "Select a product",
     "creditClient": "Please select a client for CREDIT payment",
-    "hsnInvalid": "HSN code must be 4 to 8 digits"
+    "hsnInvalid": "HSN code must be 4 to 8 digits",
+    "quantityOverStock_one": "Only {{count}} in stock. Lower the quantity.",
+    "quantityOverStock_other": "Only {{count}} in stock. Lower the quantity."
   },
   "products": {
     "searchLabel": "Search products",
     "searchPlaceholder": "Search products…",
     "clearSearch": "Clear search",
     "add": "Add Product",
-    "noMatchTitle": "No products match \"{{query}}\"",
-    "noMatchSubtitle": "Try a different search term.",
+    "noMatchTitle": "No products match your search or filters",
+    "noMatchSubtitle": "Try a different search, or clear the filters.",
     "emptyTitle": "No products configured yet",
     "emptySubtitle": "Add your first product using the button above.",
-    "stockUnits": "{{value}} units",
-    "stockLow": "{{value}} units Low",
     "hsn": "HSN {{code}}",
-    "buyPrice": "Buy: <price>{{price}}/unit</price>",
-    "noStockLot": "No stock lot",
+    "buyPrice": "Buy <price>{{price}}/unit</price>",
+    "stockValue": "Stock value <value>{{value}}</value>",
     "sell": "Sell",
     "inventory": "Inventory",
-    "editHsnOf": "Edit HSN code of {{name}}",
     "enabled": "Product enabled",
     "disabled": "Product disabled",
     "statusFailed": "Failed to update product status",
     "filtersLabel": "Product filters",
-    "matchCount_one": "{{count}} match",
-    "matchCount_other": "{{count}} matches"
+    "disablePrompt": "Disable this product?",
+    "setPrice": "Set price",
+    "setPriceOf": "Set selling price of {{name}}",
+    "listLabel": "Products",
+    "shownOfTotal": "{{shown}} of {{total}}",
+    "statusDisabled": "Disabled",
+    "perUnit": "/ unit",
+    "noSellingPrice": "No selling price",
+    "askOwnerToSetPrice": "Ask the owner to set a price",
+    "margin": "Margin",
+    "belowCost": "Below cost",
+    "noMargin": "No margin",
+    "marginPercent": "{{percent}}%",
+    "unitsInStock_one": "{{value}} unit in stock",
+    "unitsInStock_other": "{{value}} units in stock",
+    "lowStock": "Low stock",
+    "outOfStock": "Out of stock",
+    "lowAt": "Low at {{value}} or less",
+    "soldToday": "Sold today: {{units}} · {{amount}}",
+    "noSalesToday": "No sales today",
+    "stockIn": "Stock in",
+    "stockInOf": "Stock in for {{name}}",
+    "blocked": {
+      "disabled": "This product is disabled. Enable it to sell or stock in.",
+      "outOfStock": "Out of stock. Record a stock-in before selling.",
+      "noPrice": "No selling price yet. Ask the owner to set one."
+    },
+    "menu": {
+      "label": "More actions for {{name}}",
+      "setPriceHint": "Change the selling price per unit",
+      "editHsn": "Edit HSN",
+      "noHsn": "No HSN code yet",
+      "lots": "Inventory lots",
+      "lotsHint": "Stock batches and their buy prices",
+      "disableHint": "Hides it from sales. You can enable it again.",
+      "enableHint": "Make it available for sale again"
+    },
+    "filters": {
+      "label": "Show",
+      "all": "All",
+      "lowStock": "Low stock",
+      "noPrice": "No price",
+      "disabled": "Disabled"
+    },
+    "sort": {
+      "label": "Sort",
+      "name": "Name",
+      "stockLowFirst": "Stock: low to high",
+      "newestFirst": "Recently added"
+    }
   },
   "addProduct": {
     "title": "Add product",
@@ -88,7 +143,11 @@
     "created": "Product created successfully",
     "createFailed": "Failed to create product",
     "nameMissing": "Product name is required",
-    "packageSizePositive": "Package size must be greater than 0"
+    "packageSizePositive": "Package size must be greater than 0",
+    "sellingPrice": "Selling price per unit",
+    "sellingPriceHelp": "What a customer pays for one unit. You can change it later.",
+    "sellingPriceInvalid": "Enter a selling price above ₹0 with at most 2 decimals",
+    "needSellingPrice": "Selling price"
   },
   "editHsn": {
     "saved": "HSN code saved",
@@ -117,10 +176,12 @@
     "needQuantity": "Quantity",
     "needClient": "Credit client",
     "liveLabel": "Sale total",
-    "noPrice": "No selling price is set for this product. Set a price first.",
     "buyPricePerUnit": "Buy price per unit",
     "sellPricePerUnit": "Sell price per unit",
-    "paymentModeRow": "Payment mode"
+    "paymentModeRow": "Payment mode",
+    "firstPriceTitle": "No selling price yet. Set one to continue this sale.",
+    "askOwnerForPrice": "No selling price yet — ask the owner to set one.",
+    "needQuantityWithinStock": "A quantity of {{count}} or less"
   },
   "stockIn": {
     "title": "Record stock delivery",
@@ -202,5 +263,23 @@
     "subtitle": "Choose the product the customer is buying.",
     "continue": "Continue",
     "noneInStock": "No active product has stock to sell. Record a stock delivery first."
+  },
+  "setPrice": {
+    "title": "Set selling price",
+    "current": "Current price",
+    "notSet": "Not set",
+    "newPrice": "New price per unit",
+    "help": "Applies to sales from now on. Past sales keep their price.",
+    "firstPrice": "First selling price for this product",
+    "up": "Up {{amount}} from {{current}}",
+    "down": "Down {{amount}} from {{current}}",
+    "same": "Same as the current {{current}}",
+    "invalid": "Enter a price above ₹0 with at most 2 decimals",
+    "save": "Save price",
+    "saved": "Selling price set to {{price}}",
+    "saveFailed": "Failed to set the selling price",
+    "history": "Price history",
+    "historyLoading": "Loading price history…",
+    "historyEmpty": "No price set yet."
   }
 }

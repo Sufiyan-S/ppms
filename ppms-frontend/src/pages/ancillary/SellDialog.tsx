@@ -11,16 +11,18 @@ import { useToastStore } from '../../store/toastStore'
 import { Modal } from '../../components/Modal'
 import { MoneyText } from '../../components/AmountText'
 import { FormField } from '../../components/FormField'
-import { FormGrid } from '../../components/layout/FormGrid'
+import { FormGrid, FormGridFullRow } from '../../components/layout/FormGrid'
 import { LiveFigures } from '../../components/LiveFigures'
 import type { LiveFigure } from '../../components/LiveFigures'
 import { LoadingButton } from '../../components/LoadingButton'
 import { StatusBadge } from '../../components/StatusBadge'
 import { StillNeeded } from '../../components/StillNeeded'
 import { parseApiError } from '../../utils/apiError'
-import { PAYMENT_MODES, fmtCurrency, paymentModeBadge } from './ancillaryFormat'
+import { canPerformAction } from '../../permissions/permissions'
+import { PAYMENT_MODES, fmtCurrency, parseSellingPrice, paymentModeBadge } from './ancillaryFormat'
 import { ReviewList, ReviewRow } from './ReviewRow'
 import { codeLabel } from '../../constants/labels'
+import { priceHistoryKey, useSetSellingPrice } from './useSetSellingPrice'
 
 /**
  * Computes the projected total profit for a sale by walking through active FIFO lots
@@ -58,6 +60,45 @@ interface FieldErrors {
   client?: string
 }
 
+/** Lets an Owner or Admin set the first selling price without leaving the sale. */
+function FirstPriceBox({ pumpId, productId, onSaved }: { pumpId: number; productId: number; onSaved: (price: number) => void }) {
+  const { t } = useTranslation(['ancillary', 'common'])
+  const [priceText, setPriceText] = useState('')
+  const [fieldError, setFieldError] = useState<string | null>(null)
+  const mutation = useSetSellingPrice(pumpId, productId, price => onSaved(price.pricePerUnit))
+
+  const save = () => {
+    const price = parseSellingPrice(priceText)
+    if (price == null) { setFieldError(t('setPrice.invalid')); return }
+    setFieldError(null)
+    mutation.mutate(price)
+  }
+
+  return (
+    <div className="ui-alert ui-alert-warning space-y-2">
+      <p className="text-sm font-medium">{t('sell.firstPriceTitle')}</p>
+      <div className="flex items-start gap-2">
+        <FormField label={t('sell.sellingPrice')} error={fieldError ?? undefined} className="flex-1">
+          <NumericInput
+            unit="₹"
+            min="0.01" step="0.01"
+            value={priceText}
+            onChange={e => setPriceText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } }}
+          />
+        </FormField>
+        <LoadingButton type="button" isLoading={mutation.isPending} loadingLabel={t('common:actions.saving')}
+          onClick={save} className="ui-btn-primary mt-6">
+          {t('common:actions.save')}
+        </LoadingButton>
+      </div>
+      {mutation.error && (
+        <p role="alert" className="text-sm text-bad">{parseApiError(mutation.error, t('setPrice.saveFailed'))}</p>
+      )}
+    </div>
+  )
+}
+
 /** Records a counter sale: the sale form with a live total, then a review step before saving. */
 export function SellDialog({
   pumpId, product, onClose, onSuccess,
@@ -74,6 +115,7 @@ export function SellDialog({
   const stillNeededId = useId()
   const canSeeCost = user?.role !== 'OPERATOR'
   const canOverridePrice = user?.role === 'OWNER' || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
+  const canSetPrice = canPerformAction('product:manage', user?.role)
   const [step, setStep] = useState<'form' | 'review'>('form')
   const [form, setForm] = useState<RecordAncillarySaleRequest>({
     productId: product.id,
@@ -85,14 +127,13 @@ export function SellDialog({
   const [serverError, setServerError] = useState<string | null>(null)
 
   // Sales must use the configured price; only Owner/Admin may change it for a single sale.
+  // The server stamps prices with its own clock, so the newest row is current whatever the browser clock says.
   const { data: priceHistory, isLoading: priceLoading } = useQuery({
-    queryKey: ['ancillary-price-history', pumpId, product.id],
+    queryKey: priceHistoryKey(pumpId, product.id),
     queryFn: () => ancillaryApi.getPriceHistory(pumpId, product.id),
   })
-  const [openedAt] = useState(() => Date.now())
   const configuredPrice = priceHistory
-    ?.filter(p => new Date(p.effectiveFrom).getTime() <= openedAt)
-    .sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0]
+    ?.toSorted((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0]
     ?.pricePerUnit ?? null
   const [appliedPrice, setAppliedPrice] = useState<number | null>(null)
   if (configuredPrice != null && configuredPrice !== appliedPrice) {
@@ -109,6 +150,8 @@ export function SellDialog({
   const saleMutation = useMutation({
     mutationFn: (data: RecordAncillarySaleRequest) => ancillaryApi.recordSale(pumpId, data),
     onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: ['ancillaryProducts', pumpId] })
+      queryClient.invalidateQueries({ queryKey: ['ancillarySales', pumpId] })
       if (data.paymentMode === 'CREDIT') {
         queryClient.invalidateQueries({ queryKey: ['credit-ledger', pumpId] })
         queryClient.invalidateQueries({ queryKey: ['credit-transactions', pumpId] })
@@ -127,6 +170,9 @@ export function SellDialog({
     e.preventDefault()
     const errors: FieldErrors = {}
     if (!form.quantityUnits || form.quantityUnits < 1) errors.quantity = t('validation.quantityMin')
+    else if (form.quantityUnits > product.currentStockUnits) {
+      errors.quantity = t('validation.quantityOverStock', { count: product.currentStockUnits })
+    }
     if (!form.sellingPricePerUnit || form.sellingPricePerUnit <= 0) errors.price = t('sell.priceInvalid')
     if (form.paymentMode === 'CREDIT' && !form.clientId) errors.client = t('validation.creditClient')
     setFieldErrors(errors)
@@ -140,6 +186,9 @@ export function SellDialog({
   const hasQuantity = form.quantityUnits > 0
   const totalAmount = sellPrice != null && hasQuantity ? sellPrice * form.quantityUnits : null
   const stockAfter = product.currentStockUnits - form.quantityUnits
+  const exceedsStock = stockAfter < 0
+  const quantityError = fieldErrors.quantity
+    ?? (exceedsStock ? t('validation.quantityOverStock', { count: product.currentStockUnits }) : undefined)
 
   // Walks FIFO lots in order so multi-batch sales are correct.
   // e.g. sell 6 from lots [5@100, 2@200] @ 120 → (120-100)×5 + (120-200)×1 = 20, not 120.
@@ -184,10 +233,16 @@ export function SellDialog({
   const stillNeeded = [
     ...(noPrice ? [t('sell.needPrice')] : []),
     ...(hasQuantity ? [] : [t('sell.needQuantity')]),
+    ...(exceedsStock ? [t('sell.needQuantityWithinStock', { count: product.currentStockUnits })] : []),
     ...(form.paymentMode === 'CREDIT' && !form.clientId ? [t('sell.needClient')] : []),
   ]
 
-  const priceHelp = noPrice ? undefined : buyPrice != null
+  const applyNewPrice = (price: number) => {
+    setAppliedPrice(price)
+    setForm(f => ({ ...f, sellingPricePerUnit: price }))
+  }
+
+  const priceHelp = buyPrice != null
     ? t('sell.buyPriceHelp', { price: fmtCurrency(buyPrice) })
     : undefined
 
@@ -236,30 +291,39 @@ export function SellDialog({
             <FormGrid>
               <FormField
                 label={t('fields.quantity')}
-                error={fieldErrors.quantity}
+                error={quantityError}
                 help={t('sell.inStock', { count: product.currentStockUnits })}
               >
                 <NumericInput
                   unit={t('fields.unitsSuffix')}
-                  min="1" step="1" data-autofocus inputMode="numeric"
+                  min="1" max={product.currentStockUnits} step="1" data-autofocus inputMode="numeric"
                   value={form.quantityUnits || ''}
                   onChange={e => setForm(f => ({ ...f, quantityUnits: parseInt(e.target.value) || 0 }))}
                 />
               </FormField>
-              <FormField
-                label={t('sell.sellingPrice')}
-                error={fieldErrors.price ?? (noPrice ? t('sell.noPrice') : undefined)}
-                help={priceHelp}
-              >
-                <NumericInput
-                  unit="₹"
-                  min="0.01" step="0.01"
-                  value={form.sellingPricePerUnit || ''}
-                  onChange={e => setForm(f => ({ ...f, sellingPricePerUnit: parseFloat(e.target.value) || 0 }))}
-                  readOnly={!canOverridePrice}
-                  disabled={configuredPrice == null}
-                />
-              </FormField>
+              {noPrice && (
+                <FormGridFullRow>
+                  {canSetPrice
+                    ? <FirstPriceBox pumpId={pumpId} productId={product.id} onSaved={applyNewPrice} />
+                    : <p role="status" className="ui-alert ui-alert-warning text-sm">{t('sell.askOwnerForPrice')}</p>}
+                </FormGridFullRow>
+              )}
+              {!noPrice && (
+                <FormField
+                  label={t('sell.sellingPrice')}
+                  error={fieldErrors.price}
+                  help={priceHelp}
+                >
+                  <NumericInput
+                    unit="₹"
+                    min="0.01" step="0.01"
+                    value={form.sellingPricePerUnit || ''}
+                    onChange={e => setForm(f => ({ ...f, sellingPricePerUnit: parseFloat(e.target.value) || 0 }))}
+                    readOnly={!canOverridePrice}
+                    disabled={configuredPrice == null}
+                  />
+                </FormField>
+              )}
 
               <div>
                 <span className="ui-label">{t('fields.paymentMode')}</span>

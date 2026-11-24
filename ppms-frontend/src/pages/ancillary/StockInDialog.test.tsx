@@ -13,7 +13,7 @@ vi.mock('../../api/pumpApi', () => ({ pumpApi: { getCreditClients: vi.fn().mockR
 const oil = {
   id: 8, pumpId: 3, name: 'Engine Oil', brand: null, variant: null, packageSize: 1, unitOfMeasure: 'LITRE',
   currentStockUnits: 7, lowStockThreshold: null, status: 'ACTIVE', fifoCostPricePerUnit: 100,
-  activeFifoLots: [], displayName: 'Engine Oil 1L', createdAt: '', updatedAt: '',
+  activeFifoLots: [], currentSellingPricePerUnit: 150, soldTodayUnits: 0, soldTodayAmount: 0, displayName: 'Engine Oil 1L', createdAt: '', updatedAt: '',
 } as AncillaryProduct
 
 function figure(label: string | RegExp) {

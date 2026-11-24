@@ -49,8 +49,8 @@ export function formatRupees(n: number, language: AppLanguage = activeLanguage()
   return `₹${formatNumberIn(n, { minimumFractionDigits: 2, maximumFractionDigits: 2 }, language)}`
 }
 
-/** 1,234.567 L — the unit stays "L" in every language. */
-export function formatLitresIn(n: number, decimals = 3, language: AppLanguage = activeLanguage()): string {
+/** 1,234.50 L — the unit stays "L" in every language. */
+export function formatLitresIn(n: number, decimals = 2, language: AppLanguage = activeLanguage()): string {
   return `${formatNumberIn(n, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }, language)} L`
 }
 

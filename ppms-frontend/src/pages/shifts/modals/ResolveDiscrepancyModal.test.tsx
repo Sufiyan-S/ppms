@@ -50,7 +50,7 @@ describe('ResolveDiscrepancyModal', () => {
     renderModal(shortShift)
 
     expect(screen.getByRole('dialog', { name: 'Resolve discrepancy' })).toHaveTextContent('Shift #11 · Ravi')
-    expect(screen.getByText('SHORT ₹200.00')).toBeInTheDocument()
+    expect(screen.getByText('Short ₹200.00')).toBeInTheDocument()
     expect(screen.getByText('Reason given at close').nextSibling).toHaveTextContent('Short')
   })
 

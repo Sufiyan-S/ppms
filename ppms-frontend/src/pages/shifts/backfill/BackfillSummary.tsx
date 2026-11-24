@@ -25,7 +25,7 @@ export function BackfillSummary({ form }: { form: BackfillForm }) {
     const unit = FUEL_UNIT[nozzle.fuelType] ?? 'L'
     soldByUnit.set(unit, (soldByUnit.get(unit) ?? 0) + liters)
   }
-  const sold = [...soldByUnit].map(([unit, amount]) => formatUnits(amount, unit, 3)).join(' · ')
+  const sold = [...soldByUnit].map(([unit, amount]) => formatUnits(amount, unit)).join(' · ')
   const paymentsEntered = hasPaymentEntries(form)
   // With no readings yet the total is 0, which would read as a real figure.
   const totalDue = soldByUnit.size > 0 ? totalExpected : null

@@ -24,7 +24,7 @@ public class CreditTransactionResponse {
     // For SALE: the entry description. For COUNTER_SALE: product, quantity and bill number. For PAYMENT: notes.
     private String reference;
 
-    // Names the reference for translated screens when the server wrote it (INTEREST), filled with referenceParams
+    // Names the reference for translated screens when the server wrote it (COUNTER_SALE, INTEREST, unknown payment recorder), filled with referenceParams
     private String referenceCode;
 
     @Builder.Default

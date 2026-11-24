@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -16,6 +17,8 @@ public interface DipCheckRepository extends JpaRepository<DipCheck, Long> {
     List<DipCheck> findByPumpIdOrderByCheckedAtDesc(Long pumpId);
 
     Page<DipCheck> findByPumpIdOrderByCheckedAtDesc(Long pumpId, Pageable pageable);
+
+    Page<DipCheck> findByPumpIdAndTankIdInOrderByCheckedAtDesc(Long pumpId, Collection<Long> tankIds, Pageable pageable);
 
     /** DIP variances checked within [from, to) — used by balance sheet generation. */
     List<DipCheck> findByPumpIdAndCheckedAtGreaterThanEqualAndCheckedAtLessThan(Long pumpId, OffsetDateTime from, OffsetDateTime to);

@@ -40,6 +40,15 @@ public class AncillaryProductResponse {
      */
     private List<FifoLotSummary> activeFifoLots;
 
+    /** Selling price in effect now. Null when no price has been set, so the product cannot be sold yet. */
+    private BigDecimal currentSellingPricePerUnit;
+
+    /** Units of this product sold on the pump's current business day. */
+    private Integer soldTodayUnits;
+
+    /** Amount taken for this product on the pump's current business day, tax included. */
+    private BigDecimal soldTodayAmount;
+
     /**
      * Human-readable display name composed from brand + name + variant + packageSize + unit.
      * Example: "Castrol GTX 10W-40 — 1.000 L"
@@ -55,6 +64,8 @@ public class AncillaryProductResponse {
     public static class FifoLotSummary {
         /** Units remaining in this lot — how many can still be consumed from it. */
         private Integer remainingQuantity;
+        /** Units this lot arrived with, so the card can show how much of the open stock is left. */
+        private Integer originalQuantity;
         /** Cost price captured at delivery time — immutable after lot creation. */
         private BigDecimal costPricePerUnit;
     }

@@ -22,7 +22,7 @@ describe('EditCreditClientForm GST fields', () => {
 
   it('sends the GSTIN in capitals and the billing address', async () => {
     const user = userEvent.setup()
-    renderWithProviders(<EditCreditClientForm pumpId={PUMP_ID} client={client} onSaved={vi.fn()} />)
+    renderWithProviders(<EditCreditClientForm pumpId={PUMP_ID} client={client} onSaved={vi.fn()} onCancel={vi.fn()} />)
 
     await user.type(screen.getByLabelText(/GSTIN/), '27bbbcs5678d1z2')
     await user.type(screen.getByLabelText(/Billing address/), 'Plot 4, MIDC, Pune')
@@ -35,7 +35,7 @@ describe('EditCreditClientForm GST fields', () => {
 
   it('refuses a malformed GSTIN', async () => {
     const user = userEvent.setup()
-    renderWithProviders(<EditCreditClientForm pumpId={PUMP_ID} client={client} onSaved={vi.fn()} />)
+    renderWithProviders(<EditCreditClientForm pumpId={PUMP_ID} client={client} onSaved={vi.fn()} onCancel={vi.fn()} />)
 
     await user.type(screen.getByLabelText(/GSTIN/), 'NOTAGSTIN')
     await user.click(screen.getByRole('button', { name: 'Save' }))

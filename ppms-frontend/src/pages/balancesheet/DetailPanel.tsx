@@ -234,7 +234,7 @@ export function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, on
 
         {/* Cash summary tiles */}
         <section>
-          <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">{t('summary.title')}</h3>
+          <h3 className="ui-section-heading mb-3">{t('summary.title')}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <SummaryTile label={t('summary.expectedRevenue')} value={<MoneyText value={detail.totalExpectedRevenue} />} />
             <SummaryTile label={t('summary.cashCollected')} value={<MoneyText value={detail.totalCashCollected} />} />
@@ -260,9 +260,9 @@ export function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, on
                 </Link>
               </p>
             )}
-            <SummaryTile label={t('summary.totalLitresSold')} value={<LitresText value={detail.totalLitresSold} decimals={1} />} />
+            <SummaryTile label={t('summary.totalLitresSold')} value={<LitresText value={detail.totalLitresSold} />} />
             {detail.reportType === 'DAY' && (
-              <SummaryTile label={t('summary.litresDelivered')} value={<LitresText value={detail.totalLitresDelivered} decimals={1} />} />
+              <SummaryTile label={t('summary.litresDelivered')} value={<LitresText value={detail.totalLitresDelivered} />} />
             )}
             {isOwnerOrAdmin && <SummaryTile label={t('summary.costOfGoods')} value={<MoneyText value={detail.totalCostOfGoods} />} />}
             {isOwnerOrAdmin && (
@@ -317,7 +317,7 @@ export function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, on
         {/* Fuel lines */}
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">{t('fuel.title')}</h3>
+            <h3 className="ui-section-heading">{t('fuel.title')}</h3>
             <CsvExportButton
               filename={csvFilename(`balance-sheet-${reportId}-fuel`, sheetRange)}
               columns={fuelColumns}
@@ -340,8 +340,8 @@ export function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, on
         {/* Shift lines */}
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">
-              {t('shifts.title')} <span className="text-ink-3 normal-case font-normal">{t('shifts.count', { count: detail.shiftLines.length })}</span>
+            <h3 className="ui-section-heading">
+              {t('shifts.title')} <span className="font-normal text-ink-3">{t('shifts.count', { count: detail.shiftLines.length })}</span>
             </h3>
             <CsvExportButton
               filename={csvFilename(`balance-sheet-${reportId}-shifts`, sheetRange)}
@@ -363,7 +363,7 @@ export function DetailPanel({ pumpId, reportId, onClose, canDelete, onDelete, on
             footer={detail.shiftLines.length > 1 && (
               <tr className="bg-surface-sunken text-ink">
                 <Td colSpan={3}>{t('common:fields.total')}</Td>
-                <Td right><LitresText value={detail.shiftLines.reduce((s, l) => s + l.litresSold, 0)} decimals={1} /></Td>
+                <Td right><LitresText value={detail.shiftLines.reduce((s, l) => s + l.litresSold, 0)} /></Td>
                 <Td right><MoneyText value={detail.shiftLines.reduce((s, l) => s + l.expectedRevenue, 0)} /></Td>
                 <Td right><MoneyText value={detail.shiftLines.reduce((s, l) => s + l.cashCollected + l.upiCollected + l.cardCollected + (l.fleetCardCollected ?? 0), 0)} /></Td>
                 <Td right><MoneyText value={detail.shiftLines.reduce((s, l) => s + l.cashCollected, 0)} /></Td>

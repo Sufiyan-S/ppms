@@ -287,8 +287,8 @@ describe('CloseShiftModal', () => {
 
   it('shows Short and requires a reason, with no round off for a gap of a rupee or more', async () => {
     const user = await fillShift('900')
-    expect(screen.getByText('SHORT ₹100.00')).toBeInTheDocument()
-    expect(screen.getByText('Shift is SHORT by ₹100.00')).toBeInTheDocument()
+    expect(screen.getByText('Short ₹100.00')).toBeInTheDocument()
+    expect(screen.getByText('Shift is short by ₹100.00')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Round off/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Review close' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Review close' })).toHaveAccessibleDescription('Still needed Reason for the difference')
@@ -301,7 +301,7 @@ describe('CloseShiftModal', () => {
 
   it('rounds a gap under one rupee into cash so the shift balances', async () => {
     const user = await fillShift('999.40')
-    expect(screen.getByText('Shift is SHORT by ₹0.60')).toBeInTheDocument()
+    expect(screen.getByText('Shift is short by ₹0.60')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Round off ₹0.60 into cash' }))
     expect(screen.getByLabelText('Cash (₹)')).toHaveValue(1000)
@@ -310,7 +310,7 @@ describe('CloseShiftModal', () => {
 
   it('shows Over when more was collected than due', async () => {
     await fillShift('1000.50')
-    expect(screen.getByText('OVER ₹0.50')).toBeInTheDocument()
+    expect(screen.getByText('Over ₹0.50')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Round off ₹0.50 into cash' })).toBeInTheDocument()
   })
 
@@ -348,11 +348,11 @@ describe('CloseShiftModal', () => {
 
     const review = screen.getByRole('dialog', { name: 'Check before closing' })
     expect(screen.getByRole('heading', { name: 'Check before closing' })).toHaveFocus()
-    expect(within(review).getByRole('row', { name: /Nozzle #1 · Petrol/ })).toHaveTextContent('10.000 L₹1,000.00')
+    expect(within(review).getByRole('row', { name: /Nozzle #1 · Petrol/ })).toHaveTextContent('10.00 L₹1,000.00')
     expect(within(review).getByRole('row', { name: /Total due/ })).toHaveTextContent('₹1,000.00')
     expect(within(review).getByText('Cash').nextSibling).toHaveTextContent('₹900.00')
     expect(within(review).getByText('Credit (0 entries)')).toBeInTheDocument()
-    expect(within(review).getByText('SHORT ₹100.00')).toBeInTheDocument()
+    expect(within(review).getByText('Short ₹100.00')).toBeInTheDocument()
     expect(within(review).getByText('Reason: Customer paid later')).toBeInTheDocument()
     expect(await within(review).findByText(/more than the ₹50.00 limit/)).toBeInTheDocument()
     expect(review.querySelector('.ui-modal-backdrop')).toHaveClass('ui-modal-backdrop--fullscreen')
@@ -460,11 +460,11 @@ describe('CloseShiftModal live summary', () => {
     await user.type(screen.getByLabelText('UPI (₹)'), '300')
     await user.type(screen.getByLabelText('Cash (₹)'), '600')
 
-    expect(within(summary).getByText('Sold').nextSibling).toHaveTextContent('10.000 L')
+    expect(within(summary).getByText('Sold').nextSibling).toHaveTextContent('10.00 L')
     expect(within(summary).getByText('Total due').nextSibling).toHaveTextContent('₹1,000.00')
     expect(within(summary).getByText('Collected').nextSibling).toHaveTextContent('₹900.00')
     expect(within(summary).getByText('UPI').nextSibling).toHaveTextContent('₹300.00')
-    expect(within(summary).getByText('SHORT ₹100.00')).toBeInTheDocument()
+    expect(within(summary).getByText('Short ₹100.00')).toBeInTheDocument()
     expect(within(summary).getByText(/more than the ₹50.00 limit/)).toBeInTheDocument()
     expect(within(summary).getByText('Reason for the difference')).toBeInTheDocument()
   })
@@ -477,7 +477,7 @@ describe('CloseShiftModal live summary', () => {
 
     await user.type(endReading(), '1010')
     await user.type(screen.getByLabelText('Cash (₹)'), '1020')
-    expect(within(summary).getByText('OVER ₹20.00')).toBeInTheDocument()
+    expect(within(summary).getByText('Over ₹20.00')).toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('Cash (₹)'))
     await user.type(screen.getByLabelText('Cash (₹)'), '1000')
@@ -498,7 +498,7 @@ describe('CloseShiftModal live summary', () => {
     await user.type(endReading(), '1010')
     await user.type(screen.getByLabelText('Cash (₹)'), '900')
     expect(within(bar).getByText('Due').nextSibling).toHaveTextContent('₹1,000.00')
-    expect(within(bar).getByText('SHORT ₹100.00')).toBeInTheDocument()
+    expect(within(bar).getByText('Short ₹100.00')).toBeInTheDocument()
 
     const details = within(bar).getByRole('button', { name: 'Details' })
     expect(details).toHaveAttribute('aria-expanded', 'false')

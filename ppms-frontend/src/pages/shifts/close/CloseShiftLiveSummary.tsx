@@ -76,7 +76,7 @@ function Breakdown({ figures }: { figures: LiveSummaryFigures }) {
       <div className="flex items-baseline justify-between gap-3">
         <dt className="text-ink-2">{t('close.liveSummary.sold')}</dt>
         <dd className="text-right tabular-nums">
-          {figures.sold.length > 0 ? figures.sold.map((s) => formatUnits(s.amount, s.unit, 3)).join(' · ') : <span className="text-ink-3">—</span>}
+          {figures.sold.length > 0 ? figures.sold.map((s) => formatUnits(s.amount, s.unit)).join(' · ') : <span className="text-ink-3">—</span>}
         </dd>
       </div>
       <div className="flex items-baseline justify-between gap-3">

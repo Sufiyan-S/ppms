@@ -39,4 +39,23 @@ describe('InventoryLotsTab all-tanks date range', () => {
 
     await waitFor(() => expect(reportApi.getAllTanksInventoryLots).toHaveBeenCalledWith(4, '2026-01-01', '2026-11-20'))
   })
+
+  it('tells screen readers whether a tank is expanded and which lots it shows', async () => {
+    const user = userEvent.setup()
+    vi.mocked(reportApi.getAllTanksInventoryLots).mockResolvedValue({
+      pumpId: 4,
+      tanks: [{ tankId: 9, tankIdentifier: 'Tank A', fuelType: 'PETROL', lotCount: 0, totalRemaining: 0, weightedAvgCostPerUnit: null, totalStockValue: 0, lots: [] }],
+      crossTankSummary: [],
+    })
+    renderWithProviders(<InventoryLotsTab pumpId={4} />)
+
+    const toggle = await screen.findByRole('button', { name: /Tank A/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).not.toHaveAttribute('aria-controls')
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById(toggle.getAttribute('aria-controls') ?? '')).toHaveTextContent('No lots in this tank.')
+  })
 })

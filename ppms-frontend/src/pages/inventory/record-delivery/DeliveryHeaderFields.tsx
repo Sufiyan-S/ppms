@@ -53,11 +53,11 @@ export function DeliveryHeaderFields({ date, setDate, invoice, setInvoice, tanke
               label={t('header.tankerFigures')}
               className="mt-2"
               figures={[
-                { label: t('header.capacity'), value: <LitresText value={selectedTanker.capacityLitres} decimals={0} /> },
-                { label: t('header.entered'), value: <LitresText value={totalEnteredQty > 0 ? totalEnteredQty : null} decimals={1} /> },
+                { label: t('header.capacity'), value: <LitresText value={selectedTanker.capacityLitres} /> },
+                { label: t('header.entered'), value: <LitresText value={totalEnteredQty > 0 ? totalEnteredQty : null} /> },
                 {
                   label: isOver ? t('header.over') : t('header.remaining'),
-                  value: <LitresText value={tankerRemaining === null ? null : Math.abs(tankerRemaining)} decimals={1}
+                  value: <LitresText value={tankerRemaining === null ? null : Math.abs(tankerRemaining)}
                     tone={tankerMismatch && isOver ? 'bad' : undefined} />,
                   isResult: true,
                 },

@@ -6,7 +6,7 @@ import { formatCurrency } from '../../utils/format'
 function SummaryFigure({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="ui-dashboard-module px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{label}</p>
+      <p className="ui-kpi-label">{label}</p>
       <p className={`mt-1 text-lg font-bold tabular-nums ${tone ?? 'text-ink'}`}>{value}</p>
     </div>
   )

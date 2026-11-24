@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { serverMessage } from '../../../utils/apiError'
@@ -61,8 +61,8 @@ function tankLotColumns(t: ReportsT): DataTableColumn<InventoryLotLine>[] {
     { key: 'reference', header: t('columns.tankerRef'), cell: (lot) => <span className="text-ink-2">{lot.tankerReference}</span> },
     { key: 'delivered', header: t('columns.deliveryDate'), cell: (lot) => <span className="text-ink-3">{fmtShortDate(lot.deliveryDate)}</span> },
     { key: 'cost', header: t('columns.costPerLitre'), numeric: true, cell: (lot) => <MoneyText value={lot.costPricePerUnit} className="text-ink-2" /> },
-    { key: 'original', header: t('columns.original'), numeric: true, cell: (lot) => <LitresText value={lot.originalQuantity} decimals={2} className="text-ink-3" /> },
-    { key: 'remaining', header: t('columns.remaining'), numeric: true, cell: (lot) => <LitresText value={lot.remainingQuantity} decimals={2} className="font-medium text-ink" /> },
+    { key: 'original', header: t('columns.original'), numeric: true, cell: (lot) => <LitresText value={lot.originalQuantity} className="text-ink-3" /> },
+    { key: 'remaining', header: t('columns.remaining'), numeric: true, cell: (lot) => <LitresText value={lot.remainingQuantity} className="font-medium text-ink" /> },
     { key: 'status', header: t('columns.status'), cell: (lot) => <LotBadges lot={lot} dipLabel={t('inventory.dip')} /> },
   ]
 }
@@ -70,10 +70,10 @@ function tankLotColumns(t: ReportsT): DataTableColumn<InventoryLotLine>[] {
 function crossTankColumns(t: ReportsT): DataTableColumn<CrossTankSummaryLine>[] {
   return [
     { key: 'fuel', header: t('columns.fuelType'), cell: (row) => <span className="font-medium text-ink">{codeLabel(row.fuelType)}</span> },
-    { key: 'remaining', header: t('columns.totalRemaining'), numeric: true, cell: (row) => <LitresText value={row.totalRemaining} decimals={2} className="text-ink-2" /> },
+    { key: 'remaining', header: t('columns.totalRemaining'), numeric: true, cell: (row) => <LitresText value={row.totalRemaining} className="text-ink-2" /> },
     {
       key: 'avgCost', header: t('columns.weightedAvgCost'), numeric: true,
-      cell: (row) => <span className="text-ink-2">{row.weightedAvgCostPerUnit != null ? `₹${row.weightedAvgCostPerUnit.toFixed(2)}/L` : '—'}</span>,
+      cell: (row) => row.weightedAvgCostPerUnit != null ? <span className="text-ink-2"><MoneyText value={row.weightedAvgCostPerUnit} />/L</span> : <span className="text-ink-2">—</span>,
     },
     { key: 'value', header: t('columns.totalValue'), numeric: true, cell: (row) => <MoneyText value={row.totalStockValue} className="font-semibold text-ink" /> },
   ]
@@ -106,6 +106,7 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
   const [from, setFrom] = useState(range.from)
   const [to,   setTo]   = useState(range.to)
   const [expandedLot, setExpandedLot] = useState<number | null>(null)
+  const expandedContentId = useId()
 
   const { data: tanks = [] } = useQuery({
     queryKey: ['tanks', pumpId],
@@ -194,15 +195,15 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
           {data.weightedAvgCostPerUnit != null && (
             <ReportSummary columns={3}>
               <div className="ui-card ui-card-muted p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{t('inventory.totalRemaining')}</p>
-                <p className="text-sm font-semibold text-ink mt-0.5"><LitresText value={data.totalRemaining} decimals={2} /></p>
+                <p className="ui-kpi-label">{t('inventory.totalRemaining')}</p>
+                <p className="text-sm font-semibold text-ink mt-0.5"><LitresText value={data.totalRemaining} /></p>
               </div>
               <div className="ui-card ui-card-muted p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{t('inventory.avgCost')}</p>
-                <p className="text-sm font-semibold text-ink mt-0.5">₹{data.weightedAvgCostPerUnit.toFixed(2)}/L</p>
+                <p className="ui-kpi-label">{t('inventory.avgCost')}</p>
+                <p className="text-sm font-semibold text-ink mt-0.5"><MoneyText value={data.weightedAvgCostPerUnit} />/L</p>
               </div>
               <div className="ui-card ui-card-muted p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{t('inventory.stockValue')}</p>
+                <p className="ui-kpi-label">{t('inventory.stockValue')}</p>
                 <MoneyText value={data.totalStockValue} className="block text-sm font-semibold text-ink mt-0.5" />
               </div>
             </ReportSummary>
@@ -216,17 +217,20 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
           {paged.content.map((lot) => (
             <div key={lot.lotId} className="border-b border-border">
               <button
-                className="ui-accordion-trigger"
+                type="button"
+                className="ui-accordion-trigger flex-wrap"
+                aria-expanded={expandedLot === lot.lotId}
+                aria-controls={expandedLot === lot.lotId ? `${expandedContentId}-lot-${lot.lotId}` : undefined}
                 onClick={() => setExpandedLot(expandedLot === lot.lotId ? null : lot.lotId)}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <LotBadges lot={lot} />
                   <span className="text-sm font-medium text-ink">{fmtShortDate(lot.deliveryDate)}</span>
                   <span className="text-xs text-ink-3">{codeLabel(lot.fuelType)}</span>
                   <span className="text-xs text-ink-3">{lot.tankerReference}</span>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-ink-3">
-                  <span>₹{lot.costPricePerUnit}/L</span>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-ink-3">
+                  <span><MoneyText value={lot.costPricePerUnit} />/L</span>
                   <span>{t('inventory.remaining', { quantity: fmtQty(lot.remainingQuantity) })}</span>
                   <span><MoneyText value={lot.totalCogsConsumed} /> {t('inventory.cogsSuffix')}</span>
                   {expandedLot === lot.lotId
@@ -235,19 +239,22 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                   }
                 </div>
               </button>
-              {expandedLot === lot.lotId && lot.consumptions.length > 0 && (
-                <DataTable
-                  caption={t('inventory.consumptionCaption', { reference: lot.tankerReference })}
-                  captionHidden
-                  columns={consumptionColumns(t, lot)}
-                  rows={lot.consumptions}
-                  rowKey={(c) => c.id}
-                  className="rounded-none border-x-0 border-b-0"
-                  tableClassName="text-xs"
-                />
-              )}
-              {expandedLot === lot.lotId && lot.consumptions.length === 0 && (
-                <p className="ui-empty border-t border-border px-4 py-3">{t('inventory.noConsumptions')}</p>
+              {expandedLot === lot.lotId && (
+                <div id={`${expandedContentId}-lot-${lot.lotId}`}>
+                  {lot.consumptions.length > 0 ? (
+                    <DataTable
+                      caption={t('inventory.consumptionCaption', { reference: lot.tankerReference })}
+                      captionHidden
+                      columns={consumptionColumns(t, lot)}
+                      rows={lot.consumptions}
+                      rowKey={(c) => c.id}
+                      className="rounded-none border-x-0 border-b-0"
+                      tableClassName="text-xs"
+                    />
+                  ) : (
+                    <p className="ui-empty border-t border-border px-4 py-3">{t('inventory.noConsumptions')}</p>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -272,7 +279,10 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
               {allTanksData.tanks.map((section) => (
                 <div key={section.tankId} className="border-b border-border">
                   <button
+                    type="button"
                     className="ui-accordion-trigger"
+                    aria-expanded={expandedLot === section.tankId}
+                    aria-controls={expandedLot === section.tankId ? `${expandedContentId}-tank-${section.tankId}` : undefined}
                     onClick={() => setExpandedLot(expandedLot === section.tankId ? null : section.tankId)}
                   >
                     <div className="flex items-center gap-3">
@@ -283,7 +293,7 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                     <div className="flex items-center gap-4 text-xs text-ink-3">
                       <span>{t('inventory.remaining', { quantity: fmtQty(section.totalRemaining) })}</span>
                       {section.weightedAvgCostPerUnit != null && (
-                        <span>{t('inventory.averagePerLitre', { cost: section.weightedAvgCostPerUnit.toFixed(2) })}</span>
+                        <span>{t('inventory.averagePerLitre', { cost: formatDecimal(section.weightedAvgCostPerUnit) })}</span>
                       )}
                       <span><MoneyText value={section.totalStockValue} /> {t('inventory.valueSuffix')}</span>
                       {expandedLot === section.tankId
@@ -292,7 +302,7 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                     </div>
                   </button>
                   {expandedLot === section.tankId && (
-                    <div className="p-4 border-t border-border">
+                    <div id={`${expandedContentId}-tank-${section.tankId}`} className="p-4 border-t border-border">
                       {section.lots.length === 0 ? (
                         <p className="ui-empty">{t('inventory.noLotsInTank')}</p>
                       ) : (
@@ -339,7 +349,7 @@ export function InventoryLotsTab({ pumpId }: { pumpId: number }) {
                 <span className="text-sm font-medium text-ink">{fmtShortDate(lot.deliveryDate)}</span>
                 <span className="text-xs text-ink-3">{codeLabel(lot.fuelType)}</span>
                 <span className="text-xs text-ink-3">{lot.tankerReference}</span>
-                <span className="text-xs text-ink-3">₹{lot.costPricePerUnit}/L</span>
+                <span className="text-xs text-ink-3"><MoneyText value={lot.costPricePerUnit} />/L</span>
                 <span className="text-xs text-ink-3">{t('inventory.remaining', { quantity: fmtQty(lot.remainingQuantity) })}</span>
                 <span className="text-xs text-ink-3"><MoneyText value={lot.totalCogsConsumed} /> {t('inventory.cogsSuffix')}</span>
               </div>

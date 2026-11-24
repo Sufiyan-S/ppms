@@ -13,6 +13,7 @@ import com.ppms.ancillary.RecordAncillarySaleRequest;
 import com.ppms.ancillary.RecordStockDeliveryRequest;
 import com.ppms.ancillary.UnitOfMeasure;
 import com.ppms.common.exception.BusinessException;
+import com.ppms.common.text.ServerTextCodes;
 import com.ppms.fuel.FuelType;
 import com.ppms.credit.ReassignCreditEntryRequest;
 import com.ppms.credit.CreditClient;
@@ -455,6 +456,8 @@ class MoneyCorrectnessIntegrationTest {
         assertThat(rows).anySatisfy(row -> {
             assertThat(row.getType()).isEqualTo("COUNTER_SALE");
             assertThat(row.getReference()).contains(product.getName()).contains("× 2").contains("Bill B-42");
+            assertThat(row.getReferenceCode()).isEqualTo(ServerTextCodes.COUNTER_SALE_DETAILS_WITH_BILL);
+            assertThat(row.getReferenceParams()).containsEntry("quantity", 2).containsEntry("billNo", "B-42");
             assertThat(row.getAmount()).isEqualByComparingTo("800.00");
         });
         assertThat(rows.get(0).getRunningBalance()).isEqualByComparingTo("900.00");

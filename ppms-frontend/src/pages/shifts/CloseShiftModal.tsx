@@ -413,6 +413,7 @@ export default function CloseShiftModal({ shift, onClose, onOpenNextShift, hando
       size={step === 'form' ? 'full' : 'lg'}
       onClose={dismiss}
       canClose={!isSubmitting}
+      confirmDiscard={false}
       titleRef={titleRef}
       fullScreenOnPhone={step !== 'form'}
       onSubmit={step === 'form' ? handleReview : undefined}

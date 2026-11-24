@@ -17,6 +17,13 @@
     "KG": "kg",
     "PIECE": "नग"
   },
+  "packSize": {
+    "litre": "{{value}} ली.",
+    "millilitre": "{{value}} मि.ली.",
+    "kg": "{{value}} कि.ग्रा.",
+    "gram": "{{value}} ग्रा.",
+    "piece": "{{value}} नग"
+  },
   "actions": {
     "recording": "दर्ज हो रहा है…"
   },
@@ -36,37 +43,85 @@
     "selectProduct": "उत्पाद चुनें…",
     "productOption": "{{name}} (स्टॉक: {{stock}})",
     "backfilled": "बाद में दर्ज",
-    "hsnCode": "HSN कोड"
+    "hsnCode": "HSN कोड",
+    "productOptionNoPrice": "{{name}} (स्टॉक: {{stock}}) · कीमत नहीं"
   },
   "validation": {
     "quantityMin": "मात्रा कम से कम 1 होनी चाहिए",
     "selectProduct": "एक उत्पाद चुनें",
     "creditClient": "क्रेडिट भुगतान के लिए ग्राहक चुनें",
-    "hsnInvalid": "HSN कोड 4 से 8 अंकों का होना चाहिए"
+    "hsnInvalid": "HSN कोड 4 से 8 अंकों का होना चाहिए",
+    "quantityOverStock_one": "स्टॉक में केवल {{count}} है। मात्रा कम करें।",
+    "quantityOverStock_other": "स्टॉक में केवल {{count}} हैं। मात्रा कम करें।"
   },
   "products": {
     "searchLabel": "उत्पाद खोजें",
     "searchPlaceholder": "उत्पाद खोजें…",
     "clearSearch": "खोज हटाएँ",
     "add": "उत्पाद जोड़ें",
-    "noMatchTitle": "\"{{query}}\" से कोई उत्पाद नहीं मिला",
-    "noMatchSubtitle": "कोई दूसरा शब्द लिखकर खोजें।",
+    "noMatchTitle": "आपकी खोज या फ़िल्टर से कोई उत्पाद नहीं मिला",
+    "noMatchSubtitle": "कोई दूसरा शब्द खोजें, या फ़िल्टर हटाएँ।",
     "emptyTitle": "अभी तक कोई उत्पाद नहीं जोड़ा गया",
     "emptySubtitle": "ऊपर के बटन से पहला उत्पाद जोड़ें।",
-    "stockUnits": "{{value}} नग",
-    "stockLow": "{{value}} नग, स्टॉक कम",
     "hsn": "HSN {{code}}",
-    "buyPrice": "खरीद: <price>{{price}}/नग</price>",
-    "noStockLot": "कोई स्टॉक लॉट नहीं",
+    "buyPrice": "खरीद <price>{{price}}/नग</price>",
+    "stockValue": "स्टॉक मूल्य <value>{{value}}</value>",
     "sell": "बेचें",
     "inventory": "स्टॉक",
-    "editHsnOf": "{{name}} का HSN कोड बदलें",
     "enabled": "उत्पाद चालू हुआ",
     "disabled": "उत्पाद बंद हुआ",
     "statusFailed": "उत्पाद की स्थिति अपडेट नहीं हो सकी",
     "filtersLabel": "उत्पाद फ़िल्टर",
-    "matchCount_one": "{{count}} मिला",
-    "matchCount_other": "{{count}} मिले"
+    "disablePrompt": "यह उत्पाद बंद करें?",
+    "setPrice": "कीमत तय करें",
+    "setPriceOf": "{{name}} की बिक्री दर तय करें",
+    "listLabel": "उत्पाद",
+    "shownOfTotal": "{{total}} में से {{shown}}",
+    "statusDisabled": "बंद",
+    "perUnit": "/ नग",
+    "noSellingPrice": "बिक्री दर तय नहीं",
+    "askOwnerToSetPrice": "मालिक से दर तय करने को कहें",
+    "margin": "मार्जिन",
+    "belowCost": "लागत से कम",
+    "noMargin": "कोई मार्जिन नहीं",
+    "marginPercent": "{{percent}}%",
+    "unitsInStock_one": "स्टॉक में {{value}} नग",
+    "unitsInStock_other": "स्टॉक में {{value}} नग",
+    "lowStock": "स्टॉक कम",
+    "outOfStock": "स्टॉक खत्म",
+    "lowAt": "{{value}} या कम पर कम स्टॉक",
+    "soldToday": "आज बिका: {{units}} · {{amount}}",
+    "noSalesToday": "आज कोई बिक्री नहीं",
+    "stockIn": "स्टॉक जोड़ें",
+    "stockInOf": "{{name}} का स्टॉक जोड़ें",
+    "blocked": {
+      "disabled": "यह उत्पाद बंद है। बेचने या स्टॉक जोड़ने के लिए इसे चालू करें।",
+      "outOfStock": "स्टॉक खत्म है। बेचने से पहले स्टॉक दर्ज करें।",
+      "noPrice": "अभी बिक्री दर तय नहीं है। मालिक से दर तय करने को कहें।"
+    },
+    "menu": {
+      "label": "{{name}} के और काम",
+      "setPriceHint": "प्रति नग बिक्री दर बदलें",
+      "editHsn": "HSN बदलें",
+      "noHsn": "अभी HSN कोड नहीं है",
+      "lots": "स्टॉक लॉट",
+      "lotsHint": "स्टॉक के बैच और उनकी खरीद दर",
+      "disableHint": "बिक्री से हट जाएगा। आप इसे फिर से चालू कर सकते हैं।",
+      "enableHint": "इसे फिर से बिक्री के लिए चालू करें"
+    },
+    "filters": {
+      "label": "दिखाएँ",
+      "all": "सभी",
+      "lowStock": "स्टॉक कम",
+      "noPrice": "कीमत नहीं",
+      "disabled": "बंद"
+    },
+    "sort": {
+      "label": "क्रम",
+      "name": "नाम",
+      "stockLowFirst": "स्टॉक: कम से ज़्यादा",
+      "newestFirst": "हाल में जोड़े गए"
+    }
   },
   "addProduct": {
     "title": "उत्पाद जोड़ें",
@@ -88,7 +143,11 @@
     "created": "उत्पाद बन गया",
     "createFailed": "उत्पाद नहीं बन सका",
     "nameMissing": "उत्पाद का नाम ज़रूरी है",
-    "packageSizePositive": "पैक का साइज़ 0 से ज़्यादा होना चाहिए"
+    "packageSizePositive": "पैक का साइज़ 0 से ज़्यादा होना चाहिए",
+    "sellingPrice": "प्रति नग बिक्री दर",
+    "sellingPriceHelp": "ग्राहक एक नग के लिए कितना देगा। इसे बाद में बदल सकते हैं।",
+    "sellingPriceInvalid": "₹0 से ज़्यादा बिक्री दर डालें, दशमलव के बाद अधिकतम 2 अंक",
+    "needSellingPrice": "बिक्री दर"
   },
   "editHsn": {
     "saved": "HSN कोड सेव हो गया",
@@ -117,10 +176,12 @@
     "needQuantity": "मात्रा",
     "needClient": "क्रेडिट ग्राहक",
     "liveLabel": "बिक्री का कुल",
-    "noPrice": "इस उत्पाद की बिक्री कीमत तय नहीं है। पहले कीमत तय करें।",
     "buyPricePerUnit": "प्रति नग खरीद दर",
     "sellPricePerUnit": "प्रति नग बिक्री कीमत",
-    "paymentModeRow": "भुगतान का तरीका"
+    "paymentModeRow": "भुगतान का तरीका",
+    "firstPriceTitle": "अभी बिक्री दर तय नहीं है। यह बिक्री जारी रखने के लिए दर तय करें।",
+    "askOwnerForPrice": "अभी बिक्री दर तय नहीं है — मालिक से दर तय करने को कहें।",
+    "needQuantityWithinStock": "{{count}} या उससे कम मात्रा"
   },
   "stockIn": {
     "title": "स्टॉक डिलीवरी दर्ज करें",
@@ -202,5 +263,23 @@
     "subtitle": "ग्राहक जो उत्पाद ले रहा है, उसे चुनें।",
     "continue": "आगे बढ़ें",
     "noneInStock": "किसी चालू उत्पाद का स्टॉक बेचने लायक नहीं है। पहले स्टॉक आने की एंट्री करें।"
+  },
+  "setPrice": {
+    "title": "बिक्री दर तय करें",
+    "current": "मौजूदा दर",
+    "notSet": "तय नहीं",
+    "newPrice": "प्रति नग नई दर",
+    "help": "अब से होने वाली बिक्री पर लागू। पुरानी बिक्री की दर नहीं बदलेगी।",
+    "firstPrice": "इस उत्पाद की पहली बिक्री दर",
+    "up": "{{current}} से {{amount}} ज़्यादा",
+    "down": "{{current}} से {{amount}} कम",
+    "same": "मौजूदा {{current}} के बराबर",
+    "invalid": "₹0 से ज़्यादा दर डालें, दशमलव के बाद अधिकतम 2 अंक",
+    "save": "दर सेव करें",
+    "saved": "बिक्री दर {{price}} तय हुई",
+    "saveFailed": "बिक्री दर तय नहीं हो सकी",
+    "history": "दर का इतिहास",
+    "historyLoading": "दर का इतिहास लोड हो रहा है…",
+    "historyEmpty": "अभी कोई दर तय नहीं है।"
   }
 }

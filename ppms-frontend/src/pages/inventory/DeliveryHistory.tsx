@@ -3,12 +3,13 @@ import { codeLabel } from '../../constants/labels'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Trash2, Truck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatNumberIn } from '../../i18n/format'
+import { formatDecimal } from '../../utils/format'
 import { inventoryApi } from '../../api/inventoryApi'
 import type { TankStock, TankerDelivery } from '../../api/inventoryApi'
 import { SearchableSelect } from '../../components/SearchableSelect'
 import { Pagination } from '../../components/Pagination'
 import { SkeletonRows } from '../../components/Skeleton'
+import { LoadError } from '../../components/LoadError'
 import { parseApiError } from '../../utils/apiError'
 import { IconButton } from '../../components/IconButton'
 import { LitresText, MoneyText } from '../../components/AmountText'
@@ -47,7 +48,7 @@ export function DeliveryHistory({ pumpId, tanks, isOwnerOrAdmin, canDeleteInvoic
     onError: () => queryClient.invalidateQueries({ queryKey: ['deliveries', pumpId] }),
   })
 
-  const { data: deliveriesPage, isLoading: deliveriesLoading } = useQuery({
+  const { data: deliveriesPage, isLoading: deliveriesLoading, isLoadingError: deliveriesLoadFailed, refetch: refetchDeliveries } = useQuery({
     queryKey: ['deliveries', pumpId, deliveryPage, deliveryPageSize],
     queryFn:  () => inventoryApi.getDeliveries(pumpId, deliveryPage, deliveryPageSize),
   })
@@ -109,6 +110,8 @@ export function DeliveryHistory({ pumpId, tanks, isOwnerOrAdmin, canDeleteInvoic
 
       {deliveriesLoading ? (
         <div className="p-(--density-card-pad)"><SkeletonRows count={3} /></div>
+      ) : deliveriesLoadFailed ? (
+        <LoadError onRetry={() => void refetchDeliveries()} className="m-4" />
       ) : groups.length === 0 ? (
         <p className="p-(--density-card-pad) text-sm text-ink-3">
           {deliveries.length === 0 ? t('deliveries.empty') : t('deliveries.noMatch')}
@@ -148,7 +151,7 @@ export function DeliveryHistory({ pumpId, tanks, isOwnerOrAdmin, canDeleteInvoic
                           <MoneyText value={Number(rows[0].billTotal)} className="text-sm font-bold text-ink" />
                           {Math.abs(Number(rows[0].billTotal) - totalCost) > 0.005 && (
                             <span className="text-xs text-ink-3">
-                              {t('deliveries.calculated', { amount: formatNumberIn(totalCost, { minimumFractionDigits: 2 }) })}
+                              {t('deliveries.calculated', { amount: formatDecimal(totalCost) })}
                             </span>
                           )}
                         </span>

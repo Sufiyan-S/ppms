@@ -56,6 +56,7 @@ public class AncillaryProductController {
      * POST /api/pumps/{pumpId}/ancillary/products
      * Creates a new SKU in the catalog for this pump.
      * Initial stock is 0 — stock-in is recorded separately via the deliveries endpoint.
+     * When sellingPricePerUnit is sent, the first price row is created in the same transaction.
      * Owner/Admin only.
      */
     @PostMapping("/{pumpId}/ancillary/products")
@@ -65,7 +66,7 @@ public class AncillaryProductController {
             @Valid @RequestBody CreateProductRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        AncillaryProduct product = workflowService.createProduct(pumpId, request);
+        AncillaryProduct product = workflowService.createProduct(pumpId, request, currentUser);
 
         log.info("Ancillary product created: pump={}, productId={}, name={}, by={}",
                 pumpId, product.getId(), product.getName(), currentUser.getId());

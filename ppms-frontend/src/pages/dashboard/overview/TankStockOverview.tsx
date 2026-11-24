@@ -6,7 +6,7 @@ import { PageSection } from '../../../components/layout/PageSection'
 import { StatusBadge } from '../../../components/StatusBadge'
 import { FUEL_STOCK_COLORS } from '../../../constants/fuel'
 import { codeLabel } from '../../../constants/labels'
-import { formatNumberIn } from '../../../i18n/format'
+import { formatDecimal } from '../../../utils/format'
 
 export function TankStockOverview({ tanks: allTanks }: { tanks: TankStock[] }) {
   const { t } = useTranslation('dashboard')
@@ -27,7 +27,7 @@ export function TankStockOverview({ tanks: allTanks }: { tanks: TankStock[] }) {
           {allTanks.map(tank => {
             const pct = Math.min(100, Math.max(0, tank.stockPercentage))
             const barColor = tank.lowStock ? 'bg-bad' : FUEL_STOCK_COLORS[tank.fuelType]?.bar ?? 'bg-control'
-            const percent = pct.toFixed(0)
+            const percent = formatDecimal(pct, 0)
 
             return (
             <div key={tank.tankId} className="ui-card-plain ui-card-muted px-3 py-2.5">
@@ -55,7 +55,7 @@ export function TankStockOverview({ tanks: allTanks }: { tanks: TankStock[] }) {
                   />
                 </div>
                 <p className="text-xs text-ink-3 mt-1">
-                  {t('tankStock.remaining', { litres: formatNumberIn(tank.currentStock, { minimumFractionDigits: 0 }) })}
+                  {t('tankStock.remaining', { litres: formatDecimal(tank.currentStock) })}
                 </p>
               </div>
             )

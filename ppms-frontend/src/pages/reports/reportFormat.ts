@@ -1,14 +1,9 @@
 import { formatIstDate, localDateInputValue } from '../../utils/date'
-import { formatDecimal } from '../../utils/format'
 import i18n from '../../i18n'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export { formatCurrency as fmtAmt } from '../../utils/format'
-
-export function fmtQty(n: number) {
-  return `${formatDecimal(n)} L`
-}
+export { formatCurrency as fmtAmt, formatLitres as fmtQty } from '../../utils/format'
 
 export function todayIso()     { return localDateInputValue() }
 

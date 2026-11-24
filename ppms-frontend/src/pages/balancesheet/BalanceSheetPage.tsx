@@ -5,25 +5,17 @@ import { BarChart2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
-import { balanceSheetApi } from '../../api/balanceSheetApi'
 import { pumpApi } from '../../api/pumpApi'
-import { useOnValuesChange } from '../../hooks/useOnValuesChange'
-import { Pagination } from '../../components/Pagination'
-import { localDateInputValue } from '../../utils/date'
-import { useDateRangeParams } from '../../hooks/useDateRangeParams'
-import { DatePresetChips } from '../../components/DatePresetChips'
-import { SkeletonRows } from '../../components/Skeleton'
-import { EmptyState } from '../../components/EmptyState'
 import { RefreshIndicator } from '../../components/RefreshIndicator'
 import { Page } from '../../components/layout/Page'
 import { PageHeader } from '../../components/layout/PageHeader'
-import { FilterBar } from '../../components/layout/FilterBar'
 import { ListDetail } from '../../components/layout/ListDetail'
+import { BalanceSheetList } from './BalanceSheetList'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import type { DeletableSheet } from './DeleteConfirmModal'
 import { DetailPanel } from './DetailPanel'
 import { GenerateModal } from './GenerateModal'
-import { ReportListItem } from './ReportListItem'
+import { useBalanceSheetList } from './useBalanceSheetList'
 
 const GENERATE_ACTION = 'generate-sheet'
 
@@ -43,12 +35,7 @@ export default function BalanceSheetPage() {
   const sheetText = searchParams.get('sheet')
   const selectedId = sheetText && /^\d+$/.test(sheetText) ? Number(sheetText) : null
   const showGenerateModal = searchParams.get('action') === GENERATE_ACTION && Boolean(pumpId)
-
-  const [filterRange, setFilterRange] = useDateRangeParams(() => ({ from: localDateInputValue(-7), to: localDateInputValue(0) }))
-  const { from: filterFrom, to: filterTo } = filterRange
-
-  const [bsPage, setBsPage]         = useState(0)
-  const [bsPageSize, setBsPageSize] = useState(10)
+  const sheetList = useBalanceSheetList(pumpId)
 
   const { data: pumps = [] } = useQuery({
     queryKey: ['myPumps'],
@@ -56,22 +43,6 @@ export default function BalanceSheetPage() {
   })
 
   const pumpName = pumpId ? (pumps.find(p => p.id === pumpId)?.name ?? '') : ''
-
-  useOnValuesChange([filterFrom, filterTo, pumpId], () => setBsPage(0))
-
-  const { data: reportsPage, isLoading, isFetching: fetchingReports, dataUpdatedAt: reportsUpdatedAt } = useQuery({
-    queryKey: ['balance-sheets', pumpId, filterFrom, filterTo, bsPage, bsPageSize],
-    queryFn:  () => balanceSheetApi.list(
-      pumpId!,
-      filterFrom || undefined,
-      filterTo   || undefined,
-      bsPage,
-      bsPageSize,
-    ),
-    enabled: !!pumpId,
-  })
-
-  const reports = reportsPage?.content ?? []
 
   const updateParams = (change: (params: URLSearchParams) => void, replace: boolean) => setSearchParams((params) => {
     const updated = new URLSearchParams(params)
@@ -115,58 +86,7 @@ export default function BalanceSheetPage() {
     </button>
   )
 
-  const list = (
-    <>
-      <FilterBar
-        label={t('list.filtersLabel')}
-        onClearFilters={() => setFilterRange({ from: '', to: '' })}
-        hasActiveFilters={Boolean(filterFrom || filterTo)}
-        summary={reportsPage && t('list.sheetCount', { count: reportsPage.totalElements })}
-      >
-        <DatePresetChips range={filterRange} onSelect={setFilterRange} />
-        <div className="flex w-full flex-wrap items-center gap-2">
-          <input aria-label={t('common:fields.fromDate')}
-            type="date"
-            value={filterFrom}
-            onChange={e => setFilterRange({ from: e.target.value, to: filterTo })}
-            className="min-w-[8.5rem] flex-1 text-xs text-ink"
-          />
-          <span className="text-xs text-ink-3">{t('list.to')}</span>
-          <input aria-label={t('common:fields.toDate')}
-            type="date"
-            value={filterTo}
-            onChange={e => setFilterRange({ from: filterFrom, to: e.target.value })}
-            className="min-w-[8.5rem] flex-1 text-xs text-ink"
-          />
-        </div>
-      </FilterBar>
-
-      {(!pumpId || isLoading) ? (
-        <div className="px-4 py-4"><SkeletonRows count={5} /></div>
-      ) : reports.length === 0 ? (
-        <EmptyState icon="generic" title={t('list.emptyTitle')} subtitle={t('list.emptySubtitle')} />
-      ) : (
-        <ul>
-          {reports.map(report => (
-            <li key={report.id}>
-              <ReportListItem report={report} search={searchFor(report.id)} isSelected={selectedId === report.id} />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {reportsPage && (
-        <div className="px-3">
-          <Pagination
-            data={reportsPage}
-            onPageChange={setBsPage}
-            onPageSizeChange={s => { setBsPageSize(s); setBsPage(0) }}
-            pageSizeOptions={[10, 20, 50]}
-          />
-        </div>
-      )}
-    </>
-  )
+  const list = <BalanceSheetList pumpId={pumpId} list={sheetList} selectedId={selectedId} searchFor={searchFor} />
 
   const placeholder = (
     <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
@@ -183,7 +103,7 @@ export default function BalanceSheetPage() {
         <PageHeader
           title={t('list.title')}
           description={t('list.description')}
-          badges={pumpId && <RefreshIndicator isFetching={fetchingReports} dataUpdatedAt={reportsUpdatedAt ?? 0} />}
+          badges={pumpId && <RefreshIndicator isFetching={sheetList.query.isFetching} dataUpdatedAt={sheetList.query.dataUpdatedAt ?? 0} />}
           primaryAction={generateButton}
         />
       </div>

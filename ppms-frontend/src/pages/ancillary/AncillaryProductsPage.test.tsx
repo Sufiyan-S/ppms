@@ -28,7 +28,7 @@ function product(id: number, displayName: string, currentStockUnits: number): An
   return {
     id, pumpId: PUMP_ID, name: displayName, brand: null, variant: null, packageSize: 1, unitOfMeasure: 'LITRE',
     currentStockUnits, lowStockThreshold: null, status: 'ACTIVE', fifoCostPricePerUnit: 100,
-    activeFifoLots: [], displayName, createdAt: '', updatedAt: '',
+    activeFifoLots: [], currentSellingPricePerUnit: 150, soldTodayUnits: 0, soldTodayAmount: 0, displayName, createdAt: '', updatedAt: '',
   }
 }
 
@@ -90,6 +90,22 @@ describe('AncillaryProductsPage', () => {
     expect(screen.getByRole('status', { name: 'Address' })).not.toHaveTextContent('action=')
   })
 
+  it('marks a product without a selling price in the sale picker', async () => {
+    signIn('MANAGER')
+    vi.mocked(ancillaryApi.getProducts).mockResolvedValue([
+      product(1, 'Engine Oil 1L', 12),
+      { ...product(3, 'Brake Fluid', 4), currentSellingPricePerUnit: null },
+    ])
+    const user = userEvent.setup()
+    renderWithProviders(<AncillaryProductsPage />, { route: '/dashboard/ancillary?action=sell-product' })
+
+    const picker = await screen.findByRole('dialog', { name: 'Record sale' })
+    await user.click(within(picker).getByRole('button', { name: /Product:/ }))
+
+    expect(await screen.findByRole('option', { name: 'Brake Fluid (stock: 4) · No price' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Engine Oil 1L (stock: 12)' })).toBeInTheDocument()
+  })
+
   it('ignores the sell address for an operator, whom the server refuses for sales', async () => {
     signIn('OPERATOR')
     renderWithProviders(<AncillaryProductsPage />, { route: '/dashboard/ancillary?action=sell-product' })
@@ -104,8 +120,9 @@ describe('AncillaryProductsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<AncillaryProductsPage />)
 
-    const card = (await screen.findByText('Engine Oil 1L')).closest('.ui-card') as HTMLElement
-    await user.click(within(card).getByRole('button', { name: 'Inventory' }))
+    const card = await screen.findByRole('article', { name: 'Engine Oil 1L' })
+    await user.click(within(card).getByRole('button', { name: 'More actions for Engine Oil 1L' }))
+    await user.click(screen.getByRole('menuitem', { name: /Inventory lots/ }))
 
     const panel = await screen.findByRole('dialog', { name: 'Stock lots' })
     expect(within(panel).getByText('Engine Oil 1L')).toBeInTheDocument()

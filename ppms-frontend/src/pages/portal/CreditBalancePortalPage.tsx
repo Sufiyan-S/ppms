@@ -57,7 +57,7 @@ export default function CreditBalancePortalPage() {
   }
 
   return (
-    <AuthScreen>
+    <AuthScreen brandMessage={{ tagline: t('brand.tagline'), supportingLine: t('brand.supportingLine') }}>
       <AuthCard
         title={t('title')}
         description={t('subtitle')}

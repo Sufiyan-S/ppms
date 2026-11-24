@@ -55,7 +55,7 @@ public class AncillaryInventoryWorkflowService {
     private final BalanceSheetStalenessService balanceSheetStalenessService;
 
     @Transactional
-    public AncillaryProduct createProduct(Long pumpId, CreateProductRequest request) {
+    public AncillaryProduct createProduct(Long pumpId, CreateProductRequest request, User currentUser) {
         BigDecimal gstRate = request.getGstRatePercent() != null
                 ? request.getGstRatePercent().setScale(2, RoundingMode.HALF_UP)
                 : new BigDecimal("18.00");
@@ -74,7 +74,11 @@ public class AncillaryInventoryWorkflowService {
                 .status(AncillaryProductStatus.ACTIVE)
                 .build();
 
-        return productRepository.save(product);
+        AncillaryProduct savedProduct = productRepository.save(product);
+        if (request.getSellingPricePerUnit() != null) {
+            priceRepository.save(newPrice(savedProduct, request.getSellingPricePerUnit(), currentUser));
+        }
+        return savedProduct;
     }
 
     @Transactional
@@ -108,14 +112,17 @@ public class AncillaryInventoryWorkflowService {
     @Transactional
     public AncillaryProductPrice setPrice(Long pumpId, Long productId, SetProductPriceRequest request, User currentUser) {
         AncillaryProduct product = accessService.requireProductForPump(productId, pumpId);
-        AncillaryProductPrice price = AncillaryProductPrice.builder()
+        return priceRepository.save(newPrice(product, request.getPricePerUnit(), currentUser));
+    }
+
+    private AncillaryProductPrice newPrice(AncillaryProduct product, BigDecimal pricePerUnit, User currentUser) {
+        return AncillaryProductPrice.builder()
                 .productId(product.getId())
-                .pumpId(pumpId)
-                .pricePerUnit(request.getPricePerUnit().setScale(2, RoundingMode.HALF_UP))
+                .pumpId(product.getPumpId())
+                .pricePerUnit(pricePerUnit.setScale(2, RoundingMode.HALF_UP))
                 .effectiveFrom(businessClock.now())
                 .setByUserId(currentUser.getId())
                 .build();
-        return priceRepository.save(price);
     }
 
     @Transactional

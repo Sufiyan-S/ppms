@@ -5,6 +5,7 @@ import { BellOff, BellRing, Check } from 'lucide-react'
 import { paymentSettlementApi } from '../../api/paymentSettlementApi'
 import type { SettlementPaymentType, UpdateConfigRequest } from '../../api/paymentSettlementApi'
 import { Spinner } from '../../components/Spinner'
+import { SkeletonRows } from '../../components/Skeleton'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useToastStore } from '../../store/toastStore'
 import { parseApiError } from '../../utils/apiError'
@@ -59,7 +60,7 @@ export function SettlementConfigTab({ pumpId, canConfigure }: SettlementConfigTa
   return (
     <div className="space-y-3">
       {loadingConfigs ? (
-        <div className="flex items-center gap-2 text-ink-3 text-sm"><Spinner /> {t('common:loading.short')}</div>
+        <SkeletonRows count={3} />
       ) : (
         configs.map(cfg => {
           const edit      = configEdits[cfg.paymentType]

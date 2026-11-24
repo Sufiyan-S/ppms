@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { shiftApi } from '../../../api/shiftApi'
 import { MoneyText } from '../../../components/AmountText'
+import { Pagination } from '../../../components/Pagination'
 import { SkeletonRows } from '../../../components/Skeleton'
 import { StatusBadge } from '../../../components/StatusBadge'
 import { shiftStatusBadge } from '../../../components/statusBadges'
@@ -11,6 +12,7 @@ import { FilterBar } from '../../../components/layout/FilterBar'
 import { ListDetail } from '../../../components/layout/ListDetail'
 import { codeLabel } from '../../../constants/labels'
 import { useDateRangeParams } from '../../../hooks/useDateRangeParams'
+import type { PagedResponse } from '../../../types/paged'
 import type { Shift } from '../../../types/shift'
 import { parseApiError } from '../../../utils/apiError'
 import { localDateInputValue } from '../../../utils/date'
@@ -26,7 +28,7 @@ function ShiftListItem({ shift, search, selected }: { shift: Shift; search: stri
       <span className="min-w-0">
         <span className="block text-sm font-semibold text-ink">{t('common:shiftNumber', { id: shift.id })} · {shift.operatorName}</span>
         <span className="block text-xs text-ink-3">
-          {shift.duName ?? `DU #${shift.duNumber}`} · {shift.shiftDate}{shift.shiftWindow ? ` · ${shift.shiftWindow}` : ''}
+          {shift.duName ?? t('common:duNumber', { number: shift.duNumber })} · {shift.shiftDate}{shift.shiftWindow ? ` · ${shift.shiftWindow}` : ''}
         </span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
@@ -46,14 +48,15 @@ export function AllShiftsHistory({ pumpId }: { pumpId: number }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [range, setRange] = useDateRangeParams(lastTwoDays)
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const fuelText = searchParams.get('fuel')
   const fuelType = fuelText && /^[A-Z_]+$/.test(fuelText) ? fuelText : undefined
   const shiftText = searchParams.get('shift')
   const selectedId = shiftText && /^\d+$/.test(shiftText) ? Number(shiftText) : null
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['shiftHistory', pumpId, 'all', range.from, range.to, fuelType, page],
-    queryFn:  () => shiftApi.getShiftHistoryPage(pumpId, { from: range.from || undefined, to: range.to || undefined, fuelType }, page, PAGE_SIZE),
+    queryKey: ['shiftHistory', pumpId, 'all', range.from, range.to, fuelType, page, pageSize],
+    queryFn:  () => shiftApi.getShiftHistoryPage(pumpId, { from: range.from || undefined, to: range.to || undefined, fuelType }, page, pageSize),
     placeholderData: keepPreviousData,
   })
 
@@ -61,6 +64,15 @@ export function AllShiftsHistory({ pumpId }: { pumpId: number }) {
   const totalElements = data?.page.totalElements ?? 0
   const totalPages    = Math.max(1, data?.page.totalPages ?? 1)
   const safePage      = Math.min(page, totalPages - 1)
+  const pageData: PagedResponse<Shift> = {
+    content: shifts,
+    page: safePage,
+    pageSize,
+    totalElements,
+    totalPages,
+    hasNext: safePage < totalPages - 1,
+    hasPrevious: safePage > 0,
+  }
   const isFiltered    = Boolean(range.from || range.to || fuelType)
 
   const updateParams = (change: (params: URLSearchParams) => void, replace: boolean) => setSearchParams((params) => {
@@ -110,7 +122,7 @@ export function AllShiftsHistory({ pumpId }: { pumpId: number }) {
       {isLoading ? (
         <div className="px-4 py-3"><SkeletonRows count={4} /></div>
       ) : error ? (
-        <p role="alert" className="ui-alert ui-alert-error m-4 text-sm">{parseApiError(error, t('history.loadFailed'))}</p>
+        <p role="alert" className="ui-alert ui-alert-danger m-4 text-sm">{parseApiError(error, t('history.loadFailed'))}</p>
       ) : shifts.length === 0 ? (
         <p className="ui-empty m-4">{t('history.allEmpty')}</p>
       ) : (
@@ -123,21 +135,11 @@ export function AllShiftsHistory({ pumpId }: { pumpId: number }) {
         </ul>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-2 px-4 py-3">
-          <span className="text-xs text-ink-3">{t('common:pagination.pageOf', { page: safePage + 1, total: totalPages })}</span>
-          <div className="flex gap-1">
-            <button type="button" onClick={() => setPage(Math.max(0, safePage - 1))} disabled={safePage === 0}
-              className="ui-btn ui-btn-secondary ui-btn-compact disabled:opacity-30">
-              {t('common:pagination.prev')}
-            </button>
-            <button type="button" onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))} disabled={safePage === totalPages - 1}
-              className="ui-btn ui-btn-secondary ui-btn-compact disabled:opacity-30">
-              {t('common:pagination.next')}
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        data={pageData}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(0) }}
+      />
     </>
   )
 

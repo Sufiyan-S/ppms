@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { StaffMember } from '../../../api/userApi'
@@ -27,6 +27,22 @@ function menuLabels() {
 }
 
 describe('StaffRow', () => {
+  it('shows an initials avatar, the role and that the member is active', () => {
+    renderRow(member, 'OWNER')
+    const row = screen.getByRole('listitem', { name: 'Ravi Kumar' })
+    expect(within(row).getByText('RK')).toHaveAttribute('aria-hidden', 'true')
+    expect(within(row).getByText('Operator')).toBeInTheDocument()
+    expect(within(row).getByText('Active')).toBeInTheDocument()
+    expect(within(row).queryByText('Inactive')).not.toBeInTheDocument()
+  })
+
+  it('says in words that a deactivated member is inactive', () => {
+    renderRow({ ...member, status: 'INACTIVE' }, 'OWNER')
+    const row = screen.getByRole('listitem', { name: 'Ravi Kumar' })
+    expect(within(row).getByText('Inactive')).toBeInTheDocument()
+    expect(within(row).queryByText('Active')).not.toBeInTheDocument()
+  })
+
   it('shows the phone number to a viewer the server sent it to', () => {
     renderRow(member, 'OWNER')
     expect(screen.getByText('9876543210')).toBeInTheDocument()
@@ -40,7 +56,7 @@ describe('StaffRow', () => {
     expect(screen.getByText('EMP-11')).toBeInTheDocument()
     expect(container.querySelectorAll('span:empty')).toHaveLength(0)
     expect(screen.queryByText(/not set/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Staff actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Actions for Ravi Kumar' })).not.toBeInTheDocument()
   })
 
   it('offers an owner every action on an operator', () => {

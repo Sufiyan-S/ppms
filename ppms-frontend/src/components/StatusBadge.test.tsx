@@ -33,8 +33,8 @@ describe('status badge specs', () => {
   })
 
   it('marks a shortage bad, an excess warn and no discrepancy ok', () => {
-    expect(discrepancyBadge('SHORT')).toMatchObject({ tone: 'bad', label: 'SHORT' })
-    expect(discrepancyBadge('OVER')).toMatchObject({ tone: 'warn', label: 'OVER' })
+    expect(discrepancyBadge('SHORT')).toMatchObject({ tone: 'bad', label: 'Short' })
+    expect(discrepancyBadge('OVER')).toMatchObject({ tone: 'warn', label: 'Over' })
     expect(discrepancyBadge(null)).toMatchObject({ tone: 'ok', label: 'Balanced' })
   })
 

@@ -62,7 +62,10 @@
     "submittedBy": "कोणी पाठवले",
     "waiting": "किती वेळ प्रलंबित",
     "date": "तारीख",
-    "note": "टीप"
+    "note": "टीप",
+    "decide": "निर्णय",
+    "approveItem": "मंजूर करा {{name}} {{amount}}",
+    "rejectItem": "नाकारा {{name}} {{amount}}"
   },
   "waiting": {
     "justNow": "आत्ताच",

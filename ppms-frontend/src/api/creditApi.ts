@@ -31,7 +31,7 @@ export interface CreditTransaction {
   type: 'SALE' | 'COUNTER_SALE' | 'PAYMENT' | 'INTEREST'
   referenceId: number
   reference: string | null
-  /** Set when the server wrote the reference (INTEREST rows), for translated screens. */
+  /** Set when the server wrote the reference (COUNTER_SALE and INTEREST rows, a payment by unknown staff), for translated screens. */
   referenceCode: string | null
   referenceParams: Record<string, unknown>
   detail: string | null

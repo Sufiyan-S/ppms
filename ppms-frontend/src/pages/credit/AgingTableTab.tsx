@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CreditClient } from '../../api/creditApi'
 import { SkeletonRows } from '../../components/Skeleton'
+import { useIsPhone } from '../../hooks/useIsPhone'
 import { EmptyState } from '../../components/EmptyState'
 import { SetCreditLimitModal } from './modals/SetCreditLimitModal'
 import { CreditAgingTable } from './CreditAgingTable'
@@ -22,6 +23,7 @@ export function AgingTableTab({ pumpId, view, clients, canAdjustLimit, onOpenCli
   const [limitClientId, setLimitClientId] = useState<number | null>(null)
   const { aging, isLoading, isError, allRows, rows, sort, toggleSort, hasQuery, searchedFor } = view
   const limitClient = clients.find(client => client.id === limitClientId)
+  const isPhone = useIsPhone()
 
   return (
     <>
@@ -29,7 +31,7 @@ export function AgingTableTab({ pumpId, view, clients, canAdjustLimit, onOpenCli
         <SetCreditLimitModal client={limitClient} pumpId={pumpId} onClose={() => setLimitClientId(null)} />
       )}
 
-      <AgingFilterBar view={view} />
+      <AgingFilterBar view={view} showSortMenu={isPhone} />
 
       {isLoading ? (
         <div className="px-5 py-4"><SkeletonRows count={5} /></div>

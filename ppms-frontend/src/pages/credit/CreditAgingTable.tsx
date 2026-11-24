@@ -10,7 +10,9 @@ import type { DataTableColumn } from '../../components/DataTable'
 import { MoneyText } from '../../components/AmountText'
 import { StatusBadge } from '../../components/StatusBadge'
 import { creditStandingBadge } from '../../components/statusBadges'
+import { useIsPhone } from '../../hooks/useIsPhone'
 import type { AgingSortKey, SortDirection } from './creditAging'
+import { CreditAgingCardRow } from './CreditAgingCardRow'
 
 const SORTABLE_COLUMNS: { key: AgingSortKey; numeric: boolean }[] = [
   { key: 'name', numeric: false },
@@ -34,6 +36,15 @@ function agingColumns(t: TFunction<'credit'>): DataTableColumn<CreditAgingRow>[]
   ]
 }
 
+function phoneColumns(t: TFunction<'credit'>): DataTableColumn<CreditAgingRow>[] {
+  return [
+    { key: 'name', header: t('aging.columns.name') },
+    { key: 'ageBuckets', header: t('aging.ageBuckets.label') },
+    { key: 'status', header: t('aging.columns.status') },
+    { key: 'actions', header: t('aging.columns.actions') },
+  ]
+}
+
 function amountCell(amount: number) {
   return amount > 0 ? <MoneyText value={amount} /> : <span className="text-ink-3">—</span>
 }
@@ -51,7 +62,8 @@ export function CreditAgingTable({
   rows, sortKey, sortDirection, canAdjustLimit, onSort, onOpenClient, onSetLimit,
 }: CreditAgingTableProps) {
   const { t } = useTranslation('credit')
-  const columns = useMemo(() => agingColumns(t), [t])
+  const isPhone = useIsPhone()
+  const columns = useMemo(() => isPhone ? phoneColumns(t) : agingColumns(t), [isPhone, t])
   return (
     <DataTable
       caption={t('aging.caption')}
@@ -62,8 +74,11 @@ export function CreditAgingTable({
       rowKey={row => row.clientId}
       sort={{ key: sortKey, direction: sortDirection }}
       onSortChange={key => onSort(key as AgingSortKey)}
+      cardsOnPhone
       className="rounded-none border-0"
-      renderRow={row => (
+      renderRow={row => isPhone ? (
+        <CreditAgingCardRow row={row} canAdjustLimit={canAdjustLimit} onOpenClient={onOpenClient} onSetLimit={onSetLimit} />
+      ) : (
         <tr>
           <th scope="row" className="text-left font-medium">
             <button type="button" onClick={() => onOpenClient(row.clientId)} className="ui-link text-left">

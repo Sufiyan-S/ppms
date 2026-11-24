@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
-import { Gauge, Info } from 'lucide-react'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { Check, Gauge, Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { pumpApi } from '../../api/pumpApi'
-import type { PumpSummary } from '../../api/pumpApi'
+import type { PumpSummary, SetupChecklist } from '../../api/pumpApi'
 import { useAuthStore } from '../../store/authStore'
 import { usePumpStore } from '../../store/usePumpStore'
 import { canPerformAction } from '../../permissions/permissions'
@@ -15,9 +15,12 @@ import { useUrlParam } from '../../components/layout/useUrlParam'
 import { SkeletonRows } from '../../components/Skeleton'
 import { StatusBadge } from '../../components/StatusBadge'
 import { FuelPricesContent } from './FuelPricesContent'
-import { SetupSteps } from './SetupSteps'
+import { SetupArea } from './SetupArea'
+import { SetupHub } from './SetupHub'
+import { SetupStepper } from './SetupStepper'
 import type { SectionKey } from './sectionKey'
-import { firstStepToDo, isSectionKey } from './setupStepOrder'
+import { firstStepToDo, isSectionKey, isSetupComplete, searchForHub } from './setupStepOrder'
+import { useSetupOverview } from './useSetupOverview'
 
 /** ?action= values the command palette can open Setup with. */
 const ACTION_STEPS: Record<string, SectionKey> = { 'add-staff': 'staff', 'set-fuel-prices': 'prices' }
@@ -42,11 +45,35 @@ function ManagerFuelPrices({ pump }: { pump: PumpSummary }) {
   )
 }
 
+interface OwnerSetupProps {
+  pump: PumpSummary
+  checklist: SetupChecklist | undefined
+  requestedStep: SectionKey | null
+  isAddStaffOpen: boolean
+  onOpenAddStaff: () => void
+  onCloseAddStaff: () => void
+}
+
+/** The stepper while required steps are still to do; afterwards the settings hub, or the one area it opened. */
+function OwnerSetup({ pump, checklist, requestedStep, ...staffProps }: OwnerSetupProps) {
+  const queryClient = useQueryClient()
+  const { currentPrices, staffCount, summaries } = useSetupOverview(pump, checklist)
+  const areaProps = { pump, currentPrices, staffCount, onPumpUpdated: () => queryClient.invalidateQueries({ queryKey: ['myPumps'] }), ...staffProps }
+
+  if (!isSetupComplete(checklist)) {
+    const currentStep = requestedStep ?? firstStepToDo(checklist)
+    return <SetupStepper {...areaProps} currentStep={currentStep} checklist={checklist} summary={summaries[currentStep].text} />
+  }
+  return requestedStep
+    ? <SetupArea {...areaProps} section={requestedStep} summary={summaries[requestedStep].text} />
+    : <SetupHub checklist={checklist} summaries={summaries} />
+}
+
 export default function SetupPage() {
   const { t } = useTranslation(['setup', 'common'])
-  const queryClient = useQueryClient()
   const role = useAuthStore((state) => state.user?.role)
   const selectedPumpId = usePumpStore((state) => state.selectedPumpId)
+  const { pathname } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const action = useUrlParam('action')
   const canManageSetup = canPerformAction('setup:manage', role)
@@ -66,18 +93,17 @@ export default function SetupPage() {
   const sectionParam = searchParams.get('section')
   const actionStep = action.value ? ACTION_STEPS[action.value] : undefined
   const requestedStep = actionStep ?? (isSectionKey(sectionParam) ? sectionParam : null)
-  const isWaitingForStartStep = canManageSetup && !!pump && !requestedStep && checklistPending
-  const currentStep = requestedStep ?? firstStepToDo(checklist)
+  const complete = isSetupComplete(checklist)
 
   // Puts the starting step in the address once, so finishing it does not move the owner on mid-task.
   useEffect(() => {
-    if (!canManageSetup || !pump || requestedStep || checklistPending) return
+    if (!canManageSetup || !pump || requestedStep || checklistPending || complete) return
     setSearchParams((params) => {
       const updated = new URLSearchParams(params)
       updated.set('section', firstStepToDo(checklist))
       return updated
     }, { replace: true })
-  }, [canManageSetup, pump, requestedStep, checklistPending, checklist, setSearchParams])
+  }, [canManageSetup, pump, requestedStep, checklistPending, complete, checklist, setSearchParams])
 
   const closeAddStaff = () => setSearchParams((params) => {
     const updated = new URLSearchParams(params)
@@ -86,20 +112,19 @@ export default function SetupPage() {
     return updated
   }, { replace: true })
 
-  const complete = checklist && checklist.doneCount === checklist.requiredCount
+  const isAreaOfHub = canManageSetup && complete && !!requestedStep
 
   return (
     <Page>
       <PageHeader
         title={t('page.title')}
         description={pump ? `${pump.name} · ${pump.address}` : t('page.subtitle')}
+        backLink={isAreaOfHub ? { to: `${pathname}${searchForHub(searchParams)}`, label: t('hub.backLink') } : undefined}
         badges={pump && (
           <>
-            {checklist && (
-              <StatusBadge
-                tone={complete ? 'ok' : 'warn'}
-                label={t('checklist.doneCount', { done: checklist.doneCount, required: checklist.requiredCount })}
-              />
+            {checklist && (complete
+              ? <StatusBadge tone="ok" icon={Check} label={t('steps.complete')} />
+              : <StatusBadge tone="warn" label={t('checklist.doneCount', { done: checklist.doneCount, required: checklist.requiredCount })} />
             )}
             {canManageSetup && (
               <StatusBadge tone="neutral" icon={Gauge} label={t('sections.duUsage', { used: pump.dus.length, max: pump.maxDuCount })} />
@@ -114,14 +139,13 @@ export default function SetupPage() {
         !isLoading && <p className="ui-empty">{t('common:notices.noPump')}</p>
       ) : !canManageSetup ? (
         <ManagerFuelPrices pump={pump} />
-      ) : isWaitingForStartStep ? (
+      ) : checklistPending ? (
         <div className="ui-card"><SkeletonRows count={4} /></div>
       ) : (
-        <SetupSteps
+        <OwnerSetup
           pump={pump}
           checklist={checklist}
-          currentStep={currentStep}
-          onPumpUpdated={() => queryClient.invalidateQueries({ queryKey: ['myPumps'] })}
+          requestedStep={requestedStep}
           isAddStaffOpen={action.value === 'add-staff'}
           onOpenAddStaff={() => action.set('add-staff')}
           onCloseAddStaff={closeAddStaff}

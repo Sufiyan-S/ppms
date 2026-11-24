@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { authApi } from '../../api/authApi'
 import { PasswordInput } from '../../components/PasswordInput'
 import { FormField } from '../../components/FormField'
+import { Spinner } from '../../components/Spinner'
 import { parseApiError } from '../../utils/apiError'
 import { PASSWORD_POLICY_REGEX } from '../../constants/passwordPolicy'
 import { AuthCard, AuthScreen } from './AuthCard'
@@ -36,7 +37,7 @@ export default function ResetPasswordPage() {
           )}
           footer={<BackToLogin />}
         >
-          <Link to="/forgot-password" className="ui-btn ui-btn-primary w-full">
+          <Link to="/forgot-password" className="ui-btn ui-btn-primary ui-auth-submit">
             {t('resetPassword.requestNewLink')}
           </Link>
         </AuthCard>
@@ -63,14 +64,13 @@ export default function ResetPasswordPage() {
   return (
     <AuthScreen>
       <AuthCard title={t('resetPassword.title')} description={t('resetPassword.subtitle')} footer={<BackToLogin />}>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="ui-auth-form">
           <FormField label={t('fields.newPassword')} help={t('passwordPolicy')} error={passwordError ?? undefined}>
             <PasswordInput
               id="newPassword"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               autoComplete="new-password"
-              className="shadow-raised"
               minLength={8}
               required
             />
@@ -82,18 +82,14 @@ export default function ResetPasswordPage() {
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
-              className="shadow-raised"
               required
             />
           </FormField>
 
           {error && <p className="ui-error-text" role="alert">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="ui-btn ui-btn-primary w-full"
-          >
+          <button type="submit" disabled={loading} aria-busy={loading || undefined} className="ui-btn ui-btn-primary ui-auth-submit">
+            {loading && <Spinner />}
             {loading ? t('resetPassword.submitting') : t('resetPassword.submit')}
           </button>
         </form>

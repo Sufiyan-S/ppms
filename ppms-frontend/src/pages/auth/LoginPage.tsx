@@ -1,19 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useController, useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Fuel, BarChart2, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { authApi } from '../../api/authApi'
+import { userApi } from '../../api/userApi'
 import { useAuthStore } from '../../store/authStore'
-import type { AuthUser } from '../../types/auth'
+import type { AppLanguage } from '../../i18n/languages'
 import { PasswordInput } from '../../components/PasswordInput'
+import { Spinner } from '../../components/Spinner'
 import { loginErrorMessage } from './loginErrorMessage'
 import { CHANGE_PASSWORD_PATH, getDefaultPath } from '../../permissions/permissions'
 import { prefetchLandingPage } from '../../routes/pageLoaders'
 import { AuthCard, AuthScreen } from './AuthCard'
+import { PhoneNumberField } from './PhoneNumberField'
+import { forgetRememberedPhone, readRememberedPhone, rememberPhone } from './rememberedPhone'
+import { useCapsLock } from './useCapsLock'
+import { hasFinePointer } from './hasFinePointer'
 
 function loginSchema(t: TFunction<'auth'>) {
   return z.object({
@@ -23,6 +29,12 @@ function loginSchema(t: TFunction<'auth'>) {
 }
 
 type LoginFormData = z.infer<ReturnType<typeof loginSchema>>
+
+function saveLanguageToProfile(language: AppLanguage) {
+  userApi.updateMyLanguage(language).catch((error: unknown) => {
+    console.warn('Could not save the language picked at sign-in to the profile; it applies on this device only', error)
+  })
+}
 
 export default function LoginPage() {
   const { t } = useTranslation('auth')
@@ -34,30 +46,44 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const [serverError, setServerError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [rememberedPhone] = useState(readRememberedPhone)
+  const [rememberNumber, setRememberNumber] = useState(rememberedPhone !== null)
+  const pickedLanguage = useRef<AppLanguage | null>(null)
+  const { capsLockOn, checkCapsLock } = useCapsLock()
 
   const schema = useMemo(() => loginSchema(t), [t])
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
+  const { control, register, handleSubmit, setFocus, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(schema),
+    defaultValues: { phoneNumber: rememberedPhone ?? '', password: '' },
   })
+  const { field: phoneField } = useController({ name: 'phoneNumber', control })
+
+  useEffect(() => {
+    if (hasFinePointer()) setFocus(rememberedPhone ? 'password' : 'phoneNumber')
+  }, [rememberedPhone, setFocus])
 
   const onSubmit = async (data: LoginFormData) => {
     setServerError(null)
     setLoading(true)
     try {
       const response = await authApi.login(data)
-      const user: AuthUser = {
+      if (rememberNumber) rememberPhone(data.phoneNumber)
+      else forgetRememberedPhone()
+      const language = pickedLanguage.current
+      const keepPickedLanguage = language !== null && language !== response.preferredLanguage
+      setAuth({
         userId: response.userId,
         fullName: response.fullName,
         role: response.role,
         assignedPumpId: response.assignedPumpId,
         mustChangePassword: response.mustChangePassword,
-        preferredLanguage: response.preferredLanguage,
-      }
-      setAuth(user)
+        preferredLanguage: keepPickedLanguage ? language : response.preferredLanguage,
+      })
       if (response.mustChangePassword) {
         navigate(CHANGE_PASSWORD_PATH)
         return
       }
+      if (keepPickedLanguage) saveLanguageToProfile(language)
       const landingPath = getDefaultPath(response.role)
       prefetchLandingPage(landingPath)
       navigate(landingPath)
@@ -70,125 +96,86 @@ export default function LoginPage() {
 
   return (
     <AuthScreen>
-      <div className="ui-auth-frame">
-        <section className="ui-auth-hero max-md:hidden" aria-label={t('login.badge')}>
-          <div className="ui-auth-badge">
-            <Fuel size={13} strokeWidth={2.2} />
-            <span>{t('login.badge')}</span>
-          </div>
-          <div className="space-y-4">
-            <p className="ui-auth-display">{t('login.headline')}</p>
-            <p className="ui-auth-copy">{t('login.intro')}</p>
-          </div>
-          <div className="ui-auth-metrics">
-            <div className="ui-auth-metric">
-              <span className="ui-auth-metric-value">{t('login.metricLive')}</span>
-              <span className="ui-auth-metric-label">{t('login.metricLiveLabel')}</span>
-            </div>
-            <div className="ui-auth-metric">
-              <span className="ui-auth-metric-value">{t('login.metricFast')}</span>
-              <span className="ui-auth-metric-label">{t('login.metricFastLabel')}</span>
-            </div>
-          </div>
-          <div className="ui-auth-points">
-            <div className="ui-auth-point">
-              <span className="ui-auth-point-icon">
-                <BarChart2 size={17} strokeWidth={2} className="text-accent" />
-              </span>
-              <div>
-                <p className="ui-auth-point-title">{t('login.dailyControlTitle')}</p>
-                <p className="ui-auth-point-copy">{t('login.dailyControlCopy')}</p>
-              </div>
-            </div>
-            <div className="ui-auth-point">
-              <span className="ui-auth-point-icon">
-                <ShieldCheck size={17} strokeWidth={2} className="text-accent" />
-              </span>
-              <div>
-                <p className="ui-auth-point-title">{t('login.secureAccessTitle')}</p>
-                <p className="ui-auth-point-copy">{t('login.secureAccessCopy')}</p>
-              </div>
+      <AuthCard
+        title={t('login.title')}
+        description={t('login.subtitle')}
+        onLanguagePicked={(language) => { pickedLanguage.current = language }}
+        footer={(
+          <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+            <span className="text-ink-3">{t('login.needHelp')}</span>
+            <Link to="/forgot-password" className="ui-link text-sm">{t('login.forgotPassword')}</Link>
+          </p>
+        )}
+      >
+        {sessionExpired && (
+          <div className="ui-auth-notice ui-auth-notice--warning" role="status">
+            <AlertTriangle size={18} strokeWidth={2} aria-hidden="true" className="ui-auth-notice__icon" />
+            <div>
+              <p className="ui-auth-notice__title">{t('login.sessionExpiredTitle')}</p>
+              <p>{t('login.sessionExpiredBody')}</p>
             </div>
           </div>
-        </section>
+        )}
 
-        <AuthCard
-          title={t('login.title')}
-          description={t('login.subtitle')}
-          className="ui-auth-form-panel"
-          footer={(
-            <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
-              <span className="text-ink-3">{t('login.needHelp')}</span>
-              <Link to="/forgot-password" className="ui-link text-sm">{t('login.forgotPassword')}</Link>
+        {successMessage && (
+          <div className="ui-auth-notice ui-auth-notice--success" role="status">
+            <CheckCircle2 size={18} strokeWidth={2} aria-hidden="true" className="ui-auth-notice__icon" />
+            <p>{successMessage}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit(onSubmit)} className="ui-auth-form">
+          <PhoneNumberField
+            id="phoneNumber"
+            value={phoneField.value}
+            onChange={phoneField.onChange}
+            onBlur={phoneField.onBlur}
+            inputRef={phoneField.ref}
+            placeholder={t('login.phonePlaceholder')}
+            error={errors.phoneNumber?.message}
+            readOnly={loading}
+          />
+
+          <div>
+            <label htmlFor="password" className="ui-label">{t('fields.password')}</label>
+            <PasswordInput
+              id="password"
+              {...register('password')}
+              onKeyDown={checkCapsLock}
+              onKeyUp={checkCapsLock}
+              autoComplete="current-password"
+              readOnly={loading}
+              aria-invalid={errors.password ? true : undefined}
+              aria-describedby={errors.password ? 'password-error' : undefined}
+            />
+            <p className="ui-auth-caps" aria-live="polite">
+              {capsLockOn && <><AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />{t('login.capsLockOn')}</>}
             </p>
-          )}
-        >
-
-          {sessionExpired && (
-            <div className="ui-alert ui-alert-warning flex items-start gap-2.5">
-              <AlertTriangle size={16} strokeWidth={2} className="text-warn flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-warn-strong">{t('login.sessionExpiredTitle')}</p>
-                <p className="text-xs text-warn mt-0.5">{t('login.sessionExpiredBody')}</p>
-              </div>
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="ui-alert ui-alert-success">
-              <p className="text-sm text-ok">{successMessage}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            <div>
-              <label htmlFor="phoneNumber" className="ui-label">
-                {t('fields.phoneNumber')}
-              </label>
-              <input
-                id="phoneNumber"
-                {...register('phoneNumber')}
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel"
-                maxLength={10}
-                placeholder={t('login.phonePlaceholder')}
-                className="shadow-raised"
-              />
-              {errors.phoneNumber && (
-                <p className="ui-error-text" role="alert">{errors.phoneNumber.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="password" className="ui-label">
-                {t('fields.password')}
-              </label>
-              <PasswordInput
-                id="password"
-                {...register('password')}
-                autoComplete="current-password"
-                className="shadow-raised"
-              />
-              {errors.password && (
-                <p className="ui-error-text" role="alert">{errors.password.message}</p>
-              )}
-            </div>
-
-            {serverError && (
-              <p className="ui-alert ui-alert-danger" role="alert">{serverError}</p>
+            {errors.password && (
+              <p id="password-error" className="ui-error-text" role="alert">{errors.password.message}</p>
             )}
+          </div>
 
-            <button
-              type="submit"
+          <label className="ui-inline-check ui-auth-remember">
+            <input
+              type="checkbox"
+              checked={rememberNumber}
+              onChange={(event) => setRememberNumber(event.target.checked)}
               disabled={loading}
-              className="ui-btn ui-btn-primary w-full"
-            >
-              {loading ? t('login.signingIn') : t('login.signIn')}
-            </button>
-          </form>
-        </AuthCard>
-      </div>
+            />
+            <span>{t('login.rememberNumber')}</span>
+          </label>
+
+          {serverError && (
+            <p className="ui-auth-notice ui-auth-notice--danger" role="alert">{serverError}</p>
+          )}
+
+          <button type="submit" disabled={loading} aria-busy={loading || undefined} className="ui-btn ui-btn-primary ui-auth-submit">
+            {loading && <Spinner />}
+            {loading ? t('login.signingIn') : t('login.signIn')}
+          </button>
+        </form>
+      </AuthCard>
     </AuthScreen>
   )
 }

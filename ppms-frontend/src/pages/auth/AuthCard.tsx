@@ -1,10 +1,11 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
-import { Fuel } from 'lucide-react'
-import { LanguagePicker } from '../../components/LanguagePicker'
 import { activeLanguage, changeAppLanguage } from '../../i18n'
 import { storeLanguage } from '../../i18n/detectLanguage'
 import type { AppLanguage } from '../../i18n/languages'
+import { AuthBrandPanel } from './AuthBrandPanel'
+import type { BrandMessage } from './AuthBrandPanel'
+import { LanguageSwitcher } from './LanguageSwitcher'
 
 function chooseLanguage(language: AppLanguage) {
   storeLanguage(language)
@@ -16,39 +17,47 @@ interface AuthCardProps {
   description?: ReactNode
   /** Shown above the title, e.g. a success tick. */
   icon?: ReactNode
-  /** Below the language picker, e.g. "Back to login". */
+  /** Below the content, e.g. "Back to login". */
   footer?: ReactNode
-  className?: string
+  /** Told when the person picks a language here, after the screen has started switching. */
+  onLanguagePicked?: (language: AppLanguage) => void
   children: ReactNode
 }
 
 /**
- * The card every signed-out screen uses: PPMS mark, one h1 and its description, the content,
- * then the language picker and any footer links in the same place on every screen.
+ * The form side every signed-out screen uses: the language switcher at the top, one h1 and its description,
+ * the content, then any footer links in the same place on every screen.
  */
-export function AuthCard({ title, description, icon, footer, className = '', children }: AuthCardProps) {
+export function AuthCard({ title, description, icon, footer, onLanguagePicked, children }: AuthCardProps) {
   const titleId = useId()
+
+  const pickLanguage = (language: AppLanguage) => {
+    chooseLanguage(language)
+    onLanguagePicked?.(language)
+  }
+
   return (
-    <section aria-labelledby={titleId} className={`ui-auth-card flex flex-col gap-5 ${className}`}>
-      <header className="space-y-2">
-        <p className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-          <Fuel size={18} strokeWidth={2} aria-hidden="true" className="text-accent" />
-          PPMS
-        </p>
+    <section aria-labelledby={titleId} className="ui-auth-panel">
+      <div className="ui-auth-panel__top">
+        <LanguageSwitcher value={activeLanguage()} onChange={pickLanguage} />
+      </div>
+      <header className="ui-auth-panel__head">
         {icon}
-        <h1 id={titleId} className="ui-title-sm">{title}</h1>
-        {description && <p className="ui-subtitle">{description}</p>}
+        <h1 id={titleId} className="ui-auth-panel__title">{title}</h1>
+        {description && <p className="ui-auth-panel__description">{description}</p>}
       </header>
       {children}
-      <div className="flex flex-col gap-3 border-t border-border pt-4">
-        <LanguagePicker value={activeLanguage()} onChange={chooseLanguage} className="max-w-48" />
-        {footer}
-      </div>
+      {footer && <div className="ui-auth-panel__footer">{footer}</div>}
     </section>
   )
 }
 
-/** The page behind a signed-out screen: the card centred, with room to scroll on short phones. */
-export function AuthScreen({ children }: { children: ReactNode }) {
-  return <main id="main-content" className="ui-auth-shell ui-auth-shell--split">{children}</main>
+/** The split page behind a signed-out screen: the brand half, then the form half, which scrolls on short phones. */
+export function AuthScreen({ brandMessage, children }: { brandMessage?: BrandMessage; children: ReactNode }) {
+  return (
+    <main id="main-content" className="ui-auth-screen">
+      <AuthBrandPanel message={brandMessage} />
+      <div className="ui-auth-screen__form">{children}</div>
+    </main>
+  )
 }

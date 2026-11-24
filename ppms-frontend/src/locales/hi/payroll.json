@@ -87,11 +87,12 @@
     "daysWorkedTotal_other": "{{count}} दिन काम किया",
     "shiftsTotal_one": "कुल {{count}} शिफ्ट",
     "shiftsTotal_other": "कुल {{count}} शिफ्ट",
-    "deleting": "हटाया जा रहा है…",
     "mark": {
       "DRAFT": "ड्राफ्ट करें",
       "APPROVED": "मंज़ूर करें",
       "PAID": "भुगतान हुआ मार्क करें"
-    }
+    },
+    "markPaidPrompt": "भुगतान हुआ मार्क करें? यह अंतिम है और बदला नहीं जा सकता।",
+    "deletePrompt": "यह ड्राफ्ट हटाएँ? रिकॉर्ड हमेशा के लिए हट जाएगा।"
   }
 }

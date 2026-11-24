@@ -49,7 +49,7 @@ export function DayViewHistory({ pumpId }: { pumpId: number }) {
     formatIstDate(d, { day: 'numeric', month: 'short', year: 'numeric' })
 
   if (isLoading) return <div className="px-5 py-4"><SkeletonRows count={4} /></div>
-  if (error) return <p role="alert" className="ui-alert ui-alert-error m-4 text-sm">{parseApiError(error, t('history.loadFailed'))}</p>
+  if (error) return <p role="alert" className="ui-alert ui-alert-danger m-4 text-sm">{parseApiError(error, t('history.loadFailed'))}</p>
   if (visibleDates.length === 0) {
     return <p className="ui-empty px-6 py-6">{t('history.dayEmpty')}</p>
   }

@@ -87,11 +87,12 @@
     "daysWorkedTotal_other": "{{count}} दिवस काम केले",
     "shiftsTotal_one": "एकूण {{count}} शिफ्ट",
     "shiftsTotal_other": "एकूण {{count}} शिफ्ट",
-    "deleting": "हटवत आहे…",
     "mark": {
       "DRAFT": "मसुदा करा",
       "APPROVED": "मंजूर करा",
       "PAID": "पेमेंट झाले म्हणून नोंदवा"
-    }
+    },
+    "markPaidPrompt": "पेमेंट झाले म्हणून नोंदवायचे? हे अंतिम आहे आणि बदलता येणार नाही.",
+    "deletePrompt": "हा मसुदा हटवायचा? नोंद कायमची काढली जाईल."
   }
 }

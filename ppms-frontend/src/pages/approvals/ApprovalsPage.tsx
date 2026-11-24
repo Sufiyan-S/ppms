@@ -52,7 +52,7 @@ export default function ApprovalsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const kindFilter = kindFilterOf(searchParams.get('kind'))
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
-  const [rejecting, setRejecting] = useState(false)
+  const [rejectTargets, setRejectTargets] = useState<ApprovalItem[] | null>(null)
   const [rejectError, setRejectError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<{ text: string; failures: string[] } | null>(null)
 
@@ -68,8 +68,8 @@ export default function ApprovalsPage() {
   const selectedTotal = selected.reduce((sum, item) => sum + item.amount, 0)
 
   const decision = useMutation({
-    mutationFn: ({ action, reason }: { action: 'APPROVED' | 'REJECTED'; reason?: string }) =>
-      approvalApi.decide(pumpId!, selected.map(({ kind, id }) => ({ kind, id })), action, reason),
+    mutationFn: ({ targets, action, reason }: { targets: ApprovalItem[]; action: 'APPROVED' | 'REJECTED'; reason?: string }) =>
+      approvalApi.decide(pumpId!, targets.map(({ kind, id }) => ({ kind, id })), action, reason),
     onSuccess: (result, { action }) => {
       const itemByKey = new Map(items.map(item => [approvalKey(item), item]))
       setOutcome({
@@ -83,7 +83,7 @@ export default function ApprovalsPage() {
         }),
       })
       setSelectedKeys(new Set())
-      setRejecting(false)
+      setRejectTargets(null)
       for (const key of ['approvals', 'expenses', 'credit-pending-payments', 'credit-ledger', 'attention']) {
         qc.invalidateQueries({ queryKey: [key] })
       }
@@ -100,6 +100,11 @@ export default function ApprovalsPage() {
     setSearchParams(value === 'all' ? {} : { kind: value }, { replace: true })
   }
 
+  const startRejecting = (targets: ApprovalItem[]) => {
+    setRejectError(null)
+    setRejectTargets(targets)
+  }
+
   const toggleAll = () => {
     const selectable = shown.filter(item => item.blockedReason === null)
     const everySelected = selectable.every(item => selectedKeys.has(approvalKey(item)))
@@ -112,12 +117,12 @@ export default function ApprovalsPage() {
         {selected.length > 0 ? t('selection.summary', { count: selected.length, amount: formatCurrency(selectedTotal) }) : t('selection.hint')}
       </p>
       <button type="button" className="ui-btn ui-btn-danger" disabled={selected.length === 0 || decision.isPending}
-        onClick={() => { setRejectError(null); setRejecting(true) }}>
+        onClick={() => startRejecting(selected)}>
         {t('selection.reject')}
       </button>
       <button type="button" className="ui-btn ui-btn-primary" disabled={selected.length === 0 || decision.isPending}
-        onClick={() => decision.mutate({ action: 'APPROVED' })}>
-        {decision.isPending && !rejecting ? <span className="flex items-center gap-1.5"><Spinner />{t('selection.approving')}</span> : t('selection.approve')}
+        onClick={() => decision.mutate({ targets: selected, action: 'APPROVED' })}>
+        {decision.isPending && !rejectTargets ? <span className="flex items-center gap-1.5"><Spinner />{t('selection.approving')}</span> : t('selection.approve')}
       </button>
     </div>
   )
@@ -168,21 +173,23 @@ export default function ApprovalsPage() {
           ) : shown.length === 0 ? (
             <EmptyState icon="generic" title={t('page.emptyTitle')} subtitle={t('page.emptySubtitle')} />
           ) : (
-            <ApprovalsTable items={shown} selectedKeys={selectedKeys} now={now}
+            <ApprovalsTable items={shown} selectedKeys={selectedKeys} now={now} isDeciding={decision.isPending}
               onToggle={item => setSelectedKeys(previous => withToggled(previous, approvalKey(item)))}
-              onToggleAll={toggleAll} />
+              onToggleAll={toggleAll}
+              onApprove={item => decision.mutate({ targets: [item], action: 'APPROVED' })}
+              onReject={item => startRejecting([item])} />
           )}
         </PageSection>
       )}
 
-      {rejecting && (
+      {rejectTargets && (
         <RejectReasonDialog
-          title={t('rejectDialog.title', { count: selected.length })}
-          subtitle={t('rejectDialog.subtitle', { amount: formatCurrency(selectedTotal) })}
+          title={t('rejectDialog.title', { count: rejectTargets.length })}
+          subtitle={t('rejectDialog.subtitle', { amount: formatCurrency(rejectTargets.reduce((sum, item) => sum + item.amount, 0)) })}
           isPending={decision.isPending}
           error={rejectError}
-          onConfirm={reason => decision.mutate({ action: 'REJECTED', reason })}
-          onClose={() => setRejecting(false)}
+          onConfirm={reason => decision.mutate({ targets: rejectTargets, action: 'REJECTED', reason })}
+          onClose={() => setRejectTargets(null)}
         />
       )}
     </Page>

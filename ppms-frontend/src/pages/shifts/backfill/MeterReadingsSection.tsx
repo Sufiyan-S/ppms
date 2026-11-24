@@ -22,11 +22,11 @@ function ReadingResult({ form, nozzleId, unit }: { form: BackfillForm; nozzleId:
   const fuelType = availableNozzles.find((n) => n.id === nozzleId)?.fuelType ?? ''
   const rate = getEffectiveRate(fuelType)
   if (rate === null) {
-    return <span className="text-ink-2">{t('backfill.meter.soldNoRate', { sold: formatUnits(liters, unit, 3) })}</span>
+    return <span className="text-ink-2">{t('backfill.meter.soldNoRate', { sold: formatUnits(liters, unit) })}</span>
   }
   return (
     <span className="tabular-nums text-ink-2">
-      = {formatUnits(liters, unit, 3)} × {formatCurrency(rate)} ={' '}
+      = {formatUnits(liters, unit)} × {formatCurrency(rate)} ={' '}
       <span className="font-semibold text-ink">{formatCurrency(roundToPaise(liters * rate))}</span>
     </span>
   )

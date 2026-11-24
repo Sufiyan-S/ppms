@@ -31,7 +31,7 @@ export function ShiftDetail({ pumpId, shiftId }: { pumpId: number; shiftId: numb
 
   if (isLoading) return <SkeletonRows count={4} />
   if (error || !shift) {
-    return <p role="alert" className="ui-alert ui-alert-error text-sm">{parseApiError(error, t('history.shiftNotFound', { id: shiftId }))}</p>
+    return <p role="alert" className="ui-alert ui-alert-danger text-sm">{parseApiError(error, t('history.shiftNotFound', { id: shiftId }))}</p>
   }
 
   const resolveAction = discrepancyAction(shift, role)
@@ -120,10 +120,10 @@ export function ShiftDetail({ pumpId, shiftId }: { pumpId: number; shiftId: numb
 
       <div className="flex flex-wrap gap-2">
         {resolveAction === 'resolve' && (
-          <button type="button" onClick={() => setResolveOpen(true)} className="ui-btn ui-btn-danger">{t('history.resolve')}</button>
+          <button type="button" onClick={() => setResolveOpen(true)} className="ui-btn ui-btn-primary">{t('history.resolve')}</button>
         )}
         {resolveAction === 'approve' && (
-          <button type="button" onClick={() => setResolveOpen(true)} className="ui-btn ui-btn-warning">{t('common:actions.approve')}</button>
+          <button type="button" onClick={() => setResolveOpen(true)} className="ui-btn ui-btn-primary">{t('common:actions.approve')}</button>
         )}
         {shift.totalAmountDue != null && (
           <button type="button" onClick={() => setReportOpen(true)} className="ui-btn ui-btn-secondary inline-flex items-center gap-1.5">

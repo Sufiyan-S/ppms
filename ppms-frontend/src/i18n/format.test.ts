@@ -15,7 +15,7 @@ describe('locale formatters', () => {
   it.each(['en', 'hi', 'mr'] as const)('show rupees with Indian grouping and Latin digits in %s', (language) => {
     expect(formatRupees(100000, language)).toBe('₹1,00,000.00')
     expect(formatRupees(1234567.5, language)).toBe('₹12,34,567.50')
-    expect(formatLitresIn(1234.5, 3, language)).toBe('1,234.500 L')
+    expect(formatLitresIn(1234.5, 2, language)).toBe('1,234.50 L')
     expect(formatNumberIn(9876543, {}, language)).toBe('98,76,543')
   })
 
@@ -38,7 +38,7 @@ describe('locale formatters', () => {
     await changeAppLanguage('mr')
 
     expect(formatCurrency(100000)).toBe('₹1,00,000.00')
-    expect(formatLitres(12.5)).toBe('12.500 L')
+    expect(formatLitres(12.5)).toBe('12.50 L')
     expect(formatIstDate('2026-11-23')).toMatch(/^23 .+ 2026$/)
     expect(formatIstDate('2026-11-23')).not.toBe('23 Nov 2026')
     expect(formatIstDateTime(new Date('2026-11-23T06:30:00Z'))).not.toMatch(DEVANAGARI_DIGIT)

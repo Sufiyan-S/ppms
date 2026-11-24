@@ -17,6 +17,13 @@
     "KG": "kg",
     "PIECE": "नग"
   },
+  "packSize": {
+    "litre": "{{value}} लि.",
+    "millilitre": "{{value}} मि.लि.",
+    "kg": "{{value}} कि.ग्रॅ.",
+    "gram": "{{value}} ग्रॅ.",
+    "piece": "{{value}} नग"
+  },
   "actions": {
     "recording": "नोंद होत आहे…"
   },
@@ -36,37 +43,85 @@
     "selectProduct": "उत्पादन निवडा…",
     "productOption": "{{name}} (स्टॉक: {{stock}})",
     "backfilled": "नंतर नोंदवलेले",
-    "hsnCode": "HSN कोड"
+    "hsnCode": "HSN कोड",
+    "productOptionNoPrice": "{{name}} (स्टॉक: {{stock}}) · दर नाही"
   },
   "validation": {
     "quantityMin": "संख्या किमान 1 असावी",
     "selectProduct": "एक उत्पादन निवडा",
     "creditClient": "क्रेडिट पेमेंटसाठी ग्राहक निवडा",
-    "hsnInvalid": "HSN कोड 4 ते 8 अंकी असावा"
+    "hsnInvalid": "HSN कोड 4 ते 8 अंकी असावा",
+    "quantityOverStock_one": "स्टॉकमध्ये फक्त {{count}} आहे. संख्या कमी करा.",
+    "quantityOverStock_other": "स्टॉकमध्ये फक्त {{count}} आहेत. संख्या कमी करा."
   },
   "products": {
     "searchLabel": "उत्पादने शोधा",
     "searchPlaceholder": "उत्पादने शोधा…",
     "clearSearch": "शोध काढा",
     "add": "उत्पादन जोडा",
-    "noMatchTitle": "\"{{query}}\" शी जुळणारे उत्पादन नाही",
-    "noMatchSubtitle": "दुसरा शब्द टाकून शोधा.",
+    "noMatchTitle": "तुमच्या शोधाशी किंवा फिल्टरशी जुळणारे उत्पादन नाही",
+    "noMatchSubtitle": "दुसरा शब्द शोधा, किंवा फिल्टर काढा.",
     "emptyTitle": "अजून एकही उत्पादन जोडलेले नाही",
     "emptySubtitle": "वरच्या बटणाने पहिले उत्पादन जोडा.",
-    "stockUnits": "{{value}} नग",
-    "stockLow": "{{value}} नग, स्टॉक कमी",
     "hsn": "HSN {{code}}",
-    "buyPrice": "खरेदी: <price>{{price}}/नग</price>",
-    "noStockLot": "स्टॉक लॉट नाही",
+    "buyPrice": "खरेदी <price>{{price}}/नग</price>",
+    "stockValue": "स्टॉक मूल्य <value>{{value}}</value>",
     "sell": "विका",
     "inventory": "स्टॉक",
-    "editHsnOf": "{{name}} चा HSN कोड बदला",
     "enabled": "उत्पादन चालू झाले",
     "disabled": "उत्पादन बंद झाले",
     "statusFailed": "उत्पादनाची स्थिती अपडेट करता आली नाही",
     "filtersLabel": "उत्पादन फिल्टर",
-    "matchCount_one": "{{count}} जुळले",
-    "matchCount_other": "{{count}} जुळले"
+    "disablePrompt": "हे उत्पादन बंद करायचे?",
+    "setPrice": "दर ठरवा",
+    "setPriceOf": "{{name}} चा विक्री दर ठरवा",
+    "listLabel": "उत्पादने",
+    "shownOfTotal": "{{total}} पैकी {{shown}}",
+    "statusDisabled": "बंद",
+    "perUnit": "/ नग",
+    "noSellingPrice": "विक्री दर ठरलेला नाही",
+    "askOwnerToSetPrice": "मालकाला दर ठरवायला सांगा",
+    "margin": "मार्जिन",
+    "belowCost": "खर्चापेक्षा कमी",
+    "noMargin": "मार्जिन नाही",
+    "marginPercent": "{{percent}}%",
+    "unitsInStock_one": "स्टॉकमध्ये {{value}} नग",
+    "unitsInStock_other": "स्टॉकमध्ये {{value}} नग",
+    "lowStock": "स्टॉक कमी",
+    "outOfStock": "स्टॉक संपला",
+    "lowAt": "{{value}} किंवा कमी झाल्यावर कमी स्टॉक",
+    "soldToday": "आज विकले: {{units}} · {{amount}}",
+    "noSalesToday": "आज विक्री नाही",
+    "stockIn": "स्टॉक जोडा",
+    "stockInOf": "{{name}} चा स्टॉक जोडा",
+    "blocked": {
+      "disabled": "हे उत्पादन बंद आहे. विकण्यासाठी किंवा स्टॉक जोडण्यासाठी ते चालू करा.",
+      "outOfStock": "स्टॉक संपला आहे. विकण्याआधी स्टॉक नोंदवा.",
+      "noPrice": "अजून विक्री दर ठरलेला नाही. मालकाला दर ठरवायला सांगा."
+    },
+    "menu": {
+      "label": "{{name}} ची आणखी कामे",
+      "setPriceHint": "प्रति नग विक्री दर बदला",
+      "editHsn": "HSN बदला",
+      "noHsn": "अजून HSN कोड नाही",
+      "lots": "स्टॉक लॉट",
+      "lotsHint": "स्टॉकच्या बॅच आणि त्यांचा खरेदी दर",
+      "disableHint": "विक्रीतून काढले जाईल. तुम्ही ते पुन्हा चालू करू शकता.",
+      "enableHint": "ते पुन्हा विक्रीसाठी चालू करा"
+    },
+    "filters": {
+      "label": "दाखवा",
+      "all": "सर्व",
+      "lowStock": "स्टॉक कमी",
+      "noPrice": "दर नाही",
+      "disabled": "बंद"
+    },
+    "sort": {
+      "label": "क्रम",
+      "name": "नाव",
+      "stockLowFirst": "स्टॉक: कमी ते जास्त",
+      "newestFirst": "नुकतेच जोडलेले"
+    }
   },
   "addProduct": {
     "title": "उत्पादन जोडा",
@@ -88,7 +143,11 @@
     "created": "उत्पादन तयार झाले",
     "createFailed": "उत्पादन तयार करता आले नाही",
     "nameMissing": "उत्पादनाचे नाव आवश्यक आहे",
-    "packageSizePositive": "पॅकचा आकार 0 पेक्षा जास्त असावा"
+    "packageSizePositive": "पॅकचा आकार 0 पेक्षा जास्त असावा",
+    "sellingPrice": "प्रति नग विक्री दर",
+    "sellingPriceHelp": "ग्राहक एका नगासाठी किती देईल. हा नंतर बदलता येतो.",
+    "sellingPriceInvalid": "₹0 पेक्षा जास्त विक्री दर टाका, दशांशानंतर जास्तीत जास्त 2 अंक",
+    "needSellingPrice": "विक्री दर"
   },
   "editHsn": {
     "saved": "HSN कोड सेव्ह झाला",
@@ -117,10 +176,12 @@
     "needQuantity": "संख्या",
     "needClient": "क्रेडिट ग्राहक",
     "liveLabel": "विक्रीची एकूण रक्कम",
-    "noPrice": "या उत्पादनाचा विक्री दर ठरलेला नाही. आधी दर ठरवा.",
     "buyPricePerUnit": "प्रति नग खरेदी दर",
     "sellPricePerUnit": "प्रति नग विक्री दर",
-    "paymentModeRow": "पेमेंटची पद्धत"
+    "paymentModeRow": "पेमेंटची पद्धत",
+    "firstPriceTitle": "अजून विक्री दर ठरलेला नाही. ही विक्री पुढे नेण्यासाठी दर ठरवा.",
+    "askOwnerForPrice": "अजून विक्री दर ठरलेला नाही — मालकाला दर ठरवायला सांगा.",
+    "needQuantityWithinStock": "{{count}} किंवा त्यापेक्षा कमी संख्या"
   },
   "stockIn": {
     "title": "स्टॉक डिलिव्हरी नोंदवा",
@@ -202,5 +263,23 @@
     "subtitle": "ग्राहक घेत असलेले उत्पादन निवडा.",
     "continue": "पुढे जा",
     "noneInStock": "कोणत्याही चालू उत्पादनाचा विकण्याजोगा स्टॉक नाही. आधी आलेल्या स्टॉकची नोंद करा."
+  },
+  "setPrice": {
+    "title": "विक्री दर ठरवा",
+    "current": "सध्याचा दर",
+    "notSet": "ठरलेला नाही",
+    "newPrice": "प्रति नग नवीन दर",
+    "help": "आतापासूनच्या विक्रीला लागू. आधीच्या विक्रीचा दर बदलणार नाही.",
+    "firstPrice": "या उत्पादनाचा पहिला विक्री दर",
+    "up": "{{current}} पेक्षा {{amount}} जास्त",
+    "down": "{{current}} पेक्षा {{amount}} कमी",
+    "same": "सध्याच्या {{current}} इतकाच",
+    "invalid": "₹0 पेक्षा जास्त दर टाका, दशांशानंतर जास्तीत जास्त 2 अंक",
+    "save": "दर सेव्ह करा",
+    "saved": "विक्री दर {{price}} ठरवला",
+    "saveFailed": "विक्री दर ठरवता आला नाही",
+    "history": "दराचा इतिहास",
+    "historyLoading": "दराचा इतिहास लोड होत आहे…",
+    "historyEmpty": "अजून कोणताही दर ठरलेला नाही."
   }
 }

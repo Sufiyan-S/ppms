@@ -40,7 +40,7 @@ describe('DipCheckModal', () => {
     renderWithProviders(<DipCheckModal pumpId={6} tank={tank} onClose={vi.fn()} />)
 
     const reading = await screen.findByLabelText('Nozzle #1 · DU-1 meter reading')
-    expect(reading).toHaveAccessibleDescription('Opened at 1,000.000')
+    expect(reading).toHaveAccessibleDescription('Opened at 1,000')
     await user.type(reading, '1030')
     await user.type(screen.getByLabelText('Dipstick reading'), '965')
 
@@ -60,17 +60,17 @@ describe('DipCheckModal', () => {
     renderWithProviders(<DipCheckModal pumpId={6} tank={tank} onClose={vi.fn()} />)
 
     const reading = await screen.findByLabelText('Nozzle #1 · DU-1 meter reading')
-    expect(figure('Book stock now')).toHaveTextContent('1,000.0 L')
+    expect(figure('Book stock now')).toHaveTextContent('1,000.00 L')
     expect(figure('Expected in tank')).toHaveTextContent('—')
     expect(figure('Variance')).toHaveTextContent('—')
 
     await user.type(reading, '1030')
     await user.type(screen.getByLabelText('Dipstick reading'), '965')
 
-    expect(figure('Sold on open shifts')).toHaveTextContent('30.0 L')
-    expect(figure('Expected in tank')).toHaveTextContent('970.0 L')
-    expect(figure('Measured by dip')).toHaveTextContent('965.0 L')
-    expect(figure('Variance')).toHaveTextContent('−5.0 L')
+    expect(figure('Sold on open shifts')).toHaveTextContent('30.00 L')
+    expect(figure('Expected in tank')).toHaveTextContent('970.00 L')
+    expect(figure('Measured by dip')).toHaveTextContent('965.00 L')
+    expect(figure('Variance')).toHaveTextContent('−5.00 L')
     expect(figure('Variance')).toHaveTextContent('Within tolerance')
   })
 
@@ -81,7 +81,7 @@ describe('DipCheckModal', () => {
 
     await user.type(await screen.findByLabelText('Dipstick reading'), '900')
 
-    expect(figure('Variance')).toHaveTextContent('−100.0 L')
+    expect(figure('Variance')).toHaveTextContent('−100.00 L')
     expect(figure('Variance')).toHaveTextContent('Shortage detected')
   })
 

@@ -194,7 +194,7 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
                   <button
                     onClick={() => submitMutation.mutate(e.id)}
                     disabled={submitMutation.isPending}
-                    className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs"
+                    className="ui-btn ui-btn-primary ui-btn-compact"
                   >
                     {t('common:actions.submit')}
                   </button>
@@ -205,14 +205,14 @@ export function ExpenseList({ pumpId, list }: ExpenseListProps) {
                     <button
                       onClick={() => approveMutation.mutate({ expenseId: e.id, data: { action: 'APPROVED' } })}
                       disabled={approveMutation.isPending}
-                      className="ui-btn ui-btn-primary min-h-0 px-3 py-1 text-xs"
+                      className="ui-btn ui-btn-primary ui-btn-compact"
                     >
                       {t('common:actions.approve')}
                     </button>
                     <button
                       onClick={() => openRejectDialog(e)}
                       disabled={approveMutation.isPending}
-                      className="ui-btn ui-btn-danger min-h-0 px-3 py-1 text-xs"
+                      className="ui-btn ui-btn-danger ui-btn-compact"
                     >
                       {t('common:actions.reject')}
                     </button>

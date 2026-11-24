@@ -317,7 +317,7 @@ public class CreditLedgerService {
     public String resolveRecordedByName(Long userId) {
         return userRepository.findById(userId)
                 .map(User::getFullName)
-                .orElse("Unknown");
+                .orElse(CreditLedgerQueryService.UNKNOWN_STAFF_NAME);
     }
 
     private void validateGroupMove(Long pumpId, Long fromClientId, Long toClientId) {

@@ -164,10 +164,10 @@ function ResolveButton({ shift, onOpen, className }: { shift: Shift; onOpen: () 
   const { user } = useAuthStore()
   const action = discrepancyAction(shift, user?.role)
   if (action === 'resolve') {
-    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-danger ${className}`}>{t('history.resolve')}</button>
+    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-primary ${className}`}>{t('history.resolve')}</button>
   }
   if (action === 'approve') {
-    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-warning ${className}`}>{t('common:actions.approve')}</button>
+    return <button type="button" onClick={onOpen} className={`ui-btn ui-btn-primary ${className}`}>{t('common:actions.approve')}</button>
   }
   return null
 }

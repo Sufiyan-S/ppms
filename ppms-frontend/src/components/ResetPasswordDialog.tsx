@@ -62,6 +62,7 @@ export function ResetPasswordDialog({ userId, userName, onClose }: ResetPassword
       onClose={onClose}
       canClose={!resetMutation.isPending}
       closeOnBackdropClick
+      confirmDiscard={!resetMutation.isSuccess}
       onSubmit={resetMutation.isSuccess ? undefined : submit}
       bodyClassName="space-y-4"
       footer={resetMutation.isSuccess ? (

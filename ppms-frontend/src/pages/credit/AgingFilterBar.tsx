@@ -7,7 +7,7 @@ import type { CreditAgingView } from './useCreditAging'
 
 interface AgingFilterBarProps {
   view: CreditAgingView
-  /** The list has no column headers to sort by, so it offers a sort menu instead. */
+  /** For views without column headers to sort by: the client list and the phone cards. */
   showSortMenu?: boolean
 }
 

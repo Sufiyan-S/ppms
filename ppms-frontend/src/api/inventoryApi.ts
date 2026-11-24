@@ -135,8 +135,8 @@ export const inventoryApi = {
   recordDipCheck: (pumpId: number, req: RecordDipCheckRequest) =>
     client.post<DipCheck>(`/inventory/${pumpId}/dip-checks`, req).then(r => r.data),
 
-  getDipChecks: (pumpId: number, page = 0, size = 10) =>
-    client.get<PagedResponse<DipCheck>>(`/inventory/${pumpId}/dip-checks`, { params: { page, size } }).then(r => r.data),
+  getDipChecks: (pumpId: number, page = 0, size = 10, filters: { tankId?: number; fuelType?: string } = {}) =>
+    client.get<PagedResponse<DipCheck>>(`/inventory/${pumpId}/dip-checks`, { params: { page, size, ...filters } }).then(r => r.data),
 
   reviewDipCheck: (pumpId: number, dipCheckId: number) =>
     client.patch<DipCheck>(`/inventory/${pumpId}/dip-checks/${dipCheckId}/review`).then(r => r.data),

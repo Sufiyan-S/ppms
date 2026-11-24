@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import type { DataTableColumn } from '../../components/DataTable'
 import { formatDateTimeIn } from '../../i18n/format'
-import { formatLitres } from '../../utils/format'
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 // Use local calendar date (not UTC) so the value matches the user's timezone.
@@ -13,9 +12,7 @@ export function fmtIstTime(iso: string) {
   return formatDateTimeIn(new Date(iso), { hour: '2-digit', minute: '2-digit' })
 }
 
-export function fmtLitres(n: number) {
-  return formatLitres(n, 1)
-}
+export { formatLitres as fmtLitres } from '../../utils/format'
 
 export { formatIstDate as fmtDate } from '../../utils/date'
 

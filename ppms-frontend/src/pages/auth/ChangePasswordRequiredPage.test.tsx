@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { authApi } from '../../api/authApi'
@@ -35,7 +36,7 @@ function signIn(mustChangePassword: boolean) {
 }
 
 describe('forced password change', () => {
-  beforeEach(() => vi.mocked(authApi.changePassword).mockReset())
+  beforeEach(() => { vi.mocked(authApi.changePassword).mockReset() })
 
   it('sends a user with a password set by someone else to the change-password screen', async () => {
     signIn(true)
@@ -43,6 +44,34 @@ describe('forced password change', () => {
 
     expect(await screen.findByText('Choose a new password')).toBeInTheDocument()
     expect(screen.queryByText('Shifts screen')).not.toBeInTheDocument()
+  })
+
+  it('shows the form on the sign-in screen itself, not in a dialog', () => {
+    signIn(true)
+    renderAt('/change-password')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('main')).toContainElement(screen.getByLabelText('Current password'))
+    expect(screen.getByRole('heading', { level: 1, name: 'Choose a new password' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Language')).toBeInTheDocument()
+  })
+
+  it('keeps the user on the screen with the reason when the server refuses the change', async () => {
+    vi.mocked(authApi.changePassword).mockRejectedValue(new AxiosError('Request failed', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 400, statusText: '', data: { message: 'Current password is incorrect' }, headers: {}, config: { headers: new AxiosHeaders() },
+    }))
+    signIn(true)
+    renderAt('/change-password')
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText('Current password'), 'Wrong@4321')
+    await user.type(screen.getByLabelText('New password'), 'Fresh@9876')
+    await user.type(screen.getByLabelText('Confirm new password'), 'Fresh@9876')
+    await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Current password is incorrect')
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(screen.queryByText('Login screen')).not.toBeInTheDocument()
   })
 
   it('lets a user who already chose their password into the app', () => {
